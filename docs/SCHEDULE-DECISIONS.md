@@ -10,7 +10,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | SEP tracker health/process jobs | Keep | Audit source, pending-email behavior, alerts, and deployment path. |
 | Weekly SEO report | Keep | Rebuild as a sourced performance report with a reviewable action list. |
 | Weekly system update check | Needs explanation | Inspect exact behavior before deciding. |
-| 2027-grid preparation reminder | Reschedule | Do not migrate its September 28 trigger; review after the October 1 benefit release. |
+| 2027-grid preparation reminder | Reschedule to October 1 | Replace the September 28 trigger with October 1, after carrier benefits go live. |
 | Weekly agent sales reports | Resume after repair | Diagnose current failure, test with a limited recipient set, then enable/continue. |
 
 ## Guardrails
