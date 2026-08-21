@@ -24,12 +24,12 @@ export const migrationCapabilities = [
     gate: "Rebuild each job with an owner, destination, test run, and rollback path."
   },
   {
-    id: "agent-pulse",
-    area: "Proactive agent pulse",
-    legacy: "OpenClaw heartbeat loop with workspace memory",
+    id: "agent-pulse-newsletter",
+    area: "Agent Pulse newsletter",
+    legacy: "Scheduled email newsletter to agents",
     v2: "Not connected",
     state: "not_started",
-    gate: "Small checklist, quiet hours, per-run token budget, cost alert, and explicit leadership approval."
+    gate: "Approved recipient list, draft/compliance review, send approval, SMTP access, and unsubscribe/recipient controls."
   },
   {
     id: "lead-management",

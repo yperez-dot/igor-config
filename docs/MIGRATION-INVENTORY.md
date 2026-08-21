@@ -20,7 +20,7 @@ OpenClaw remains the production source of truth until each capability below is t
 | --- | --- | ---: | --- |
 | Team Telegram | Production bot for leadership and agents | 1 | Test-bot approval, authorized user checks, rollback to legacy webhook |
 | Compliance/content | Research and draft production | 2 | CMS/carrier citations, bilingual review, human publication approval |
-| Agent pulse | OpenClaw heartbeat checks, memory upkeep, proactive alerts | 3 | Small checklist, quiet hours, token/cost limits, alert threshold, approval |
+| Agent Pulse newsletter | Scheduled email newsletter to agents | 3 | Recipient list, draft/compliance review, send approval, SMTP access |
 | Site-health alerts | Scheduled monitoring and Telegram alerts | 4 | Read-only test, alert-destination confirmation, false-positive review |
 | Carrier updates | Portal/email research and alerting | 5 | Source list, timestamp/citation requirement, reviewer |
 | Commission tracker | Existing Railway/Postgres tool | 6 | Read-only reconciliation before any write capability |
@@ -47,4 +47,3 @@ OpenClaw remains the production source of truth until each capability below is t
 The authenticated endpoint `GET /v1/migration/status` mirrors this inventory for future dashboards.
 
 For the currently staged cron definitions and their safety gates, see [scheduled-work migration](SCHEDULE-MIGRATION.md).
-For heartbeat-specific safeguards, see [agent pulse migration](AGENT-PULSE-MIGRATION.md).
