@@ -9,6 +9,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | Industry Pulse weekly email | Keep and auto-send | Monday 8:00 AM ET bilingual sends to separate BCC lists. Fail closed and alert Telegram if either language, source validation, or recipient-list validation fails. |
 | SEP tracker health/process jobs | Consolidate and auto-publish | Replace the overlapping 9:00/9:15 legacy jobs with one Monday 9:00 AM pipeline: scan, validate, snapshot, deploy, health check, Telegram result, mark processed. |
 | Weekly SEO report | Keep | Monday 8:15 AM ET in v2; sourced performance report with a reviewable action list and Telegram failure alert. |
+| Medicare cost audit | Keep and auto-run | Jan/Apr/Jul/Oct/Nov 1 at 9:00 AM ET; email + Telegram only when site values need correction, quiet Telegram success summary otherwise. |
 | Weekly system update check | Needs explanation | Inspect exact behavior before deciding. |
 | 2027-grid preparation reminder | Reschedule to October 1 | Replace the September 28 trigger with October 1, after carrier benefits go live. |
 | Weekly agent sales reports | Resumed | Corrected a legacy recipient-name alias, preserved a local backup of the mapping, and validated no current mapping is missing. Let the next scheduled run verify delivery. |
