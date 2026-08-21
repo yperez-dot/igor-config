@@ -13,6 +13,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | Weekly system update check | Needs explanation | Inspect exact behavior before deciding. |
 | 2027-grid preparation reminder | Reschedule to October 1 | Replace the September 28 trigger with October 1, after carrier benefits go live. |
 | Weekly agent sales reports | Resumed | Corrected a legacy recipient-name alias, preserved a local backup of the mapping, and validated no current mapping is missing. Let the next scheduled run verify delivery. |
+| AvMed cleanup reminder | Retired | Disabled in OpenClaw after confirmation that the one-time cleanup was completed. Do not migrate. |
 
 ## Guardrails
 
