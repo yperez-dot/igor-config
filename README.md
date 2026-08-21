@@ -44,6 +44,8 @@ Telegram is intentionally disabled until all of `TELEGRAM_BOT_TOKEN`, `TELEGRAM_
 
 The webhook accepts text messages only from the explicit allowlist. It does not persist Telegram message text; it records a metadata-only task/audit reference and sends the text directly to Grok for the current response. Follow [the Telegram cutover runbook](docs/TELEGRAM-CUTOVER.md) and begin with a separate test bot. A Telegram bot supports only one webhook, so pointing the current production bot at v2 is a cutover, not a shadow-mode test.
 
+See [the migration inventory](docs/MIGRATION-INVENTORY.md) for the feature-parity order and cutover gates. The authenticated `GET /v1/migration/status` endpoint exposes the current migration status for an internal dashboard.
+
 ## Operational controls
 
 - All non-health endpoints require `Authorization: Bearer <IGOR_API_KEY>` when the key is set; production refuses to start without it.

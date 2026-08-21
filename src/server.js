@@ -3,6 +3,7 @@ import express from "express";
 import cron from "node-cron";
 import { createStore } from "./store.js";
 import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
+import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -128,6 +129,10 @@ app.post("/v1/telegram/webhook", async (request, response) => {
 });
 
 app.use(authenticated);
+
+app.get("/v1/migration/status", (_request, response) => {
+  response.json({ summary: migrationSummary(), capabilities: migrationCapabilities });
+});
 
 app.post("/v1/tasks", async (request, response) => {
   const { type, payload = {} } = request.body ?? {};
