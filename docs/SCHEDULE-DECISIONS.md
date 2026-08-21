@@ -11,7 +11,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | Weekly SEO report | Keep | Rebuild as a sourced performance report with a reviewable action list. |
 | Weekly system update check | Needs explanation | Inspect exact behavior before deciding. |
 | 2027-grid preparation reminder | Reschedule to October 1 | Replace the September 28 trigger with October 1, after carrier benefits go live. |
-| Weekly agent sales reports | Resume after repair | Diagnose current failure, test with a limited recipient set, then enable/continue. |
+| Weekly agent sales reports | Resumed | Corrected a legacy recipient-name alias, preserved a local backup of the mapping, and validated no current mapping is missing. Let the next scheduled run verify delivery. |
 
 ## Guardrails
 
