@@ -24,3 +24,16 @@ This record distinguishes evidence observed directly on BOSGAME from workflows r
 - Discord is unused and out of scope.
 - Any workflow that writes knowledge, pushes GitHub, triggers a deployment, generates agent documents, or sends email must begin in draft/report-only mode.
 - Lead and client-contact workflows require data-minimization review before any connection is configured.
+
+## Verified heartbeat carrier workflow
+
+The live `HEARTBEAT.md` confirms that each legacy heartbeat scans the leadership inbox for carrier updates. When it finds one, it can edit the carrier knowledge base and Hub files, push changes to GitHub, redeploy the Hub, and send an immediate WhatsApp update.
+
+This workflow is **not eligible for direct lift-and-shift**. The v2 replacement will split it into:
+
+1. Read-only email detection and cited summary.
+2. Draft knowledge/Hub changes.
+3. Human approval of the exact diff and deployment target.
+4. Approved publish/deploy and delivery confirmation.
+
+The same approval rule applies to an instruction to “add this to the pulse.”

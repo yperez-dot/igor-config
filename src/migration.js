@@ -77,7 +77,7 @@ export const migrationCapabilities = [
     legacy: "Portal/email research and alerts",
     v2: "Not connected",
     state: "not_started",
-    gate: "Approved sources, citations, retrieval schedule, and human review."
+    gate: "Approved sources, citations, draft-only changes, diff approval, and explicit publish/deploy authorization."
   },
   {
     id: "external-actions",
