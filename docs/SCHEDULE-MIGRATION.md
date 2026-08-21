@@ -61,3 +61,5 @@ For each job, document:
 5. Blog workflow and Netlify rebuild last, because they may publish public content.
 
 The authenticated `GET /v1/schedules` endpoint lists the definitions after the next deployment. No endpoint enables a seeded legacy schedule.
+
+Current keep/retire/reschedule decisions are tracked in [scheduled-work decisions](SCHEDULE-DECISIONS.md).
