@@ -43,7 +43,7 @@ OpenClaw remains the production source of truth until each capability below is t
 
 ## Current blockers
 
-- The live audit found 13 cron jobs and 2 backup timers; the job registry has been updated, but script behavior and backup-unit configuration still need inspection.
+- The live audit found 13 Linux cron jobs, 2 backup timers, and 11 active OpenClaw scheduler jobs; the job registry has been updated, but script behavior and backup-unit configuration still need inspection.
 - v2 has no credentials or adapters for GHL, the commission tracker, carrier portals, email, GitHub, or deployment systems.
 - Scheduled work must be rebuilt individually; existing cron jobs should not be copied blindly because their alert channels and DST handling need review.
 - The legacy bot’s production token and webhook must remain unchanged until final cutover.

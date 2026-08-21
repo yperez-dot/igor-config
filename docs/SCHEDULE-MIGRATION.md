@@ -21,6 +21,26 @@ The following legacy job definitions are seeded into PostgreSQL as **disabled sh
 
 The live audit also found an OpenClaw gateway restart (Sunday 3:00 AM) and daily/weekly backup timers. They are intentionally excluded: a Railway service must not inherit a command that restarts a different host, and the backup units need separate inspection.
 
+## Active OpenClaw scheduler jobs
+
+The OpenClaw scheduler has a separate set of active jobs that are not shown by `crontab -l`. These are also seeded as disabled shadow definitions:
+
+| Job | Florida schedule | Current status |
+| --- | --- | --- |
+| Netlify credit check | Monday 6:00 AM | OK |
+| Sales tracker sync | Monday 7:00 AM | OK |
+| Industry Pulse weekly email | Monday 8:00 AM | OK |
+| System update check | Monday 9:00 AM | OK |
+| SEP tracker health check | Monday 9:00 AM | OK |
+| SEP pending-email processing | Monday 9:15 AM | OK |
+| SEO report | Monday 10:00 AM | OK |
+| Agent sales reports | Friday 10:00 AM | **Error; requires diagnosis** |
+| 2027-grid preparation reminder | September 28, 9:00 AM | Idle until due |
+| Medicare cost audit | Jan/Apr/Jul/Oct/Nov 1, 9:00 AM | Idle until due |
+| AvMed cleanup reminder | May 15, 10:00 AM | OK |
+
+No OpenClaw schedule is enabled in v2. The stale-lead digest is paused and is deliberately not seeded.
+
 ## Before enabling any job
 
 For each job, document:

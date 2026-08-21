@@ -94,5 +94,93 @@ export const legacySchedules = [
     cron: "30 3 * * *",
     timezone: "America/New_York",
     payload: { workflow: "session_compaction", mode: "shadow" }
+  },
+  {
+    id: "legacy-openclaw-netlify-credit-check",
+    title: "Netlify credit check",
+    taskType: "daily_operations",
+    cron: "0 6 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "netlify_credit_check", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-sales-tracker-sync",
+    title: "Sales tracker sync",
+    taskType: "daily_operations",
+    cron: "0 7 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "sales_tracker_sync", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-industry-pulse",
+    title: "Industry Pulse weekly email",
+    taskType: "content_draft",
+    cron: "0 8 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "industry_pulse_weekly", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-system-update-check",
+    title: "Weekly system update check",
+    taskType: "daily_operations",
+    cron: "0 9 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "system_update_check", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-sep-health-check",
+    title: "SEP tracker health check",
+    taskType: "daily_operations",
+    cron: "0 9 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "sep_tracker_health", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-sep-process",
+    title: "SEP tracker pending-email processing",
+    taskType: "daily_operations",
+    cron: "15 9 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "sep_tracker_process", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-seo-weekly",
+    title: "OpenClaw weekly SEO report",
+    taskType: "daily_operations",
+    cron: "0 10 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "seo_weekly_openclaw", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-agent-sales-reports",
+    title: "Weekly agent sales reports",
+    taskType: "daily_operations",
+    cron: "0 10 * * 5",
+    timezone: "America/New_York",
+    payload: { workflow: "agent_sales_reports", mode: "shadow", source: "openclaw", legacyStatus: "error" }
+  },
+  {
+    id: "legacy-openclaw-2027-grid-reminder",
+    title: "2027 grid preparation reminder",
+    taskType: "daily_operations",
+    cron: "0 9 28 9 *",
+    timezone: "America/New_York",
+    payload: { workflow: "2027_grid_reminder", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-medicare-cost-audit",
+    title: "Medicare cost audit",
+    taskType: "compliance_research",
+    cron: "0 9 1 1,4,7,10,11 *",
+    timezone: "America/New_York",
+    payload: { workflow: "medicare_cost_audit", mode: "shadow", source: "openclaw" }
+  },
+  {
+    id: "legacy-openclaw-avmed-cleanup-reminder",
+    title: "AvMed cleanup reminder",
+    taskType: "daily_operations",
+    cron: "0 10 15 5 *",
+    timezone: "America/New_York",
+    payload: { workflow: "avmed_cleanup_reminder", mode: "shadow", source: "openclaw" }
   }
 ];
