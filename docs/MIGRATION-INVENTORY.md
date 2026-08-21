@@ -20,12 +20,13 @@ OpenClaw remains the production source of truth until each capability below is t
 | --- | --- | ---: | --- |
 | Team Telegram | Production bot for leadership and agents | 1 | Test-bot approval, authorized user checks, rollback to legacy webhook |
 | Compliance/content | Research and draft production | 2 | CMS/carrier citations, bilingual review, human publication approval |
-| Site-health alerts | Scheduled monitoring and Telegram alerts | 3 | Read-only test, alert-destination confirmation, false-positive review |
-| Carrier updates | Portal/email research and alerting | 4 | Source list, timestamp/citation requirement, reviewer |
-| Commission tracker | Existing Railway/Postgres tool | 5 | Read-only reconciliation before any write capability |
-| GHL lead workflows | Lead webhooks and operational processes | 6 | Consent/privacy review, redacted test records, write approval |
-| Email workflows | Internal reports and external messages | 7 | Approved sender, recipient review, draft/approval/send audit trail |
-| GitHub/Netlify/Railway deploys | Code and infrastructure actions | 8 | Least-privilege token, change approval, health check, rollback |
+| Agent pulse | OpenClaw heartbeat checks, memory upkeep, proactive alerts | 3 | Small checklist, quiet hours, token/cost limits, alert threshold, approval |
+| Site-health alerts | Scheduled monitoring and Telegram alerts | 4 | Read-only test, alert-destination confirmation, false-positive review |
+| Carrier updates | Portal/email research and alerting | 5 | Source list, timestamp/citation requirement, reviewer |
+| Commission tracker | Existing Railway/Postgres tool | 6 | Read-only reconciliation before any write capability |
+| GHL lead workflows | Lead webhooks and operational processes | 7 | Consent/privacy review, redacted test records, write approval |
+| Email workflows | Internal reports and external messages | 8 | Approved sender, recipient review, draft/approval/send audit trail |
+| GitHub/Netlify/Railway deploys | Code and infrastructure actions | 9 | Least-privilege token, change approval, health check, rollback |
 | Legacy runtime retirement | OpenClaw host and scripts | Last | All required rows above pass; leadership approval; rollback period ends |
 
 ## Migration method for every integration
@@ -46,3 +47,4 @@ OpenClaw remains the production source of truth until each capability below is t
 The authenticated endpoint `GET /v1/migration/status` mirrors this inventory for future dashboards.
 
 For the currently staged cron definitions and their safety gates, see [scheduled-work migration](SCHEDULE-MIGRATION.md).
+For heartbeat-specific safeguards, see [agent pulse migration](AGENT-PULSE-MIGRATION.md).

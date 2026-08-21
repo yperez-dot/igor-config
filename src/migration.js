@@ -24,6 +24,14 @@ export const migrationCapabilities = [
     gate: "Rebuild each job with an owner, destination, test run, and rollback path."
   },
   {
+    id: "agent-pulse",
+    area: "Proactive agent pulse",
+    legacy: "OpenClaw heartbeat loop with workspace memory",
+    v2: "Not connected",
+    state: "not_started",
+    gate: "Small checklist, quiet hours, per-run token budget, cost alert, and explicit leadership approval."
+  },
+  {
     id: "lead-management",
     area: "Lead management",
     legacy: "GHL webhooks and credentials",
