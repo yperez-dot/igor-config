@@ -7,13 +7,19 @@ The following legacy job definitions are seeded into PostgreSQL as **disabled sh
 | Legacy job | Florida schedule | v2 state |
 | --- | --- | --- |
 | Site health check | Daily 7:00 AM | Disabled shadow definition |
-| Uptime monitor | Every 5 minutes | Disabled shadow definition |
 | SEO report | Monday 7:00 AM | Disabled shadow definition |
-| Notion dashboard refresh | Every 3 hours, 6:00 AM–10:00 PM | Disabled shadow definition |
-| Blog publishing workflow | Wednesday 9:00 AM | Disabled shadow definition |
-| Platform update check | Monday 9:00 AM | Disabled shadow definition |
+| HealthSpring SEP email monitor | Daily 9:00 AM and 3:00 PM | Disabled shadow definition |
+| Igor watchdog | Every 5 minutes | Disabled shadow definition |
+| Netlify rebuild | Daily 2:00 AM | Disabled shadow definition |
+| Sunfire session refresh | Monday 6:00 AM | Disabled shadow definition |
+| Content freshness check | Sunday 8:00 AM | Disabled shadow definition |
+| Blog publishing scheduler | Daily midnight | Disabled shadow definition |
+| Broken-link scanner | Saturday 6:00 AM | Disabled shadow definition |
+| TPMO annual check | October 1, 9:00 AM | Disabled shadow definition |
+| IRMAA reminder | August 14, 9:00 AM | Disabled shadow definition |
+| Legacy session compaction | Daily 3:30 AM | Disabled shadow definition |
 
-The legacy OpenClaw gateway restart is intentionally excluded. A Railway service must not inherit a command that restarts a different host.
+The live audit also found an OpenClaw gateway restart (Sunday 3:00 AM) and daily/weekly backup timers. They are intentionally excluded: a Railway service must not inherit a command that restarts a different host, and the backup units need separate inspection.
 
 ## Before enabling any job
 
@@ -29,9 +35,9 @@ For each job, document:
 ## Suggested order
 
 1. Site-health check in read-only/report-only mode.
-2. Uptime monitor with an alert sent only to the test bot.
+2. Watchdog with an alert sent only to the test bot.
 3. SEO report in draft mode.
-4. Notion dashboard refresh after the target database and credentials are reviewed.
-5. Blog workflow last, because it may publish public content.
+4. SEP email monitor after its inbox/search criteria are reviewed.
+5. Blog workflow and Netlify rebuild last, because they may publish public content.
 
 The authenticated `GET /v1/schedules` endpoint lists the definitions after the next deployment. No endpoint enables a seeded legacy schedule.
