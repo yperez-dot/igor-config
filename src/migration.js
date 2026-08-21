@@ -50,9 +50,9 @@ export const migrationCapabilities = [
   {
     id: "stale-lead-digest",
     area: "Stale lead digest",
-    legacy: "GHL lead enrichment, classification, agent documents, and email delivery",
+    legacy: "Paused OpenClaw workflow for GHL lead enrichment, classification, agent documents, and email delivery",
     v2: "Not connected",
-    state: "not_started",
+    state: "paused",
     gate: "GHL authorization, data-minimization review, redacted test, recipient approval, and no-write shadow run."
   },
   {
@@ -102,6 +102,7 @@ export function migrationSummary() {
     total: migrationCapabilities.length,
     testing: migrationCapabilities.filter((capability) => capability.state === "testing").length,
     notStarted: migrationCapabilities.filter((capability) => capability.state === "not_started").length,
+    paused: migrationCapabilities.filter((capability) => capability.state === "paused").length,
     blocked: migrationCapabilities.filter((capability) => capability.state === "blocked").length
   };
 }

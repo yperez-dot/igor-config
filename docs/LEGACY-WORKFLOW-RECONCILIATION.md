@@ -15,7 +15,7 @@ This record distinguishes evidence observed directly on BOSGAME from workflows r
 | --- | --- | --- |
 | OpenClaw heartbeat | About every 30 minutes during active hours | It is gateway-native, not shown in `crontab`; it also has cost and quiet-hour behavior. |
 | Carrier update monitoring | Heartbeat | It may update knowledge files and perform GitHub/deploy actions; v2 must not auto-publish or deploy. |
-| Stale-lead digest | Sunday preview and Monday final | It is not in the observed user crontab and touches GHL lead/contact data. |
+| Stale-lead digest | Paused OpenClaw schedule | It is not in the observed user crontab, touches GHL lead/contact data, and must remain paused pending privacy review. |
 | Industry Pulse | Manual/ad-hoc daily or weekly request | Requires recipient, template, compliance, and send approval controls. |
 
 ## Design constraints for v2
@@ -24,6 +24,7 @@ This record distinguishes evidence observed directly on BOSGAME from workflows r
 - Discord is unused and out of scope.
 - Any workflow that writes knowledge, pushes GitHub, triggers a deployment, generates agent documents, or sends email must begin in draft/report-only mode.
 - Lead and client-contact workflows require data-minimization review before any connection is configured.
+- Archived OpenClaw session logs may contain client/contact data. Do not use broad workspace searches or export those logs as part of the migration.
 
 ## Verified heartbeat carrier workflow
 
