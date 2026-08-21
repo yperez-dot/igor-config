@@ -16,6 +16,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       cron TEXT NOT NULL,
       payload JSONB NOT NULL,
       active BOOLEAN NOT NULL DEFAULT TRUE,
+      timezone TEXT NOT NULL DEFAULT 'America/New_York',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS audit_events (
@@ -29,6 +30,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       update_id TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
   `);
 
   const record = async (eventType, subjectId, detail) => {
@@ -57,13 +59,19 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       await record("task.status_changed", id, { status });
       return this.getTask(id);
     },
-    async createSchedule({ id, taskType, cron, payload }) {
+    async createSchedule({ id, taskType, cron, payload, active = true, timezone = "America/New_York" }) {
       await pool.query(
-        "INSERT INTO schedules (id, task_type, cron, payload) VALUES ($1, $2, $3, $4)",
-        [id, taskType, cron, payload]
+        "INSERT INTO schedules (id, task_type, cron, payload, active, timezone) VALUES ($1, $2, $3, $4, $5, $6)",
+        [id, taskType, cron, payload, active, timezone]
       );
       await record("schedule.created", id, { taskType, cron });
-      return { id, taskType, cron, payload, active: true };
+      return { id, taskType, cron, payload, active, timezone };
+    },
+    async seedSchedule(schedule) {
+      await pool.query(
+        "INSERT INTO schedules (id, task_type, cron, payload, active, timezone) VALUES ($1, $2, $3, $4, FALSE, $5) ON CONFLICT (id) DO NOTHING",
+        [schedule.id, schedule.taskType, schedule.cron, schedule.payload, schedule.timezone]
+      );
     },
     async activeSchedules() {
       const { rows } = await pool.query("SELECT * FROM schedules WHERE active = TRUE");
@@ -73,8 +81,20 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
           taskType: row.task_type,
           cron: row.cron,
           payload: row.payload,
-          active: Boolean(row.active)
+          active: Boolean(row.active),
+          timezone: row.timezone
         }));
+    },
+    async allSchedules() {
+      const { rows } = await pool.query("SELECT * FROM schedules ORDER BY created_at ASC");
+      return rows.map((row) => ({
+        id: row.id,
+        taskType: row.task_type,
+        cron: row.cron,
+        payload: row.payload,
+        active: Boolean(row.active),
+        timezone: row.timezone
+      }));
     },
     async claimUpdate(updateId) {
       const result = await pool.query(

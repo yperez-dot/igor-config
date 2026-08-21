@@ -31,7 +31,8 @@ test("persists tasks and scheduled work with metadata-only audit events", async 
     taskType: "carrier_update",
     cron: "0 8 * * 1",
     payload: { source: "carrier portal" },
-    active: true
+    active: true,
+    timezone: "America/New_York"
   }]);
 
   await store.close();

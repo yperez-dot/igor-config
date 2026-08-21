@@ -44,3 +44,5 @@ OpenClaw remains the production source of truth until each capability below is t
 - The legacy bot’s production token and webhook must remain unchanged until final cutover.
 
 The authenticated endpoint `GET /v1/migration/status` mirrors this inventory for future dashboards.
+
+For the currently staged cron definitions and their safety gates, see [scheduled-work migration](SCHEDULE-MIGRATION.md).

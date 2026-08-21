@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "lint": "node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js"
+    "lint": "node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js"
   },
   "engines": {
     "node": ">=20"

@@ -4,6 +4,7 @@ import cron from "node-cron";
 import { createStore } from "./store.js";
 import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
+import { legacySchedules } from "./legacy-schedules.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -69,11 +70,12 @@ function scheduleTask(schedule) {
       payload: { ...schedule.payload, scheduleId: schedule.id }
     });
     await store.record("schedule.triggered", schedule.id, { taskId: task.id });
-  });
+  }, { timezone: schedule.timezone });
   scheduledJobs.set(schedule.id, job);
 }
 
 await store.ready;
+for (const schedule of legacySchedules) await store.seedSchedule(schedule);
 for (const schedule of await store.activeSchedules()) scheduleTask(schedule);
 
 app.get("/health", (_request, response) => {
@@ -134,6 +136,10 @@ app.get("/v1/migration/status", (_request, response) => {
   response.json({ summary: migrationSummary(), capabilities: migrationCapabilities });
 });
 
+app.get("/v1/schedules", async (_request, response) => {
+  response.json({ schedules: await store.allSchedules() });
+});
+
 app.post("/v1/tasks", async (request, response) => {
   const { type, payload = {} } = request.body ?? {};
   if (BLOCKED_TASK_TYPES.has(type)) {
@@ -158,7 +164,7 @@ app.get("/v1/tasks/:id", async (request, response) => {
 });
 
 app.post("/v1/schedules", async (request, response) => {
-  const { taskType, cron: expression, payload = {} } = request.body ?? {};
+  const { taskType, cron: expression, payload = {}, timezone = "America/New_York" } = request.body ?? {};
   if (!validTaskType(taskType) || !cron.validate(expression) || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     return response.status(400).json({ error: "Provide an allowed taskType, valid cron expression, and object payload." });
   }
@@ -166,7 +172,13 @@ app.post("/v1/schedules", async (request, response) => {
     return response.status(422).json({ error: "Schedule payload may not include PHI/PII identifiers. Use an approved internal record reference." });
   }
 
-  const schedule = await store.createSchedule({ id: crypto.randomUUID(), taskType, cron: expression, payload });
+  const schedule = await store.createSchedule({
+    id: crypto.randomUUID(),
+    taskType,
+    cron: expression,
+    payload,
+    timezone
+  });
   scheduleTask(schedule);
   return response.status(201).json({ schedule });
 });
