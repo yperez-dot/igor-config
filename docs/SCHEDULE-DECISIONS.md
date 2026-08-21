@@ -5,7 +5,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | Workflow | Current decision | Next action |
 | --- | --- | --- |
 | Netlify credit check | Candidate to retire | Confirm no longer needed, then explicitly disable the legacy job. |
-| Sales tracker sync | Keep | Inventory data sources, output, and approval requirements. |
+| Sales tracker sync | Keep weekly | Monday 7:00 AM ET; sync Google Sheets to Notion, refresh Executive Dashboard blocks, email leadership, and send Telegram summary. |
 | Industry Pulse weekly email | Keep | Migrate as draft/review/send workflow with recipient controls. |
 | SEP tracker health/process jobs | Keep | Audit source, pending-email behavior, alerts, and deployment path. |
 | Weekly SEO report | Keep | Rebuild as a sourced performance report with a reviewable action list. |
