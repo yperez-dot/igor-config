@@ -30,6 +30,10 @@ export function createStore(path) {
       detail TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS processed_updates (
+      update_id TEXT PRIMARY KEY,
+      created_at TEXT NOT NULL
+    );
   `);
 
   const now = () => new Date().toISOString();
@@ -69,6 +73,11 @@ export function createStore(path) {
           payload: JSON.parse(row.payload),
           active: Boolean(row.active)
         }));
+    },
+    claimUpdate(updateId) {
+      const result = db.prepare("INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?, ?)")
+        .run(String(updateId), now());
+      return result.changes === 1;
     },
     record,
     close() {
