@@ -8,12 +8,13 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "lint": "node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js"
+    "lint": "node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "csv-parse": "^7.0.2",
     "express": "^5.2.1",
     "node-cron": "^4.6.0",
     "pg": "^8.23.0"
