@@ -22,12 +22,14 @@ OpenClaw remains the production source of truth until each capability below is t
 | Backups and restore | Daily NAS backup + weekly Railway database backup to NAS | 2 | Scope, retention, encryption, restore test, backup owner |
 | Compliance/content | Research and draft production | 2 | CMS/carrier citations, bilingual review, human publication approval |
 | Agent Pulse newsletter | Scheduled email newsletter to agents | 4 | Recipient list, draft/compliance review, send approval, SMTP access |
-| Site-health alerts | Scheduled monitoring and Telegram alerts | 5 | Read-only test, alert-destination confirmation, false-positive review |
-| Carrier updates | Portal/email research and alerting | 6 | Source list, timestamp/citation requirement, reviewer |
-| Commission tracker | Existing Railway/Postgres tool | 7 | Read-only reconciliation before any write capability |
-| GHL lead workflows | Lead webhooks and operational processes | 8 | Consent/privacy review, redacted test records, write approval |
-| Email workflows | Internal reports and external messages | 9 | Approved sender, recipient review, draft/approval/send audit trail |
-| GitHub/Netlify/Railway deploys | Code and infrastructure actions | 10 | Least-privilege token, change approval, health check, rollback |
+| OpenClaw heartbeat | Carrier/calendar/urgent-email checks and memory state | 5 | Bounded source checks, quiet hours, token budget, report-only run |
+| Site-health alerts | Scheduled monitoring and Telegram alerts | 6 | Read-only test, alert-destination confirmation, false-positive review |
+| Carrier updates | Portal/email research and alerting | 7 | Source list, timestamp/citation requirement, reviewer |
+| Stale-lead digest | GHL enrichment, agent documents, and email | 8 | Data-minimization review, redacted test, recipient approval |
+| Commission tracker | Existing Railway/Postgres tool | 9 | Read-only reconciliation before any write capability |
+| GHL lead workflows | Lead webhooks and operational processes | 10 | Consent/privacy review, redacted test records, write approval |
+| Email workflows | Internal reports and external messages | 11 | Approved sender, recipient review, draft/approval/send audit trail |
+| GitHub/Netlify/Railway deploys | Code and infrastructure actions | 12 | Least-privilege token, change approval, health check, rollback |
 | Legacy runtime retirement | OpenClaw host and scripts | Last | All required rows above pass; leadership approval; rollback period ends |
 
 ## Migration method for every integration
@@ -50,3 +52,4 @@ The authenticated endpoint `GET /v1/migration/status` mirrors this inventory for
 
 For the currently staged cron definitions and their safety gates, see [scheduled-work migration](SCHEDULE-MIGRATION.md).
 For verified legacy backup coverage and v2 backup gates, see [backup migration](BACKUP-MIGRATION.md).
+For the distinction between live-audit evidence and legacy self-reports, see [workflow reconciliation](LEGACY-WORKFLOW-RECONCILIATION.md).

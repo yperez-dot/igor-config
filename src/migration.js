@@ -8,6 +8,14 @@ export const migrationCapabilities = [
     gate: "Test authorized staff and a production cutover/rollback plan."
   },
   {
+    id: "backups-and-restore",
+    area: "Backups and restore",
+    legacy: "Daily NAS backup and weekly Railway database backup to NAS",
+    v2: "Not connected",
+    state: "not_started",
+    gate: "Document scope, retention, encryption, restore test, and backup owner before cutover."
+  },
+  {
     id: "compliance-content",
     area: "Compliance and content",
     legacy: "Workspace rules and manual workflows",
@@ -30,6 +38,22 @@ export const migrationCapabilities = [
     v2: "Not connected",
     state: "not_started",
     gate: "Approved recipient list, draft/compliance review, send approval, SMTP access, and unsubscribe/recipient controls."
+  },
+  {
+    id: "openclaw-heartbeat",
+    area: "Proactive operational heartbeat",
+    legacy: "Approximate 30-minute OpenClaw polling for carrier, calendar, and urgent-email checks",
+    v2: "Not connected",
+    state: "not_started",
+    gate: "Bounded source-specific checks, quiet hours, token budget, alert rules, and report-only validation."
+  },
+  {
+    id: "stale-lead-digest",
+    area: "Stale lead digest",
+    legacy: "GHL lead enrichment, classification, agent documents, and email delivery",
+    v2: "Not connected",
+    state: "not_started",
+    gate: "GHL authorization, data-minimization review, redacted test, recipient approval, and no-write shadow run."
   },
   {
     id: "lead-management",
