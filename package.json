@@ -1,0 +1,21 @@
+{
+  "name": "igor-v2",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Operational control plane for the Igor v2 internal brokerage agent",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "lint": "node --check src/server.js && node --check src/store.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1",
+    "node-cron": "^4.6.0"
+  }
+}

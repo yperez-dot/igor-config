@@ -1,0 +1,128 @@
+import crypto from "node:crypto";
+import express from "express";
+import cron from "node-cron";
+import { createStore } from "./store.js";
+
+const PORT = Number(process.env.PORT ?? 3000);
+const DATABASE_PATH = process.env.DATABASE_PATH ?? "./data/igor.db";
+const API_KEY = process.env.IGOR_API_KEY;
+const BLOCKED_TASK_TYPES = new Set(["plan_recommendation", "enrollment_decision", "client_plan_selection"]);
+const SENSITIVE_FIELD = /^(ssn|socialSecurityNumber|medicareNumber|mbi|dateOfBirth|dob|memberId|policyNumber)$/i;
+const ALLOWED_TASK_TYPES = new Set([
+  "daily_operations",
+  "commission_tracking",
+  "compliance_research",
+  "content_draft",
+  "plan_comparison_research",
+  "lead_management",
+  "carrier_update",
+  "code_change",
+  "deployment"
+]);
+
+if (!API_KEY && process.env.NODE_ENV === "production") {
+  throw new Error("IGOR_API_KEY is required in production.");
+}
+
+const app = express();
+const store = createStore(DATABASE_PATH);
+const scheduledJobs = new Map();
+
+app.disable("x-powered-by");
+app.use(express.json({ limit: "100kb" }));
+
+function authenticated(request, response, next) {
+  if (!API_KEY) return next();
+  const supplied = request.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const isValid = supplied
+    && supplied.length === API_KEY.length
+    && crypto.timingSafeEqual(Buffer.from(supplied), Buffer.from(API_KEY));
+  if (!isValid) return response.status(401).json({ error: "Unauthorized" });
+  return next();
+}
+
+function validTaskType(type) {
+  return typeof type === "string" && ALLOWED_TASK_TYPES.has(type) && !BLOCKED_TASK_TYPES.has(type);
+}
+
+function hasSensitiveFields(value) {
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value).some(([key, child]) => SENSITIVE_FIELD.test(key) || hasSensitiveFields(child));
+}
+
+function scheduleTask(schedule) {
+  if (scheduledJobs.has(schedule.id)) return;
+  const job = cron.schedule(schedule.cron, () => {
+    const task = store.createTask({
+      id: crypto.randomUUID(),
+      type: schedule.taskType,
+      payload: { ...schedule.payload, scheduleId: schedule.id }
+    });
+    store.record("schedule.triggered", schedule.id, { taskId: task.id });
+  });
+  scheduledJobs.set(schedule.id, job);
+}
+
+for (const schedule of store.activeSchedules()) scheduleTask(schedule);
+
+app.get("/health", (_request, response) => {
+  response.json({ status: "ok", service: "igor-v2", scheduledJobs: scheduledJobs.size });
+});
+
+app.use(authenticated);
+
+app.post("/v1/tasks", (request, response) => {
+  const { type, payload = {} } = request.body ?? {};
+  if (BLOCKED_TASK_TYPES.has(type)) {
+    return response.status(422).json({
+      error: "Blocked task type. Igor v2 cannot make Medicare plan recommendations or enrollment decisions."
+    });
+  }
+  if (!validTaskType(type) || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return response.status(400).json({ error: "Provide an allowed task type and an object payload." });
+  }
+  if (hasSensitiveFields(payload)) {
+    return response.status(422).json({ error: "Task payload may not include PHI/PII identifiers. Use an approved internal record reference." });
+  }
+
+  const task = store.createTask({ id: crypto.randomUUID(), type, payload });
+  return response.status(202).json({ task });
+});
+
+app.get("/v1/tasks/:id", (request, response) => {
+  const task = store.getTask(request.params.id);
+  return task ? response.json({ task }) : response.status(404).json({ error: "Task not found" });
+});
+
+app.post("/v1/schedules", (request, response) => {
+  const { taskType, cron: expression, payload = {} } = request.body ?? {};
+  if (!validTaskType(taskType) || !cron.validate(expression) || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return response.status(400).json({ error: "Provide an allowed taskType, valid cron expression, and object payload." });
+  }
+  if (hasSensitiveFields(payload)) {
+    return response.status(422).json({ error: "Schedule payload may not include PHI/PII identifiers. Use an approved internal record reference." });
+  }
+
+  const schedule = store.createSchedule({ id: crypto.randomUUID(), taskType, cron: expression, payload });
+  scheduleTask(schedule);
+  return response.status(201).json({ schedule });
+});
+
+app.use((error, _request, response, _next) => {
+  if (error instanceof SyntaxError && "body" in error) {
+    return response.status(400).json({ error: "Invalid JSON body." });
+  }
+  console.error("Unhandled request error", error);
+  return response.status(500).json({ error: "Internal server error." });
+});
+
+const server = app.listen(PORT, () => console.log(`Igor v2 listening on ${PORT}`));
+
+function shutdown() {
+  server.close(() => {
+    store.close();
+    process.exit(0);
+  });
+}
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);
