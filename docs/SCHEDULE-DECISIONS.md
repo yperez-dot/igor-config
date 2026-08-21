@@ -4,7 +4,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 
 | Workflow | Current decision | Next action |
 | --- | --- | --- |
-| Netlify credit check | Candidate to retire | Confirm no longer needed, then explicitly disable the legacy job. |
+| Netlify credit check | Keep temporarily | Leave active on OpenClaw until its v2 replacement is active and verified; then retire it. |
 | Sales tracker sync | Keep weekly | Monday 7:00 AM ET; sync Google Sheets to Notion, refresh Executive Dashboard blocks, email leadership, and send Telegram summary. |
 | Industry Pulse weekly email | Keep and auto-send | Monday 8:00 AM ET bilingual sends to separate BCC lists. Fail closed and alert Telegram if either language, source validation, or recipient-list validation fails. |
 | SEP tracker health/process jobs | Consolidate and auto-publish | Replace the overlapping 9:00/9:15 legacy jobs with one Monday 9:00 AM pipeline: scan, validate, snapshot, deploy, health check, Telegram result, mark processed. |
