@@ -144,7 +144,7 @@ export const legacySchedules = [
     id: "legacy-openclaw-seo-weekly",
     title: "OpenClaw weekly SEO report",
     taskType: "daily_operations",
-    cron: "0 10 * * 1",
+    cron: "15 8 * * 1",
     timezone: "America/New_York",
     payload: { workflow: "seo_weekly_openclaw", mode: "shadow", source: "openclaw" }
   },

@@ -8,7 +8,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | Sales tracker sync | Keep weekly | Monday 7:00 AM ET; sync Google Sheets to Notion, refresh Executive Dashboard blocks, email leadership, and send Telegram summary. |
 | Industry Pulse weekly email | Keep and auto-send | Monday 8:00 AM ET bilingual sends to separate BCC lists. Fail closed and alert Telegram if either language, source validation, or recipient-list validation fails. |
 | SEP tracker health/process jobs | Consolidate and auto-publish | Replace the overlapping 9:00/9:15 legacy jobs with one Monday 9:00 AM pipeline: scan, validate, snapshot, deploy, health check, Telegram result, mark processed. |
-| Weekly SEO report | Keep | Rebuild as a sourced performance report with a reviewable action list. |
+| Weekly SEO report | Keep | Monday 8:15 AM ET in v2; sourced performance report with a reviewable action list and Telegram failure alert. |
 | Weekly system update check | Needs explanation | Inspect exact behavior before deciding. |
 | 2027-grid preparation reminder | Reschedule to October 1 | Replace the September 28 trigger with October 1, after carrier benefits go live. |
 | Weekly agent sales reports | Resumed | Corrected a legacy recipient-name alias, preserved a local backup of the mapping, and validated no current mapping is missing. Let the next scheduled run verify delivery. |
