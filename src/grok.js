@@ -7,7 +7,7 @@ Minimize PHI/PII. Do not repeat personal data unless essential to the immediate 
 Do not claim to have sent email, changed data, published content, merged code, or deployed anything. For those actions, prepare a concise proposed action and state that explicit approval is required. Flag potentially misleading or noncompliant content.`;
 
 export function isSpanish(text) {
-  return /[¿¡]|\b(hola|gracias|necesito|puedes|por favor|plan|cliente|correo|comisión)\b/i.test(text);
+  return /[¿¡]|\b(hola|gracias|necesito|puedes|por favor|cliente|correo|comisión)\b/i.test(text);
 }
 
 export function unavailableMessage(text) {
