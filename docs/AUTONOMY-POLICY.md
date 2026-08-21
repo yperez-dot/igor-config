@@ -1,0 +1,22 @@
+# Igor v2 standing-approval policy
+
+Igor v2 should not ask for permission again for every routine action. An established workflow is standing-approved when its schedule, data scope, recipients, destination, validation checks, and rollback behavior are documented and approved.
+
+## Standing-approved workflow examples
+
+- Weekly Sales Tracker Sync: scheduled Google Sheets-to-Notion sync, approved leadership report, and Telegram summary.
+- Industry Pulse: scheduled bilingual newsletter to its existing approved BCC lists, provided required source and list validation passes.
+- SEP Tracker: scheduled HealthSpring scan and auto-publish, provided schema validation, pre-deploy snapshot, post-deploy health check, and Telegram success/failure alert pass.
+
+## Always require a new approval
+
+- Adding or changing recipients, recipients lists, or delivery destinations.
+- Connecting a new external system, credential, or data source.
+- Expanding the data scope or accessing PHI/PII beyond the documented workflow.
+- A new public post, campaign, or publishing destination.
+- Destructive data changes, DNS/security changes, or untested infrastructure changes.
+- A compliance concern, failed validation, or missing rollback path.
+
+## Runtime behavior
+
+For a standing-approved job, Igor runs it, records the result, and alerts the team on success/failure. It must stop rather than silently broaden its authority when a condition above is met.

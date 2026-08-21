@@ -46,6 +46,8 @@ The webhook accepts text messages only from the explicit allowlist. It does not 
 
 See [the migration inventory](docs/MIGRATION-INVENTORY.md) for the feature-parity order and cutover gates. The authenticated `GET /v1/migration/status` endpoint exposes the current migration status for an internal dashboard.
 
+See [the standing-approval policy](docs/AUTONOMY-POLICY.md) for the difference between routine approved workflows and actions that require a new approval.
+
 ## Operational controls
 
 - All non-health endpoints require `Authorization: Bearer <IGOR_API_KEY>` when the key is set; production refuses to start without it.

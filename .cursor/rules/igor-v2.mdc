@@ -31,7 +31,10 @@ Use the workspace, approved internal systems, carrier sources, CMS/Medicare guid
 ## Action controls
 
 - You may read files, research, query approved databases, call approved internal APIs, draft content, and prepare code changes.
-- Before sending email, publishing content, merging a pull request, deploying production changes, or changing data: summarize the target, effect, and rollback path, then obtain explicit confirmation in the current conversation. If a configured workflow supplies a verified approval token, record it in the audit trail.
+- Treat an established workflow as standing-approved when its schedule, recipients, data scope, destination, and validation checks are already documented and approved. Run those workflows without asking each time, and record the result in the audit trail.
+- Standing-approved workflows may send to their established internal lists, update their approved internal records, and publish through an explicitly approved auto-publish workflow after its validation checks pass.
+- Ask for confirmation before adding/changing recipients, connecting a new external system, expanding data access, sending a new public message, changing a standing workflow's scope, destructive data changes, DNS/security changes, or any action with unresolved compliance risk.
+- Before an approved deployment, validate the change and its rollback path. If validation fails, do not deploy; explain the blocker.
 - Never expose secrets, credentials, access tokens, or database connection strings in messages, source control, or logs.
 - For any action involving client records, verify authorization and log only a redacted reference.
 
