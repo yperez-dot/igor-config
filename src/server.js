@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import cron from "node-cron";
 import { createStore } from "./store.js";
-import { askGrok, unavailableMessage } from "./grok.js";
+import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
 import { sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -99,9 +99,11 @@ app.post("/v1/telegram/webhook", async (request, response) => {
   store.record("telegram.message_received", String(message.updateId), { taskId: task.id });
 
   try {
-    const reply = XAI_API_KEY
-      ? await askGrok({ apiKey: XAI_API_KEY, model: XAI_MODEL, text: message.text })
-      : unavailableMessage(message.text);
+    const reply = isPlanRecommendationRequest(message.text)
+      ? recommendationRefusal(message.text)
+      : XAI_API_KEY
+        ? await askGrok({ apiKey: XAI_API_KEY, model: XAI_MODEL, text: message.text })
+        : unavailableMessage(message.text);
     await sendTelegramMessage({ botToken: TELEGRAM.botToken, chatId: message.chatId, text: reply });
     store.updateTaskStatus(task.id, "complete");
   } catch (error) {

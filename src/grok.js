@@ -16,6 +16,16 @@ export function unavailableMessage(text) {
     : "Igor v2 is configured, but the Grok connection is not active yet. Ask Yahoska to complete the setup.";
 }
 
+export function isPlanRecommendationRequest(text) {
+  return /\b(recommend|recommendation|which\s+(medicare\s+)?plan|best\s+(medicare\s+)?plan|should\s+i\s+(choose|enroll)|what\s+plan\s+should)\b|(?:qué|cual|cuál)\s+plan\s+(?:me\s+)?(?:recomiendas|conviene)|mejor\s+plan/i.test(text);
+}
+
+export function recommendationRefusal(text) {
+  return isSpanish(text)
+    ? "No puedo recomendar ni elegir un plan de Medicare para una persona. Un agente con licencia puede revisar las opciones y ayudar con esa decisión."
+    : "I can’t recommend or choose a Medicare plan for an individual. A licensed agent can review the options and help with that decision.";
+}
+
 export async function askGrok({ apiKey, model, text, fetchImpl = fetch }) {
   const response = await fetchImpl(XAI_CHAT_COMPLETIONS_URL, {
     method: "POST",

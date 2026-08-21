@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { supportedMessage, telegramConfig } from "../src/telegram.js";
-import { isSpanish, unavailableMessage } from "../src/grok.js";
+import { isPlanRecommendationRequest, isSpanish, recommendationRefusal, unavailableMessage } from "../src/grok.js";
 
 test("Telegram configuration parses an explicit team allowlist", () => {
   const config = telegramConfig({
@@ -29,4 +29,10 @@ test("only allowlisted text messages are accepted", () => {
 test("unavailable message preserves Spanish behavior", () => {
   assert.equal(isSpanish("¿Puedes revisar esto?"), true);
   assert.match(unavailableMessage("¿Puedes revisar esto?"), /Grok/);
+});
+
+test("plan recommendation requests are deterministically refused", () => {
+  assert.equal(isPlanRecommendationRequest("Which Medicare plan should I choose?"), true);
+  assert.equal(isPlanRecommendationRequest("¿Qué plan me recomiendas?"), true);
+  assert.match(recommendationRefusal("Which Medicare plan should I choose?"), /licensed agent/i);
 });
