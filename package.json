@@ -9,7 +9,8 @@
     "worker": "IGOR_SERVICE_ROLE=worker node src/entry.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "lint": "node --check src/entry.js && node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js && node --check src/worker-core.js && node --check src/worker.js"
+    "lint": "node --check src/entry.js && node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js && node --check src/worker-core.js && node --check src/worker.js && node --check scripts/queue-sales-sync.js",
+    "queue-sales-test": "node scripts/queue-sales-sync.js"
   },
   "engines": {
     "node": ">=20"
