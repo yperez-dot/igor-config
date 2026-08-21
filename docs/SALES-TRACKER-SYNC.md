@@ -23,3 +23,13 @@ Runs Monday at 7:00 AM ET.
 The legacy job also updates Executive Dashboard blocks using a second script. That behavior remains out of v2 until its exact block IDs, update semantics, and rollback checks are audited.
 
 Run the core in `dry-run` mode first. Apply mode is only for the standing-approved Monday workflow after Notion credentials and the source URL are configured.
+
+## Railway worker
+
+Deploy a second Railway service from this repository with start command:
+
+```sh
+npm run worker
+```
+
+It claims queued tasks atomically from PostgreSQL. Set `TELEGRAM_ALERT_CHAT_ID` to the approved internal alert chat so completion, abort, and failure summaries are delivered there. The worker handles Sales Tracker Sync tasks today; other scheduled workflows remain disabled until their handlers are implemented.

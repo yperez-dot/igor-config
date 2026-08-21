@@ -8,7 +8,9 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       status TEXT NOT NULL,
       payload JSONB NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      locked_at TIMESTAMPTZ
     );
     CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
@@ -31,6 +33,8 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
   `);
 
   const record = async (eventType, subjectId, detail) => {
@@ -57,6 +61,34 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     async updateTaskStatus(id, status) {
       await pool.query("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", [status, id]);
       await record("task.status_changed", id, { status });
+      return this.getTask(id);
+    },
+    async claimQueuedTask() {
+      const { rows } = await pool.query(`
+        WITH candidate AS (
+          SELECT id FROM tasks
+          WHERE status = 'queued'
+          ORDER BY created_at
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        UPDATE tasks
+        SET status = 'running', attempts = attempts + 1, locked_at = NOW(), updated_at = NOW()
+        WHERE id = (SELECT id FROM candidate)
+        RETURNING *
+      `);
+      if (!rows[0]) return null;
+      await record("task.claimed", rows[0].id, { attempts: rows[0].attempts });
+      return rows[0];
+    },
+    async completeTask(id, detail = {}) {
+      await pool.query("UPDATE tasks SET status = 'complete', locked_at = NULL, updated_at = NOW() WHERE id = $1", [id]);
+      await record("task.completed", id, detail);
+      return this.getTask(id);
+    },
+    async failTask(id, detail = {}) {
+      await pool.query("UPDATE tasks SET status = 'failed', locked_at = NULL, updated_at = NOW() WHERE id = $1", [id]);
+      await record("task.failed", id, detail);
       return this.getTask(id);
     },
     async createSchedule({ id, taskType, cron, payload, active = true, timezone = "America/New_York" }) {

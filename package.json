@@ -6,9 +6,10 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
+    "worker": "node src/worker.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "lint": "node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js"
+    "lint": "node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js && node --check src/worker-core.js && node --check src/worker.js"
   },
   "engines": {
     "node": ">=20"
