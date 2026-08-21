@@ -41,5 +41,5 @@ Do not deploy without a persistent volume: local container storage is ephemeral 
 ## Operational controls
 
 - All non-health endpoints require `Authorization: Bearer <IGOR_API_KEY>` when the key is set; production refuses to start without it.
-- Task and schedule audit events contain only task metadata, not an application-level copy of request data beyond the encrypted-at-rest database configuration provided by the host. Keep PHI/PII out of payloads.
+- Task and schedule audit events record task type/status metadata; task payloads are persisted separately in SQLite. Keep PHI/PII out of payloads and configure the host's storage encryption and access controls.
 - This starter records and queues work; it does not itself send email, access carrier portals, merge PRs, or deploy code. Those integrations must enforce the approval and authorization rules in the Cursor contract.
