@@ -7,5 +7,6 @@ test("legacy schedules are Florida-time shadow definitions", () => {
   assert.ok(legacySchedules.every((schedule) => schedule.timezone === "America/New_York"));
   assert.ok(legacySchedules.every((schedule) => schedule.payload.mode === "shadow"));
   assert.equal(legacySchedules.find((schedule) => schedule.id === "legacy-igor-watchdog").cron, "*/5 * * * *");
-  assert.ok(legacySchedules.filter((schedule) => schedule.payload.source === "openclaw").length >= 11);
+  assert.ok(legacySchedules.filter((schedule) => schedule.payload.source === "openclaw").length >= 9);
+  assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-sep-update-pipeline").cron, "0 9 * * 1");
 });

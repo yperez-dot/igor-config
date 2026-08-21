@@ -128,20 +128,17 @@ export const legacySchedules = [
     payload: { workflow: "system_update_check", mode: "shadow", source: "openclaw" }
   },
   {
-    id: "legacy-openclaw-sep-health-check",
-    title: "SEP tracker health check",
+    id: "v2-sep-update-pipeline",
+    title: "SEP tracker update pipeline",
     taskType: "daily_operations",
     cron: "0 9 * * 1",
     timezone: "America/New_York",
-    payload: { workflow: "sep_tracker_health", mode: "shadow", source: "openclaw" }
-  },
-  {
-    id: "legacy-openclaw-sep-process",
-    title: "SEP tracker pending-email processing",
-    taskType: "daily_operations",
-    cron: "15 9 * * 1",
-    timezone: "America/New_York",
-    payload: { workflow: "sep_tracker_process", mode: "shadow", source: "openclaw" }
+    payload: {
+      workflow: "sep_update_pipeline",
+      mode: "shadow",
+      source: "v2",
+      replaces: ["HealthSpring email monitor", "HealthSpring pending-email processing"]
+    }
   },
   {
     id: "legacy-openclaw-seo-weekly",

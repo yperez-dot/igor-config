@@ -31,8 +31,7 @@ The OpenClaw scheduler has a separate set of active jobs that are not shown by `
 | Sales tracker sync | Monday 7:00 AM | OK |
 | Industry Pulse weekly email | Monday 8:00 AM | OK |
 | System update check | Monday 9:00 AM | OK |
-| SEP tracker health check | Monday 9:00 AM | OK |
-| SEP pending-email processing | Monday 9:15 AM | OK |
+| SEP tracker health/process pair | Monday 9:00 / 9:15 AM | Consolidate into one v2 9:00 AM pipeline |
 | SEO report | Monday 10:00 AM | OK |
 | Agent sales reports | Friday 10:00 AM | **Error; requires diagnosis** |
 | 2027-grid preparation reminder | September 28, 9:00 AM | Idle until due |
