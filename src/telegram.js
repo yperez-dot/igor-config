@@ -60,7 +60,9 @@ export async function registerTelegramWebhook({ botToken, webhookSecret, webhook
     }),
     signal: AbortSignal.timeout(20_000)
   });
-  if (!response.ok) throw new Error(`Telegram webhook registration failed with HTTP ${response.status}`);
   const body = await response.json();
+  if (!response.ok) {
+    throw new Error(`Telegram webhook registration failed with HTTP ${response.status}: ${body.description ?? "unknown error"}`);
+  }
   if (!body.ok) throw new Error(`Telegram webhook registration rejected: ${body.description ?? "unknown error"}`);
 }
