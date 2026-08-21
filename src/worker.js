@@ -1,15 +1,27 @@
 import { createStore } from "./store.js";
 import { processTask } from "./worker-core.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
+import http from "node:http";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const POLL_INTERVAL_MS = Number(process.env.WORKER_POLL_INTERVAL_MS ?? 5_000);
 const TELEGRAM = telegramConfig();
+const PORT = Number(process.env.PORT ?? 3000);
 
 if (!DATABASE_URL) throw new Error("DATABASE_URL is required for the worker.");
 
 const store = createStore({ connectionString: DATABASE_URL });
 await store.ready;
+const healthServer = http.createServer((request, response) => {
+  if (request.url === "/health") {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ status: "ok", service: "igor-v2-worker" }));
+    return;
+  }
+  response.writeHead(404);
+  response.end();
+});
+healthServer.listen(PORT);
 
 async function notify(text) {
   if (!TELEGRAM.botToken || !process.env.TELEGRAM_ALERT_CHAT_ID) return;
@@ -46,4 +58,5 @@ while (running) {
   if (!worked) await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 }
 
+await new Promise((resolve) => healthServer.close(resolve));
 await store.close();
