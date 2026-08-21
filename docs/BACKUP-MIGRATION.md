@@ -4,10 +4,19 @@
 
 | Backup | Schedule | Scope | Retention | Status |
 | --- | --- | --- | --- | --- |
-| Daily agent backup | 3:00 AM | Encrypted OpenClaw directory archive copied to NAS | 7 local copies | Keep running |
-| Weekly database backup | Sunday 4:00 AM | Encrypted PostgreSQL dump copied to NAS | 4 local copies | Keep running |
+| Daily agent backup | 3:00 AM | Encrypted OpenClaw directory archive intended for NAS | 7 local copies | **Failing:** NAS authentication rejected since at least Aug. 13 |
+| Weekly database backup | Sunday 4:00 AM | Encrypted PostgreSQL dump intended for NAS | 4 local copies | **Failing:** `pg_dump` is unavailable |
 
 The daily backup excludes package/cache directories, previous backups, and logs. The weekly backup skips safely when its legacy database connection is not configured.
+
+## Immediate legacy recovery
+
+Do not retire, rotate, or replace the legacy backup system until both failures are corrected and a restore test succeeds:
+
+1. Repair the NAS backup account/key authorization without disabling SSH host-key verification.
+2. Install/provide the PostgreSQL client required for `pg_dump`.
+3. Run controlled backup tests and verify both files reach the NAS.
+4. Test restoring a copy into a non-production location.
 
 ## v2 decision
 
