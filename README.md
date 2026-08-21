@@ -40,7 +40,7 @@ Do not deploy without managed PostgreSQL: task and schedule state must survive s
 
 ## Telegram and Grok
 
-Telegram is intentionally disabled until all of `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `TELEGRAM_ALLOWED_USER_IDS` are set. `XAI_API_KEY` enables Grok responses; `XAI_MODEL` defaults to `grok-4.6`.
+Telegram is intentionally disabled until all of `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, and `TELEGRAM_ALLOWED_USER_IDS` are set. Set `TELEGRAM_WEBHOOK_URL` to the public `/v1/telegram/webhook` endpoint to register the webhook at startup. `XAI_API_KEY` enables Grok responses; `XAI_MODEL` defaults to `grok-4.6`.
 
 The webhook accepts text messages only from the explicit allowlist. It does not persist Telegram message text; it records a metadata-only task/audit reference and sends the text directly to Grok for the current response. Follow [the Telegram cutover runbook](docs/TELEGRAM-CUTOVER.md) and begin with a separate test bot. A Telegram bot supports only one webhook, so pointing the current production bot at v2 is a cutover, not a shadow-mode test.
 

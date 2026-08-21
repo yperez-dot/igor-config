@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { supportedMessage, telegramConfig } from "../src/telegram.js";
+import { registerTelegramWebhook, supportedMessage, telegramConfig } from "../src/telegram.js";
 import { isPlanRecommendationRequest, isSpanish, recommendationRefusal, unavailableMessage } from "../src/grok.js";
 
 test("Telegram configuration parses an explicit team allowlist", () => {
@@ -35,4 +35,24 @@ test("plan recommendation requests are deterministically refused", () => {
   assert.equal(isPlanRecommendationRequest("Which Medicare plan should I choose?"), true);
   assert.equal(isPlanRecommendationRequest("¿Qué plan me recomiendas?"), true);
   assert.match(recommendationRefusal("Which Medicare plan should I choose?"), /licensed agent/i);
+});
+
+test("webhook registration sends the HTTPS endpoint and secret", async () => {
+  let request;
+  await registerTelegramWebhook({
+    botToken: "test-token",
+    webhookSecret: "test-secret",
+    webhookUrl: "https://igor.example.com/v1/telegram/webhook",
+    fetchImpl: async (url, options) => {
+      request = { url, ...options };
+      return { ok: true, json: async () => ({ ok: true }) };
+    }
+  });
+  assert.match(request.url, /bottest-token\/setWebhook$/);
+  assert.deepEqual(JSON.parse(request.body), {
+    url: "https://igor.example.com/v1/telegram/webhook",
+    secret_token: "test-secret",
+    allowed_updates: ["message"],
+    drop_pending_updates: false
+  });
 });

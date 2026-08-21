@@ -47,3 +47,20 @@ export async function sendTelegramMessage({ botToken, chatId, text, fetchImpl = 
   });
   if (!response.ok) throw new Error(`Telegram send failed with HTTP ${response.status}`);
 }
+
+export async function registerTelegramWebhook({ botToken, webhookSecret, webhookUrl, fetchImpl = fetch }) {
+  const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/setWebhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: webhookUrl,
+      secret_token: webhookSecret,
+      allowed_updates: ["message"],
+      drop_pending_updates: false
+    }),
+    signal: AbortSignal.timeout(20_000)
+  });
+  if (!response.ok) throw new Error(`Telegram webhook registration failed with HTTP ${response.status}`);
+  const body = await response.json();
+  if (!body.ok) throw new Error(`Telegram webhook registration rejected: ${body.description ?? "unknown error"}`);
+}

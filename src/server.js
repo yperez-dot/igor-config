@@ -3,7 +3,7 @@ import express from "express";
 import cron from "node-cron";
 import { createStore } from "./store.js";
 import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
-import { sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
+import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -11,6 +11,7 @@ const API_KEY = process.env.IGOR_API_KEY;
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_MODEL = process.env.XAI_MODEL ?? "grok-4.6";
 const TELEGRAM = telegramConfig();
+const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 const BLOCKED_TASK_TYPES = new Set(["plan_recommendation", "enrollment_decision", "client_plan_selection"]);
 const SENSITIVE_FIELD = /^(ssn|socialSecurityNumber|medicareNumber|mbi|dateOfBirth|dob|memberId|policyNumber)$/i;
 const ALLOWED_TASK_TYPES = new Set([
@@ -27,6 +28,9 @@ const ALLOWED_TASK_TYPES = new Set([
 
 if ((!API_KEY || !DATABASE_URL) && process.env.NODE_ENV === "production") {
   throw new Error("IGOR_API_KEY and DATABASE_URL are required in production.");
+}
+if (TELEGRAM_WEBHOOK_URL && !TELEGRAM_WEBHOOK_URL.startsWith("https://")) {
+  throw new Error("TELEGRAM_WEBHOOK_URL must use HTTPS.");
 }
 
 const app = express();
@@ -171,6 +175,16 @@ app.use((error, _request, response, _next) => {
 });
 
 const server = app.listen(PORT, () => console.log(`Igor v2 listening on ${PORT}`));
+if (TELEGRAM_WEBHOOK_URL && TELEGRAM.botToken && TELEGRAM.webhookSecret) {
+  registerTelegramWebhook({
+    botToken: TELEGRAM.botToken,
+    webhookSecret: TELEGRAM.webhookSecret,
+    webhookUrl: TELEGRAM_WEBHOOK_URL
+  }).then(
+    () => console.log("Telegram webhook registered."),
+    (error) => console.error("Telegram webhook registration failed.", error.message)
+  );
+}
 
 function shutdown() {
   server.close(() => {
