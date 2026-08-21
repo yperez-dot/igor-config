@@ -5,7 +5,7 @@ Igor v2 is the internal operations-agent configuration and control-plane service
 ## What is included
 
 - `.cursor/rules/igor-v2.mdc` — always-on Cursor operating contract: bilingual behavior, privacy discipline, Medicare compliance boundaries, and approval requirements for external actions.
-- `src/` — a Node service for authenticated task intake, SQLite-backed task/schedule persistence, audit events, Telegram webhook handling, and Grok responses.
+- `src/` — a Node service for authenticated task intake, PostgreSQL-backed task/schedule persistence, audit events, Telegram webhook handling, and Grok responses.
 - `railway.toml` — Railway deployment configuration.
 
 The service deliberately rejects plan-recommendation and enrollment-decision tasks. It is an operational assistant, not a substitute for a licensed agent.
@@ -17,7 +17,7 @@ npm install
 IGOR_API_KEY=replace-with-a-long-random-secret npm start
 ```
 
-The database defaults to `./data/igor.db`. Set `DATABASE_PATH` to an attached persistent volume path in production.
+Set `DATABASE_URL` to a managed PostgreSQL connection string. Railway supplies it automatically when its PostgreSQL service is connected.
 
 ```sh
 curl http://localhost:3000/health
@@ -32,11 +32,11 @@ Allowed task types: `daily_operations`, `commission_tracking`, `compliance_resea
 ## Railway deployment
 
 1. Create a Railway service from this repository.
-2. Attach a persistent volume and set `DATABASE_PATH` to a path on that volume, such as `/data/igor.db`.
+2. Add a Railway PostgreSQL service and reference its `DATABASE_URL` from the `igor-v2` service.
 3. Set a strong `IGOR_API_KEY` secret and `NODE_ENV=production`.
 4. Deploy. Railway uses `/health` for its health check.
 
-Do not deploy without a persistent volume: local container storage is ephemeral and scheduled work/task history would be lost.
+Do not deploy without managed PostgreSQL: task and schedule state must survive service redeployments.
 
 ## Telegram and Grok
 
@@ -47,5 +47,5 @@ The webhook accepts text messages only from the explicit allowlist. It does not 
 ## Operational controls
 
 - All non-health endpoints require `Authorization: Bearer <IGOR_API_KEY>` when the key is set; production refuses to start without it.
-- Task and schedule audit events record task type/status metadata; task payloads are persisted separately in SQLite. Keep PHI/PII out of payloads and configure the host's storage encryption and access controls.
+- Task and schedule audit events record task type/status metadata; task payloads are persisted separately in PostgreSQL. Keep PHI/PII out of payloads and configure the host's storage encryption and access controls.
 - This starter can reply through an authorized Telegram bot. It does not itself send email, access carrier portals, merge PRs, or deploy code. Those integrations must enforce the approval and authorization rules in the Cursor contract.

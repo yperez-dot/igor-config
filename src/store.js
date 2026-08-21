@@ -1,87 +1,91 @@
-import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import pg from "pg";
 
-export function createStore(path) {
-  mkdirSync(dirname(path), { recursive: true });
-  const db = new Database(path);
-  db.pragma("journal_mode = WAL");
-  db.exec(`
+export function createStore({ connectionString, pool = new pg.Pool({ connectionString }) }) {
+  const ready = pool.query(`
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
       status TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      payload JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
       task_type TEXT NOT NULL,
       cron TEXT NOT NULL,
-      payload TEXT NOT NULL,
-      active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
+      payload JSONB NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS audit_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id BIGSERIAL PRIMARY KEY,
       event_type TEXT NOT NULL,
       subject_id TEXT,
-      detail TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      detail JSONB NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS processed_updates (
       update_id TEXT PRIMARY KEY,
-      created_at TEXT NOT NULL
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 
-  const now = () => new Date().toISOString();
-  const record = (eventType, subjectId, detail) =>
-    db.prepare("INSERT INTO audit_events (event_type, subject_id, detail, created_at) VALUES (?, ?, ?, ?)")
-      .run(eventType, subjectId, JSON.stringify(detail), now());
+  const record = async (eventType, subjectId, detail) => {
+    await pool.query(
+      "INSERT INTO audit_events (event_type, subject_id, detail) VALUES ($1, $2, $3)",
+      [eventType, subjectId, detail]
+    );
+  };
 
   return {
-    createTask({ id, type, payload }) {
-      const timestamp = now();
-      db.prepare("INSERT INTO tasks (id, type, status, payload, created_at, updated_at) VALUES (?, ?, 'queued', ?, ?, ?)")
-        .run(id, type, JSON.stringify(payload), timestamp, timestamp);
-      record("task.created", id, { type });
+    ready,
+    async createTask({ id, type, payload }) {
+      await pool.query(
+        "INSERT INTO tasks (id, type, status, payload) VALUES ($1, $2, 'queued', $3)",
+        [id, type, payload]
+      );
+      await record("task.created", id, { type });
       return this.getTask(id);
     },
-    getTask(id) {
-      const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-      return row && { ...row, payload: JSON.parse(row.payload) };
+    async getTask(id) {
+      const { rows } = await pool.query("SELECT * FROM tasks WHERE id = $1", [id]);
+      return rows[0];
     },
-    updateTaskStatus(id, status) {
-      db.prepare("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?").run(status, now(), id);
-      record("task.status_changed", id, { status });
+    async updateTaskStatus(id, status) {
+      await pool.query("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", [status, id]);
+      await record("task.status_changed", id, { status });
       return this.getTask(id);
     },
-    createSchedule({ id, taskType, cron, payload }) {
-      db.prepare("INSERT INTO schedules (id, task_type, cron, payload, created_at) VALUES (?, ?, ?, ?, ?)")
-        .run(id, taskType, cron, JSON.stringify(payload), now());
-      record("schedule.created", id, { taskType, cron });
+    async createSchedule({ id, taskType, cron, payload }) {
+      await pool.query(
+        "INSERT INTO schedules (id, task_type, cron, payload) VALUES ($1, $2, $3, $4)",
+        [id, taskType, cron, payload]
+      );
+      await record("schedule.created", id, { taskType, cron });
       return { id, taskType, cron, payload, active: true };
     },
-    activeSchedules() {
-      return db.prepare("SELECT * FROM schedules WHERE active = 1").all()
+    async activeSchedules() {
+      const { rows } = await pool.query("SELECT * FROM schedules WHERE active = TRUE");
+      return rows
         .map((row) => ({
           id: row.id,
           taskType: row.task_type,
           cron: row.cron,
-          payload: JSON.parse(row.payload),
+          payload: row.payload,
           active: Boolean(row.active)
         }));
     },
-    claimUpdate(updateId) {
-      const result = db.prepare("INSERT OR IGNORE INTO processed_updates (update_id, created_at) VALUES (?, ?)")
-        .run(String(updateId), now());
-      return result.changes === 1;
+    async claimUpdate(updateId) {
+      const result = await pool.query(
+        "INSERT INTO processed_updates (update_id) VALUES ($1) ON CONFLICT DO NOTHING",
+        [String(updateId)]
+      );
+      return result.rowCount === 1;
     },
     record,
-    close() {
-      db.close();
+    async close() {
+      await pool.end();
     }
   };
 }

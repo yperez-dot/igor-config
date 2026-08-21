@@ -6,7 +6,7 @@ import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailabl
 import { sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
-const DATABASE_PATH = process.env.DATABASE_PATH ?? "./data/igor.db";
+const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.IGOR_API_KEY;
 const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_MODEL = process.env.XAI_MODEL ?? "grok-4.6";
@@ -25,12 +25,12 @@ const ALLOWED_TASK_TYPES = new Set([
   "deployment"
 ]);
 
-if (!API_KEY && process.env.NODE_ENV === "production") {
-  throw new Error("IGOR_API_KEY is required in production.");
+if ((!API_KEY || !DATABASE_URL) && process.env.NODE_ENV === "production") {
+  throw new Error("IGOR_API_KEY and DATABASE_URL are required in production.");
 }
 
 const app = express();
-const store = createStore(DATABASE_PATH);
+const store = createStore({ connectionString: DATABASE_URL });
 const scheduledJobs = new Map();
 
 app.disable("x-powered-by");
@@ -57,18 +57,19 @@ function hasSensitiveFields(value) {
 
 function scheduleTask(schedule) {
   if (scheduledJobs.has(schedule.id)) return;
-  const job = cron.schedule(schedule.cron, () => {
-    const task = store.createTask({
+  const job = cron.schedule(schedule.cron, async () => {
+    const task = await store.createTask({
       id: crypto.randomUUID(),
       type: schedule.taskType,
       payload: { ...schedule.payload, scheduleId: schedule.id }
     });
-    store.record("schedule.triggered", schedule.id, { taskId: task.id });
+    await store.record("schedule.triggered", schedule.id, { taskId: task.id });
   });
   scheduledJobs.set(schedule.id, job);
 }
 
-for (const schedule of store.activeSchedules()) scheduleTask(schedule);
+await store.ready;
+for (const schedule of await store.activeSchedules()) scheduleTask(schedule);
 
 app.get("/health", (_request, response) => {
   response.json({
@@ -89,14 +90,14 @@ app.post("/v1/telegram/webhook", async (request, response) => {
 
   const message = supportedMessage(request.body, TELEGRAM.allowedUserIds);
   if (!message) return response.sendStatus(200);
-  if (!store.claimUpdate(message.updateId)) return response.sendStatus(200);
+  if (!await store.claimUpdate(message.updateId)) return response.sendStatus(200);
 
-  const task = store.createTask({
+  const task = await store.createTask({
     id: crypto.randomUUID(),
     type: "daily_operations",
     payload: { source: "telegram", updateId: message.updateId }
   });
-  store.record("telegram.message_received", String(message.updateId), { taskId: task.id });
+  await store.record("telegram.message_received", String(message.updateId), { taskId: task.id });
 
   try {
     const reply = isPlanRecommendationRequest(message.text)
@@ -105,10 +106,10 @@ app.post("/v1/telegram/webhook", async (request, response) => {
         ? await askGrok({ apiKey: XAI_API_KEY, model: XAI_MODEL, text: message.text })
         : unavailableMessage(message.text);
     await sendTelegramMessage({ botToken: TELEGRAM.botToken, chatId: message.chatId, text: reply });
-    store.updateTaskStatus(task.id, "complete");
+    await store.updateTaskStatus(task.id, "complete");
   } catch (error) {
-    store.updateTaskStatus(task.id, "failed");
-    store.record("telegram.message_failed", String(message.updateId), { taskId: task.id, reason: error.message });
+    await store.updateTaskStatus(task.id, "failed");
+    await store.record("telegram.message_failed", String(message.updateId), { taskId: task.id, reason: error.message });
     try {
       await sendTelegramMessage({
         botToken: TELEGRAM.botToken,
@@ -124,7 +125,7 @@ app.post("/v1/telegram/webhook", async (request, response) => {
 
 app.use(authenticated);
 
-app.post("/v1/tasks", (request, response) => {
+app.post("/v1/tasks", async (request, response) => {
   const { type, payload = {} } = request.body ?? {};
   if (BLOCKED_TASK_TYPES.has(type)) {
     return response.status(422).json({
@@ -138,16 +139,16 @@ app.post("/v1/tasks", (request, response) => {
     return response.status(422).json({ error: "Task payload may not include PHI/PII identifiers. Use an approved internal record reference." });
   }
 
-  const task = store.createTask({ id: crypto.randomUUID(), type, payload });
+  const task = await store.createTask({ id: crypto.randomUUID(), type, payload });
   return response.status(202).json({ task });
 });
 
-app.get("/v1/tasks/:id", (request, response) => {
-  const task = store.getTask(request.params.id);
+app.get("/v1/tasks/:id", async (request, response) => {
+  const task = await store.getTask(request.params.id);
   return task ? response.json({ task }) : response.status(404).json({ error: "Task not found" });
 });
 
-app.post("/v1/schedules", (request, response) => {
+app.post("/v1/schedules", async (request, response) => {
   const { taskType, cron: expression, payload = {} } = request.body ?? {};
   if (!validTaskType(taskType) || !cron.validate(expression) || !payload || typeof payload !== "object" || Array.isArray(payload)) {
     return response.status(400).json({ error: "Provide an allowed taskType, valid cron expression, and object payload." });
@@ -156,7 +157,7 @@ app.post("/v1/schedules", (request, response) => {
     return response.status(422).json({ error: "Schedule payload may not include PHI/PII identifiers. Use an approved internal record reference." });
   }
 
-  const schedule = store.createSchedule({ id: crypto.randomUUID(), taskType, cron: expression, payload });
+  const schedule = await store.createSchedule({ id: crypto.randomUUID(), taskType, cron: expression, payload });
   scheduleTask(schedule);
   return response.status(201).json({ schedule });
 });
@@ -173,8 +174,7 @@ const server = app.listen(PORT, () => console.log(`Igor v2 listening on ${PORT}`
 
 function shutdown() {
   server.close(() => {
-    store.close();
-    process.exit(0);
+    store.close().finally(() => process.exit(0));
   });
 }
 process.once("SIGINT", shutdown);

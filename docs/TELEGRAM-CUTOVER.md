@@ -23,7 +23,7 @@ On the `igor-v2` service, add:
 | `XAI_API_KEY` | xAI API key |
 | `XAI_MODEL` | `grok-4.6` |
 
-`DATABASE_PATH`, `NODE_ENV`, and `IGOR_API_KEY` must already be set.
+`DATABASE_URL`, `NODE_ENV`, and `IGOR_API_KEY` must already be set. Use Railway's managed PostgreSQL service; do not use a local SQLite file for production state.
 
 ## 3. Deploy and connect the test bot
 
