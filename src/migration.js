@@ -3,9 +3,9 @@ export const migrationCapabilities = [
     id: "telegram-team-chat",
     area: "Communication",
     legacy: "OpenClaw production bot",
-    v2: "Test bot verified",
+    v2: "Test bot verified; production cutover is the ASAP next step",
     state: "testing",
-    gate: "Test authorized staff and a production cutover/rollback plan."
+    gate: "Swap production bot token onto Igor V2, verify Grok replies, keep OpenClaw webhook URL for rollback."
   },
   {
     id: "backups-and-restore",
@@ -27,9 +27,9 @@ export const migrationCapabilities = [
     id: "scheduled-alerts",
     area: "Scheduled operations",
     legacy: "OpenClaw/BOSGAME cron jobs",
-    v2: "Durable schedule records; no production workers migrated",
-    state: "not_started",
-    gate: "Rebuild each job with an owner, destination, test run, and rollback path."
+    v2: "Worker verified for Sales Tracker dry-run; other jobs not migrated",
+    state: "testing",
+    gate: "Enable each job in v2 after shadow test; keep legacy job active until verified."
   },
   {
     id: "agent-pulse-newsletter",
