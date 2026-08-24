@@ -11,7 +11,11 @@ test("parses comma-separated recipient lists", () => {
 
 test("requires core smtp settings", () => {
   assert.throws(
-    () => validateSmtpConfig({ host: "smtp.example.com" }),
+    () => validateSmtpConfig({ fromEmail: "info@example.com" }),
     /SMTP is not fully configured/
   );
+  assert.doesNotThrow(() => validateSmtpConfig({
+    fromEmail: "info@example.com",
+    sendgridApiKey: "sg.test"
+  }));
 });
