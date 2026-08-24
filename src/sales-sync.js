@@ -1,6 +1,30 @@
 import { parse } from "csv-parse/sync";
 
-const NOTION_VERSION = "2022-06-28";
+const NOTION_VERSION_LEGACY = "2022-06-28";
+const NOTION_VERSION_CURRENT = "2025-09-03";
+
+export function normalizeNotionId(value) {
+  return String(value ?? "").trim().split("?")[0].replace(/-/g, "");
+}
+
+function notionHeaders(token, version) {
+  return {
+    Authorization: `Bearer ${token}`,
+    "Notion-Version": version,
+    "Content-Type": "application/json"
+  };
+}
+
+async function notionError(response, prefix) {
+  let detail = "";
+  try {
+    const body = await response.json();
+    detail = body.message ? `: ${body.message}` : "";
+  } catch {
+    // Response bodies are best-effort only.
+  }
+  throw new Error(`${prefix} with HTTP ${response.status}${detail}`);
+}
 
 export function normalizeAgentName(name) {
   const value = String(name ?? "").trim().replace(/\s+/g, " ");
@@ -58,7 +82,7 @@ export function missingSales(sales, existingKeys) {
   return sales.filter((sale) => !existingKeys.has(salesKey(sale)));
 }
 
-export function notionPagePayload(databaseId, sale) {
+export function notionPagePayload(target, sale) {
   const properties = {
     Name: { title: [{ text: { content: sale.client } }] },
     Agent: { select: { name: sale.agent } },
@@ -70,23 +94,54 @@ export function notionPagePayload(databaseId, sale) {
   if (sale.leadSource) properties["Lead Source"] = { select: { name: sale.leadSource } };
   if (sale.planName) properties["Plan Name"] = { rich_text: [{ text: { content: sale.planName } }] };
   if (sale.enrollmentDate) properties["Enrollment Date"] = { date: { start: sale.enrollmentDate } };
-  return { parent: { database_id: databaseId }, properties };
+  const parent = target.mode === "data_source"
+    ? { type: "data_source_id", data_source_id: target.id }
+    : { database_id: target.id };
+  return { parent, properties };
 }
 
-async function notionQuery({ fetchImpl, token, databaseId }) {
+export async function resolveNotionSalesTarget({
+  fetchImpl,
+  token,
+  databaseId,
+  dataSourceId
+}) {
+  if (dataSourceId) {
+    return { mode: "data_source", id: normalizeNotionId(dataSourceId) };
+  }
+
+  const cleanDatabaseId = normalizeNotionId(databaseId);
+  const response = await fetchImpl(`https://api.notion.com/v1/databases/${cleanDatabaseId}`, {
+    method: "GET",
+    headers: notionHeaders(token, NOTION_VERSION_CURRENT)
+  });
+
+  if (response.ok) {
+    const body = await response.json();
+    const resolvedId = body.data_sources?.[0]?.id;
+    if (resolvedId) {
+      return { mode: "data_source", id: normalizeNotionId(resolvedId) };
+    }
+  }
+
+  return { mode: "database", id: cleanDatabaseId };
+}
+
+async function notionQuery({ fetchImpl, token, target }) {
   const pages = [];
   let cursor;
+  const queryUrl = target.mode === "data_source"
+    ? `https://api.notion.com/v1/data_sources/${target.id}/query`
+    : `https://api.notion.com/v1/databases/${target.id}/query`;
+  const version = target.mode === "data_source" ? NOTION_VERSION_CURRENT : NOTION_VERSION_LEGACY;
+
   do {
-    const response = await fetchImpl(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+    const response = await fetchImpl(queryUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json"
-      },
+      headers: notionHeaders(token, version),
       body: JSON.stringify({ page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) })
     });
-    if (!response.ok) throw new Error(`Notion sales query failed with HTTP ${response.status}`);
+    if (!response.ok) await notionError(response, "Notion sales query failed");
     const body = await response.json();
     pages.push(...(body.results ?? []));
     cursor = body.has_more ? body.next_cursor : null;
@@ -98,6 +153,7 @@ export async function runSalesTrackerSync({
   sheetUrl,
   notionToken,
   notionDatabaseId,
+  notionDataSourceId,
   mode = "dry-run",
   threshold = 20,
   fetchImpl = fetch
@@ -110,7 +166,13 @@ export async function runSalesTrackerSync({
   const sheetResponse = await fetchImpl(sheetUrl);
   if (!sheetResponse.ok) throw new Error(`Sales sheet fetch failed with HTTP ${sheetResponse.status}`);
   const sales = parseSalesCsv(await sheetResponse.text());
-  const pages = await notionQuery({ fetchImpl, token: notionToken, databaseId: notionDatabaseId });
+  const target = await resolveNotionSalesTarget({
+    fetchImpl,
+    token: notionToken,
+    databaseId: notionDatabaseId,
+    dataSourceId: notionDataSourceId
+  });
+  const pages = await notionQuery({ fetchImpl, token: notionToken, target });
   const missing = missingSales(sales, notionSalesKeys(pages));
 
   if (missing.length > threshold) {
@@ -124,12 +186,11 @@ export async function runSalesTrackerSync({
   for (const sale of missing) {
     const response = await fetchImpl("https://api.notion.com/v1/pages", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${notionToken}`,
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(notionPagePayload(notionDatabaseId, sale))
+      headers: notionHeaders(
+        notionToken,
+        target.mode === "data_source" ? NOTION_VERSION_CURRENT : NOTION_VERSION_LEGACY
+      ),
+      body: JSON.stringify(notionPagePayload(target, sale))
     });
     if (!response.ok) failures.push({ agent: sale.agent, effectiveDate: sale.effectiveDate, status: response.status });
   }

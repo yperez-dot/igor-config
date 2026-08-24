@@ -14,6 +14,7 @@ export async function processTask(task, {
     sheetUrl: environment.SALES_SHEET_CSV_URL,
     notionToken: environment.NOTION_TOKEN,
     notionDatabaseId: environment.NOTION_SALES_TRACKER_DB_ID,
+    notionDataSourceId: environment.NOTION_SALES_TRACKER_DATA_SOURCE_ID,
     mode: environment.SALES_SYNC_MODE ?? "dry-run",
     threshold: Number(environment.SALES_SYNC_THRESHOLD ?? 20)
   });
