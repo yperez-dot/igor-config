@@ -43,9 +43,9 @@ export const migrationCapabilities = [
     id: "openclaw-heartbeat",
     area: "Proactive operational heartbeat",
     legacy: "Approximate 30-minute OpenClaw polling for carrier, calendar, and urgent-email checks",
-    v2: "Not connected",
-    state: "not_started",
-    gate: "Bounded source-specific checks, quiet hours, token budget, alert rules, and report-only validation."
+    v2: "Deterministic IMAP heartbeat handler added; calendar and shadow cutover pending",
+    state: "testing",
+    gate: "Configure IMAP on igor-config, shadow-test against legacy, then disable OpenClaw heartbeat."
   },
   {
     id: "stale-lead-digest",

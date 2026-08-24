@@ -96,6 +96,14 @@ export const legacySchedules = [
     payload: { workflow: "session_compaction", mode: "shadow" }
   },
   {
+    id: "v2-igor-heartbeat",
+    title: "Igor v2 operational heartbeat",
+    taskType: "daily_operations",
+    cron: "*/30 * * * *",
+    timezone: "America/New_York",
+    payload: { workflow: "igor_heartbeat", mode: "report-only", source: "v2" }
+  },
+  {
     id: "legacy-openclaw-netlify-credit-check",
     title: "Netlify credit check",
     taskType: "daily_operations",

@@ -1,5 +1,6 @@
 import { runSalesTrackerSync } from "./sales-sync.js";
 import { runIndustryPulseWeekly } from "./industry-pulse.js";
+import { runHeartbeat } from "./heartbeat.js";
 
 function salesTrackerMessage(result, environment) {
   return result.status === "aborted"
@@ -39,6 +40,19 @@ export async function processTask(task, {
   if (workflow === "industry_pulse_weekly") {
     const result = await runIndustryPulse({ environment });
     await notify(industryPulseMessage(result));
+    return result;
+  }
+
+  if (workflow === "igor_heartbeat") {
+    const result = await runHeartbeat({ environment });
+    if (result.alert) {
+      await notify(result.alert.startsWith("Heartbeat clear") ? `✅ ${result.alert}` : `📬 ${result.alert}`);
+    } else if (
+      result.reason === "imap_not_configured"
+      && (environment.HEARTBEAT_MODE === "shadow" || task.payload?.source === "manual-test")
+    ) {
+      await notify("⚠️ Heartbeat skipped: add HEARTBEAT_IMAP_USER and HEARTBEAT_IMAP_PASS on igor-config.");
+    }
     return result;
   }
 
