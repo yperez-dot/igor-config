@@ -5,6 +5,7 @@ import {
   normalizeAgentName,
   normalizeNotionId,
   notionPagePayload,
+  parseNotionTargetInput,
   parseSalesCsv,
   resolveNotionSalesTarget,
   salesKey,
@@ -64,9 +65,21 @@ test("normalizes notion ids and resolves data sources", async () => {
     normalizeNotionId("dce5f374-c877-4280-b5be-3b922b4ff210?v=2365073cb0bd4fbbbf577468882aee7c"),
     "dce5f374c8774280b5be3b922b4ff210"
   );
+  assert.deepEqual(
+    parseNotionTargetInput("dce5f374c8774280b5be3b922b4ff210?v=2365073cb0bd4fbbbf577468882aee7c"),
+    {
+      databaseId: "dce5f374c8774280b5be3b922b4ff210",
+      dataSourceId: "2365073cb0bd4fbbbf577468882aee7c"
+    }
+  );
 
   const explicit = await resolveNotionSalesTarget({
-    fetchImpl: async () => { throw new Error("should not fetch"); },
+    fetchImpl: async (url) => {
+      if (url.includes("/data_sources/2365073cb0bd4fbbbf577468882aee7c")) {
+        return { ok: true, json: async () => ({ id: "2365073cb0bd4fbbbf577468882aee7c" }) };
+      }
+      return { ok: false, json: async () => ({}) };
+    },
     token: "token",
     databaseId: "database-id",
     dataSourceId: "2365073cb0bd4fbbbf577468882aee7c"
@@ -74,10 +87,12 @@ test("normalizes notion ids and resolves data sources", async () => {
   assert.deepEqual(explicit, { mode: "data_source", id: "2365073cb0bd4fbbbf577468882aee7c" });
 
   const resolved = await resolveNotionSalesTarget({
-    fetchImpl: async () => ({
-      ok: true,
-      json: async () => ({ data_sources: [{ id: "2365073cb0bd4fbbbf577468882aee7c" }] })
-    }),
+    fetchImpl: async (url) => {
+      if (url.includes("/databases/dce5f374c8774280b5be3b922b4ff210")) {
+        return { ok: true, json: async () => ({ data_sources: [{ id: "2365073cb0bd4fbbbf577468882aee7c" }] }) };
+      }
+      return { ok: false, json: async () => ({}) };
+    },
     token: "token",
     databaseId: "dce5f374c8774280b5be3b922b4ff210"
   });

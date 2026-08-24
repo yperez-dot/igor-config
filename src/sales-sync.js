@@ -4,7 +4,22 @@ const NOTION_VERSION_LEGACY = "2022-06-28";
 const NOTION_VERSION_CURRENT = "2025-09-03";
 
 export function normalizeNotionId(value) {
-  return String(value ?? "").trim().split("?")[0].replace(/-/g, "");
+  return String(value ?? "").trim().split("?")[0].split("/").pop().replace(/-/g, "");
+}
+
+export function parseNotionTargetInput(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return { databaseId: "", dataSourceId: undefined };
+
+  const [pathPart, queryPart] = raw.split("?");
+  const databaseId = normalizeNotionId(pathPart);
+  let dataSourceId;
+  if (queryPart) {
+    const params = new URLSearchParams(queryPart.includes("=") ? queryPart : `v=${queryPart}`);
+    const viewId = params.get("v") ?? params.get("gid");
+    if (viewId) dataSourceId = normalizeNotionId(viewId);
+  }
+  return { databaseId, dataSourceId };
 }
 
 function notionHeaders(token, version) {
@@ -106,25 +121,63 @@ export async function resolveNotionSalesTarget({
   databaseId,
   dataSourceId
 }) {
-  if (dataSourceId) {
-    return { mode: "data_source", id: normalizeNotionId(dataSourceId) };
+  const parsed = parseNotionTargetInput(databaseId);
+  const dataSourceCandidates = [...new Set(
+    [dataSourceId, parsed.dataSourceId]
+      .filter(Boolean)
+      .map((value) => normalizeNotionId(value))
+  )];
+
+  for (const candidate of dataSourceCandidates) {
+    const response = await fetchImpl(`https://api.notion.com/v1/data_sources/${candidate}`, {
+      method: "GET",
+      headers: notionHeaders(token, NOTION_VERSION_CURRENT)
+    });
+    if (response.ok) {
+      return { mode: "data_source", id: candidate };
+    }
   }
 
-  const cleanDatabaseId = normalizeNotionId(databaseId);
-  const response = await fetchImpl(`https://api.notion.com/v1/databases/${cleanDatabaseId}`, {
+  const cleanDatabaseId = parsed.databaseId || normalizeNotionId(databaseId);
+  const databaseResponse = await fetchImpl(`https://api.notion.com/v1/databases/${cleanDatabaseId}`, {
     method: "GET",
     headers: notionHeaders(token, NOTION_VERSION_CURRENT)
   });
 
-  if (response.ok) {
-    const body = await response.json();
+  if (databaseResponse.ok) {
+    const body = await databaseResponse.json();
     const resolvedId = body.data_sources?.[0]?.id;
     if (resolvedId) {
       return { mode: "data_source", id: normalizeNotionId(resolvedId) };
     }
   }
 
-  return { mode: "database", id: cleanDatabaseId };
+  const pageResponse = await fetchImpl(`https://api.notion.com/v1/pages/${cleanDatabaseId}`, {
+    method: "GET",
+    headers: notionHeaders(token, NOTION_VERSION_CURRENT)
+  });
+  if (pageResponse.ok) {
+    const blocksResponse = await fetchImpl(
+      `https://api.notion.com/v1/blocks/${cleanDatabaseId}/children?page_size=100`,
+      { headers: notionHeaders(token, NOTION_VERSION_CURRENT) }
+    );
+    if (blocksResponse.ok) {
+      const childDatabase = ((await blocksResponse.json()).results ?? [])
+        .find((block) => block.type === "child_database");
+      if (childDatabase?.id) {
+        const nestedTarget = await resolveNotionSalesTarget({
+          fetchImpl,
+          token,
+          databaseId: childDatabase.id
+        });
+        return nestedTarget;
+      }
+    }
+  }
+
+  throw new Error(
+    "Notion sales target could not be resolved. Connect the Igor v2 Sales Sync integration to the Sales Tracker page/database, or set NOTION_SALES_TRACKER_DATA_SOURCE_ID to the Notion URL view id (?v=...)."
+  );
 }
 
 async function notionQuery({ fetchImpl, token, target }) {

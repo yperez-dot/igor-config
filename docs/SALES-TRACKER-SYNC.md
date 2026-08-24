@@ -16,8 +16,8 @@ Runs Monday at 7:00 AM ET.
 | --- | --- |
 | `SALES_SHEET_CSV_URL` | Approved CSV export URL |
 | `NOTION_TOKEN` | Least-privilege Notion integration token |
-| `NOTION_SALES_TRACKER_DB_ID` | Notion Sales Tracker database ID |
-| `NOTION_SALES_TRACKER_DATA_SOURCE_ID` | Optional data source ID override for Notion's 2025 API |
+| `NOTION_SALES_TRACKER_DB_ID` | Notion Sales Tracker database ID or full Notion URL |
+| `NOTION_SALES_TRACKER_DATA_SOURCE_ID` | Optional override. If omitted, Igor v2 uses the Notion URL `?v=` id when present |
 
 ## Not yet implemented
 
