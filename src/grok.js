@@ -26,7 +26,7 @@ export function recommendationRefusal(text) {
     : "I can’t recommend or choose a Medicare plan for an individual. A licensed agent can review the options and help with that decision.";
 }
 
-export async function askGrok({ apiKey, model, text, fetchImpl = fetch }) {
+export async function askGrok({ apiKey, model, text, systemPrompt = SYSTEM_PROMPT, fetchImpl = fetch }) {
   const response = await fetchImpl(XAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
@@ -36,7 +36,7 @@ export async function askGrok({ apiKey, model, text, fetchImpl = fetch }) {
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: text }
       ]
     }),

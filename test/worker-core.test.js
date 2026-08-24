@@ -23,7 +23,27 @@ test("processes sales sync tasks with a Telegram-ready result", async () => {
 
 test("rejects unregistered workflow tasks", async () => {
   await assert.rejects(
-    processTask({ payload: { workflow: "industry_pulse_weekly" } }),
+    processTask({ payload: { workflow: "seo_weekly" } }),
     /No v2 handler/
   );
+});
+
+test("processes industry pulse weekly tasks", async () => {
+  const notifications = [];
+  const result = await processTask(
+    { payload: { workflow: "industry_pulse_weekly" } },
+    {
+      environment: { XAI_API_KEY: "token", INDUSTRY_PULSE_MODE: "dry-run" },
+      runIndustryPulse: async () => ({
+        status: "completed",
+        results: [
+          { lang: "en", status: "dry_run", length: 400 },
+          { lang: "es", status: "dry_run", length: 420 }
+        ]
+      }),
+      notify: async (message) => notifications.push(message)
+    }
+  );
+  assert.equal(result.status, "completed");
+  assert.match(notifications[0], /Industry Pulse completed/);
 });

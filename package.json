@@ -9,7 +9,7 @@
     "worker": "IGOR_SERVICE_ROLE=worker node src/entry.js",
     "dev": "node --watch src/server.js",
     "test": "node --test",
-    "lint": "node --check src/entry.js && node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js && node --check src/worker-core.js && node --check src/worker.js && node --check scripts/queue-sales-sync.js",
+    "lint": "node --check src/entry.js && node --check src/server.js && node --check src/store.js && node --check src/grok.js && node --check src/telegram.js && node --check src/email.js && node --check src/industry-pulse.js && node --check src/migration.js && node --check src/legacy-schedules.js && node --check src/sales-sync.js && node --check src/worker-core.js && node --check src/worker.js && node --check scripts/queue-sales-sync.js",
     "queue-sales-test": "node scripts/queue-sales-sync.js"
   },
   "engines": {
@@ -19,6 +19,7 @@
     "csv-parse": "^7.0.2",
     "express": "^5.2.1",
     "node-cron": "^4.6.0",
+    "nodemailer": "^7.0.10",
     "pg": "^8.23.0"
   },
   "devDependencies": {
