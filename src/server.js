@@ -3,6 +3,7 @@ import express from "express";
 import cron from "node-cron";
 import { createStore } from "./store.js";
 import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
+import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { legacySchedules } from "./legacy-schedules.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
@@ -102,12 +103,18 @@ app.post("/v1/telegram/webhook", async (request, response) => {
   await store.record("telegram.message_received", String(message.updateId), { source: "telegram" });
 
   try {
-    const reply = isPlanRecommendationRequest(message.text)
-      ? recommendationRefusal(message.text)
-      : XAI_API_KEY
-        ? await askGrok({ apiKey: XAI_API_KEY, model: XAI_MODEL, text: message.text })
-        : unavailableMessage(message.text);
-    await sendTelegramMessage({ botToken: TELEGRAM.botToken, chatId: message.chatId, text: reply });
+    await handleTelegramChat({
+      store,
+      message,
+      askGrok,
+      sendTelegramMessage,
+      botToken: TELEGRAM.botToken,
+      apiKey: XAI_API_KEY,
+      model: XAI_MODEL,
+      isPlanRecommendationRequest,
+      recommendationRefusal,
+      unavailableMessage
+    });
   } catch (error) {
     await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });
     try {

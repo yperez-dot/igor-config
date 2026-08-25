@@ -37,3 +37,46 @@ test("persists tasks and scheduled work with metadata-only audit events", async 
 
   await store.close();
 });
+
+test("stores bounded chat turns without writing message text to audit events", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+
+  await store.appendChatTurn({ chatId: "99", senderId: "111", role: "user", content: "hi", keep: 4 });
+  await store.appendChatTurn({
+    chatId: "99",
+    senderId: "igor",
+    role: "assistant",
+    content: "Hi — what do you need?",
+    keep: 4
+  });
+  await store.appendChatTurn({
+    chatId: "99",
+    senderId: "111",
+    role: "user",
+    content: "i need u to pull from GHL the stale leads report",
+    keep: 4
+  });
+
+  assert.deepEqual(await store.recentChatTurns("99"), [
+    { role: "user", content: "hi" },
+    { role: "assistant", content: "Hi — what do you need?" },
+    { role: "user", content: "i need u to pull from GHL the stale leads report" }
+  ]);
+
+  await store.appendChatTurn({ chatId: "99", senderId: "igor", role: "assistant", content: "need a stale definition", keep: 4 });
+  await store.appendChatTurn({ chatId: "99", senderId: "111", role: "user", content: "14 days", keep: 4 });
+  const kept = await store.recentChatTurns("99", { limit: 10 });
+  assert.equal(kept.length, 4);
+  assert.equal(kept[0].content, "Hi — what do you need?");
+  assert.equal(kept.at(-1).content, "14 days");
+
+  const { rows: audit } = await pool.query("SELECT event_type, detail FROM audit_events");
+  assert.equal(audit.length, 0);
+  assert.equal(JSON.stringify(audit).includes("stale leads"), false);
+
+  await store.close();
+});
