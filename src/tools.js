@@ -3,6 +3,7 @@ import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from ".
 import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
 import { connectedSystems } from "./systems.js";
+import { sendTelegramDocument } from "./telegram.js";
 
 const WRITE_TOOLS = new Set(["send_internal_email", "netlify_deploy", "github_write"]);
 const DEFAULT_EMAIL_ALLOWLIST = ["yperez@healthexps.com", "info@healthexps.com"];
@@ -28,13 +29,15 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("ghl")) {
     tools.push(
-      functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel.", {
+      functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails yperez@healthexps.com when SendGrid is configured.", {
         type: "object",
         properties: {
           staleDays: { type: "integer", description: "Days without opportunity activity. Default 14." },
           status: { type: "string", description: "Opportunity status filter. Default open." },
           pipelineId: { type: "string" },
-          limit: { type: "integer", description: "Max masked rows to return. Default 40." }
+          limit: { type: "integer", description: "Max masked preview rows in the chat summary. Default 12." },
+          emailTo: { type: "string", description: "Allowlisted recipient. Default yperez@healthexps.com." },
+          email: { type: "boolean", description: "Set false to skip email. Default true." }
         },
         additionalProperties: false
       }),
@@ -148,7 +151,7 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("email")) {
-    tools.push(functionTool("send_internal_email", "Send email from the approved THEI sender to an allowlisted recipient. Requires confirmed=true.", {
+    tools.push(functionTool("send_internal_email", "Send email from the approved THEI sender to an allowlisted recipient. Email to yperez@healthexps.com is standing-approved.", {
       type: "object",
       properties: {
         to: { type: "string" },
@@ -186,8 +189,9 @@ function parseArgs(raw) {
   return JSON.parse(raw);
 }
 
-function needsConfirmation(name, args) {
+function needsConfirmation(name, args, environment) {
   if (!WRITE_TOOLS.has(name) || args.confirmed === true) return null;
+  if (name === "send_internal_email" && allowedEmail(environment, args.to)) return null;
   return {
     needsConfirmation: true,
     action: name,
@@ -237,9 +241,14 @@ async function jsonFetch(url, { method = "GET", headers, body, fetchImpl = fetch
   return parsed;
 }
 
-export async function executeTool(name, rawArgs, { environment = process.env, fetchImpl = fetch } = {}) {
+export async function executeTool(name, rawArgs, {
+  environment = process.env,
+  fetchImpl = fetch,
+  chatId,
+  botToken
+} = {}) {
   const args = parseArgs(rawArgs);
-  const blocked = needsConfirmation(name, args);
+  const blocked = needsConfirmation(name, args, environment);
   if (blocked) return blocked;
 
   try {
@@ -256,15 +265,67 @@ export async function executeTool(name, rawArgs, { environment = process.env, fe
 
     if (name === "ghl_stale_leads") {
       const config = ghlConfig(environment);
-      return ghlStaleLeads({
+      const report = await ghlStaleLeads({
         token: config.token,
         locationId: config.locationId,
         staleDays: Number(args.staleDays ?? 14),
         status: args.status ?? "open",
         pipelineId: args.pipelineId,
-        limit: Number(args.limit ?? 40),
+        limit: Number(args.limit ?? 12),
         fetchImpl
       });
+      const filename = `stale-leads-${report.staleDays}d.csv`;
+      const delivered = { telegram: false, email: false };
+      const errors = [];
+
+      if (botToken && chatId) {
+        try {
+          await sendTelegramDocument({
+            botToken,
+            chatId,
+            filename,
+            content: report.csv,
+            caption: `Stale leads ${report.staleDays}d: ${report.staleCount} of ${report.scanned} scanned.`,
+            fetchImpl
+          });
+          delivered.telegram = true;
+        } catch (error) {
+          errors.push(`telegram: ${error.message}`);
+        }
+      }
+
+      const emailTo = args.emailTo ?? "yperez@healthexps.com";
+      const mailConfig = smtpConfig(environment);
+      if (args.email !== false && mailConfig.sendgridApiKey && allowedEmail(environment, emailTo)) {
+        try {
+          await sendEmail({
+            config: mailConfig,
+            to: emailTo,
+            subject: `Stale leads ${report.staleDays}d — ${report.staleCount} open opps`,
+            text: `PHI-light GHL stale-leads export.\nStale: ${report.staleCount}\nScanned: ${report.scanned}\nBy stage: ${JSON.stringify(report.byStage)}\nCSV attached.`,
+            attachments: [{ filename, content: report.csv, type: "text/csv" }],
+            fetchImpl
+          });
+          delivered.email = true;
+          delivered.emailedTo = emailTo;
+        } catch (error) {
+          errors.push(`email: ${error.message}`);
+        }
+      } else if (args.email !== false && !mailConfig.sendgridApiKey) {
+        delivered.emailSkipped = "SENDGRID_API_KEY is not set on Igor V2.";
+      }
+
+      return {
+        staleDays: report.staleDays,
+        scanned: report.scanned,
+        staleCount: report.staleCount,
+        truncated: report.truncated,
+        byStage: report.byStage,
+        leads: report.leads,
+        filename,
+        delivered,
+        errors
+      };
     }
 
     if (name === "ghl_search_contacts") {

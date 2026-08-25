@@ -7,7 +7,7 @@ export function smtpConfig(environment = process.env) {
     user: environment.SMTP_USER,
     pass: environment.SMTP_PASS,
     fromName: environment.FROM_NAME,
-    fromEmail: environment.FROM_EMAIL,
+    fromEmail: environment.FROM_EMAIL || (environment.SENDGRID_API_KEY ? "info@healthexps.com" : undefined),
     sendgridApiKey: environment.SENDGRID_API_KEY
   };
 }
@@ -41,10 +41,26 @@ export async function sendViaSendGrid({
   bcc = [],
   subject,
   text,
+  attachments = [],
   fetchImpl = fetch
 }) {
   const toRecipients = [...new Set([to, ...bcc].filter(Boolean))].map((email) => ({ email }));
   if (!toRecipients.length) throw new Error("At least one email recipient is required.");
+
+  const payload = {
+    personalizations: [{ to: toRecipients.slice(0, 1), bcc: toRecipients.slice(1) }],
+    from: { email: fromEmail, name: fromName || undefined },
+    subject,
+    content: [{ type: "text/plain", value: text }]
+  };
+  if (attachments.length) {
+    payload.attachments = attachments.map((file) => ({
+      content: Buffer.from(file.content).toString("base64"),
+      filename: file.filename,
+      type: file.type ?? "text/csv",
+      disposition: "attachment"
+    }));
+  }
 
   const response = await fetchImpl("https://api.sendgrid.com/v3/mail/send", {
     method: "POST",
@@ -52,12 +68,7 @@ export async function sendViaSendGrid({
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      personalizations: [{ to: toRecipients.slice(0, 1), bcc: toRecipients.slice(1) }],
-      from: { email: fromEmail, name: fromName || undefined },
-      subject,
-      content: [{ type: "text/plain", value: text }]
-    }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30_000)
   });
 
@@ -106,6 +117,7 @@ export async function sendEmail({
   bcc = [],
   subject,
   text,
+  attachments = [],
   fetchImpl = fetch,
   transporter
 }) {
@@ -122,6 +134,7 @@ export async function sendEmail({
       bcc: recipients.slice(1),
       subject,
       text,
+      attachments,
       fetchImpl
     });
   }

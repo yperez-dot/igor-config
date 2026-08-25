@@ -63,13 +63,14 @@ export function envPresent(environment, keys) {
 export function connectedSystems(environment = process.env) {
   return SYSTEM_IDS.map((system) => {
     const connected = system.id === "email"
-      ? Boolean(environment.FROM_EMAIL && (environment.SENDGRID_API_KEY || (environment.SMTP_HOST && environment.SMTP_USER && environment.SMTP_PASS)))
+      ? Boolean((environment.FROM_EMAIL || environment.SENDGRID_API_KEY) && (environment.SENDGRID_API_KEY || (environment.SMTP_HOST && environment.SMTP_USER && environment.SMTP_PASS)))
       : envPresent(environment, system.env);
-    return {
-      ...system,
-      connected,
-      missingEnv: connected ? [] : system.env.filter((key) => !String(environment[key] ?? "").trim())
-    };
+    const missingEnv = connected
+      ? []
+      : system.id === "email"
+        ? ["FROM_EMAIL", "SENDGRID_API_KEY"].filter((key) => !String(environment[key] ?? "").trim())
+        : system.env.filter((key) => !String(environment[key] ?? "").trim());
+    return { ...system, connected, missingEnv };
   });
 }
 
