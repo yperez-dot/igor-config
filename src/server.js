@@ -99,12 +99,7 @@ app.post("/v1/telegram/webhook", async (request, response) => {
   if (!message) return response.sendStatus(200);
   if (!await store.claimUpdate(message.updateId)) return response.sendStatus(200);
 
-  const task = await store.createTask({
-    id: crypto.randomUUID(),
-    type: "daily_operations",
-    payload: { source: "telegram", updateId: message.updateId }
-  });
-  await store.record("telegram.message_received", String(message.updateId), { taskId: task.id });
+  await store.record("telegram.message_received", String(message.updateId), { source: "telegram" });
 
   try {
     const reply = isPlanRecommendationRequest(message.text)
@@ -113,10 +108,8 @@ app.post("/v1/telegram/webhook", async (request, response) => {
         ? await askGrok({ apiKey: XAI_API_KEY, model: XAI_MODEL, text: message.text })
         : unavailableMessage(message.text);
     await sendTelegramMessage({ botToken: TELEGRAM.botToken, chatId: message.chatId, text: reply });
-    await store.updateTaskStatus(task.id, "complete");
   } catch (error) {
-    await store.updateTaskStatus(task.id, "failed");
-    await store.record("telegram.message_failed", String(message.updateId), { taskId: task.id, reason: error.message });
+    await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });
     try {
       await sendTelegramMessage({
         botToken: TELEGRAM.botToken,

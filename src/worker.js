@@ -37,7 +37,11 @@ async function workOnce() {
   if (!task) return false;
   try {
     const result = await processTask(task, { notify });
-    await store.completeTask(task.id, { workflow: task.payload.workflow, result: result.status });
+    await store.completeTask(task.id, {
+      workflow: task.payload?.workflow,
+      result: result.status,
+      reason: result.reason
+    });
   } catch (error) {
     await store.failTask(task.id, { workflow: task.payload?.workflow, reason: error.message });
     try {

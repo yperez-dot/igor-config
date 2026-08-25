@@ -16,6 +16,16 @@ function industryPulseMessage(result) {
   return `✅ Industry Pulse ${result.status}: ${summaries.join("; ")}.`;
 }
 
+export const WORKER_WORKFLOWS = new Set([
+  "sales_tracker_sync",
+  "industry_pulse_weekly",
+  "igor_heartbeat"
+]);
+
+export function isWorkerWorkflow(payload) {
+  return WORKER_WORKFLOWS.has(payload?.workflow);
+}
+
 export async function processTask(task, {
   environment = process.env,
   notify = async () => {},
@@ -23,6 +33,13 @@ export async function processTask(task, {
   runIndustryPulse = runIndustryPulseWeekly
 } = {}) {
   const workflow = task.payload?.workflow;
+
+  if (!isWorkerWorkflow(task.payload)) {
+    if (task.payload?.source === "telegram") {
+      return { status: "skipped", reason: "telegram_chat" };
+    }
+    throw new Error(`No v2 handler is registered for workflow: ${workflow ?? "unknown"}`);
+  }
 
   if (workflow === "sales_tracker_sync") {
     const result = await runSalesSync({

@@ -28,6 +28,16 @@ test("rejects unregistered workflow tasks", async () => {
   );
 });
 
+test("skips Telegram chat tasks without alerting", async () => {
+  const notifications = [];
+  const result = await processTask(
+    { payload: { source: "telegram", updateId: 42 } },
+    { notify: async (message) => notifications.push(message) }
+  );
+  assert.deepEqual(result, { status: "skipped", reason: "telegram_chat" });
+  assert.deepEqual(notifications, []);
+});
+
 test("processes industry pulse weekly tasks", async () => {
   const notifications = [];
   const result = await processTask(
