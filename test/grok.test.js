@@ -31,6 +31,52 @@ test("askGrok sends identity system prompt plus prior chat turns", async () => {
   ]);
 });
 
+test("askGrok runs a tool round-trip before answering", async () => {
+  const payloads = [];
+  const toolCalls = [];
+  const reply = await askGrok({
+    apiKey: "test-key",
+    model: "grok-4.6",
+    text: "pull stale leads",
+    systemPrompt: "You are Igor.",
+    tools: [{ type: "function", function: { name: "ghl_stale_leads", description: "stale leads", parameters: { type: "object", properties: {} } } }],
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { staleCount: 2 };
+    },
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      payloads.push(payload);
+      if (payloads.length === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{
+              message: {
+                content: "",
+                tool_calls: [{
+                  id: "call-1",
+                  type: "function",
+                  function: { name: "ghl_stale_leads", arguments: "{\"staleDays\":14}" }
+                }]
+              }
+            }]
+          })
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "2 stale leads in No Answer." } }] })
+      };
+    }
+  });
+
+  assert.equal(reply, "2 stale leads in No Answer.");
+  assert.equal(payloads[0].tools[0].function.name, "ghl_stale_leads");
+  assert.equal(toolCalls[0].name, "ghl_stale_leads");
+  assert.equal(payloads[1].messages.at(-1).role, "tool");
+});
+
 test("askGrok ignores malformed history entries", async () => {
   let payload;
   await askGrok({

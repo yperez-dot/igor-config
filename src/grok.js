@@ -1,8 +1,9 @@
-import { SYSTEM_PROMPT } from "./identity.js";
+import { SYSTEM_PROMPT, systemPromptFor } from "./identity.js";
+import { stringifyToolResult } from "./tools.js";
 
 const XAI_CHAT_COMPLETIONS_URL = "https://api.x.ai/v1/chat/completions";
 
-export { SYSTEM_PROMPT };
+export { SYSTEM_PROMPT, systemPromptFor };
 
 function historyMessages(history) {
   if (!Array.isArray(history)) return [];
@@ -32,29 +33,35 @@ export function recommendationRefusal(text) {
     : "I can’t recommend or choose a Medicare plan for an individual. A licensed agent can review the options and help with that decision.";
 }
 
-export async function askGrok({
-  apiKey,
-  model,
-  text,
-  history = [],
-  systemPrompt = SYSTEM_PROMPT,
-  fetchImpl = fetch
-}) {
+export function toolCallsFrom(message) {
+  if (Array.isArray(message?.tool_calls) && message.tool_calls.length) return message.tool_calls;
+  if (message?.function_call) {
+    return [{
+      id: "call_legacy",
+      type: "function",
+      function: message.function_call
+    }];
+  }
+  return [];
+}
+
+async function completeChat({ apiKey, model, messages, tools, conversationId, fetchImpl }) {
+  const payload = { model, messages };
+  if (tools?.length) {
+    payload.tools = tools;
+    payload.tool_choice = "auto";
+  }
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json"
+  };
+  if (conversationId) headers["x-grok-conv-id"] = String(conversationId);
+
   const response = await fetchImpl(XAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...historyMessages(history),
-        { role: "user", content: text }
-      ]
-    }),
-    signal: AbortSignal.timeout(45_000)
+    headers,
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60_000)
   });
 
   if (!response.ok) {
@@ -62,9 +69,64 @@ export async function askGrok({
   }
 
   const body = await response.json();
-  const reply = body.choices?.[0]?.message?.content;
-  if (typeof reply !== "string" || !reply.trim()) {
-    throw new Error("xAI returned no assistant text.");
+  const message = body.choices?.[0]?.message;
+  if (!message) throw new Error("xAI returned no assistant message.");
+  return message;
+}
+
+export async function askGrok({
+  apiKey,
+  model,
+  text,
+  history = [],
+  systemPrompt = SYSTEM_PROMPT,
+  tools,
+  executeTool,
+  conversationId,
+  maxToolRounds = 6,
+  fetchImpl = fetch
+}) {
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...historyMessages(history),
+    { role: "user", content: text }
+  ];
+
+  for (let round = 0; round <= maxToolRounds; round += 1) {
+    const message = await completeChat({
+      apiKey,
+      model,
+      messages,
+      tools,
+      conversationId,
+      fetchImpl
+    });
+    const calls = toolCallsFrom(message);
+    if (!calls.length) {
+      const reply = typeof message.content === "string" ? message.content.trim() : "";
+      if (!reply) throw new Error("xAI returned no assistant text.");
+      return reply;
+    }
+    if (!executeTool) {
+      throw new Error("xAI requested a tool but no tool runner is configured.");
+    }
+
+    messages.push({
+      role: "assistant",
+      content: message.content ?? "",
+      tool_calls: calls
+    });
+
+    for (const call of calls) {
+      const name = call.function?.name ?? call.name;
+      const result = await executeTool(name, call.function?.arguments ?? call.arguments ?? "{}");
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: stringifyToolResult(result)
+      });
+    }
   }
-  return reply.trim();
+
+  throw new Error("xAI tool loop exceeded the maximum number of rounds.");
 }

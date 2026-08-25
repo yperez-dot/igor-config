@@ -44,7 +44,7 @@ Telegram is intentionally disabled until all of `TELEGRAM_BOT_TOKEN`, `TELEGRAM_
 
 The webhook accepts text messages only from the explicit allowlist. Audit events stay metadata-only. Bounded recent turns for that chat are stored separately so Grok can keep continuity (last 16 turns in the prompt, 40 retained, 1,500 characters each). Identity comes from `src/identity.js`, not from OpenClaw session logs. Follow [the Telegram cutover runbook](docs/TELEGRAM-CUTOVER.md) and begin with a separate test bot. A Telegram bot supports only one webhook, so pointing the current production bot at v2 is a cutover, not a shadow-mode test.
 
-See [the migration inventory](docs/MIGRATION-INVENTORY.md) for the feature-parity order and cutover gates. For the fastest path to production, see [the ASAP cutover plan](docs/ASAP-CUTOVER.md). The authenticated `GET /v1/migration/status` endpoint exposes the current migration status for an internal dashboard.
+See [the migration inventory](docs/MIGRATION-INVENTORY.md) for the feature-parity order and cutover gates. For the fastest path to production, see [the ASAP cutover plan](docs/ASAP-CUTOVER.md). Live API access (GHL, Notion, GitHub, Netlify, Facebook Ads, Tavily, OliComm, MedicarePro, email, sales sheet) is documented in [system credentials](docs/SYSTEMS.md). The authenticated `GET /v1/systems` and `GET /v1/migration/status` endpoints expose current connection and migration status.
 
 See [the standing-approval policy](docs/AUTONOMY-POLICY.md) for the difference between routine approved workflows and actions that require a new approval.
 
@@ -52,4 +52,4 @@ See [the standing-approval policy](docs/AUTONOMY-POLICY.md) for the difference b
 
 - All non-health endpoints require `Authorization: Bearer <IGOR_API_KEY>` when the key is set; production refuses to start without it.
 - Task and schedule audit events record task type/status metadata; task payloads are persisted separately in PostgreSQL. Keep PHI/PII out of payloads and configure the host's storage encryption and access controls.
-- This starter can reply through an authorized Telegram bot. It does not itself send email, access carrier portals, merge PRs, or deploy code. Those integrations must enforce the approval and authorization rules in the Cursor contract.
+- This starter can reply through an authorized Telegram bot. Live system adapters run from Railway secrets listed in [docs/SYSTEMS.md](docs/SYSTEMS.md). Email, GitHub writes, and Netlify deploys still require in-chat confirmation.
