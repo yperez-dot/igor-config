@@ -34,6 +34,7 @@ On the `igor-v2` service, add:
 4. Message the test bot from an allowlisted account. Verify it replies and returns a factual, neutral answer.
 5. Confirm a non-allowlisted account gets no response.
 6. Confirm a request to choose a Medicare plan is declined and routed to a licensed agent.
+7. Send two short messages in the same chat (`hi`, then another `hi` or a follow-up). The second reply should not re-introduce Igor as if the conversation just started.
 
 ## 4. Cut over the current bot
 
@@ -48,3 +49,12 @@ Only after testing and leadership approval:
 ## Rollback
 
 Set the production bot's webhook back to the prior OpenClaw gateway URL. Keep OpenClaw running until v2 has passed at least one normal operating cycle and leadership explicitly approves retirement.
+
+## Chat memory
+
+v2 does not load OpenClaw `SOUL.md` / daily notes / session logs. Continuity is:
+
+- a compact identity pack in `src/identity.js` (who Igor is, THEI facts, v2 capability limits)
+- recent turns in the `chat_turns` table for that Telegram chat
+
+Audit events still must not contain message text. Live GHL pulls remain disconnected until that adapter passes privacy review.

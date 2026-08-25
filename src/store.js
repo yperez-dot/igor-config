@@ -32,6 +32,14 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       update_id TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS chat_turns (
+      id BIGSERIAL PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      sender_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
@@ -134,6 +142,35 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
         [String(updateId)]
       );
       return result.rowCount === 1;
+    },
+    async recentChatTurns(chatId, { limit = 16 } = {}) {
+      const { rows } = await pool.query(
+        `SELECT role, content FROM chat_turns
+         WHERE chat_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2`,
+        [String(chatId), limit]
+      );
+      return rows.reverse().map((row) => ({ role: row.role, content: row.content }));
+    },
+    async appendChatTurn({ chatId, senderId, role, content, keep = 40 }) {
+      if (role !== "user" && role !== "assistant") {
+        throw new Error("Chat turns must use role user or assistant.");
+      }
+      await pool.query(
+        "INSERT INTO chat_turns (chat_id, sender_id, role, content) VALUES ($1, $2, $3, $4)",
+        [String(chatId), String(senderId), role, String(content ?? "").slice(0, 1500)]
+      );
+      await this.pruneChatTurns(chatId, { keep });
+    },
+    async pruneChatTurns(chatId, { keep = 40 } = {}) {
+      const { rows } = await pool.query(
+        "SELECT id FROM chat_turns WHERE chat_id = $1 ORDER BY created_at DESC, id DESC",
+        [String(chatId)]
+      );
+      for (const row of rows.slice(keep)) {
+        await pool.query("DELETE FROM chat_turns WHERE id = $1", [row.id]);
+      }
     },
     record,
     async close() {

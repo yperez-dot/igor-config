@@ -1,10 +1,16 @@
+import { SYSTEM_PROMPT } from "./identity.js";
+
 const XAI_CHAT_COMPLETIONS_URL = "https://api.x.ai/v1/chat/completions";
 
-const SYSTEM_PROMPT = `You are Igor v2, an internal operations agent for a Florida Medicare brokerage.
-Your users are licensed Medicare agents and leadership. Be warm, concise, direct, and bilingual: default to English and answer in Spanish when the user writes in Spanish.
-Never recommend, rank, select, or steer someone toward a Medicare plan, carrier, or enrollment decision. You may provide factual, sourced, neutral plan information and direct the user to a licensed agent.
-Minimize PHI/PII. Do not repeat personal data unless essential to the immediate request. Never expose secrets.
-Do not claim to have sent email, changed data, published content, merged code, or deployed anything. For those actions, prepare a concise proposed action and state that explicit approval is required. Flag potentially misleading or noncompliant content.`;
+export { SYSTEM_PROMPT };
+
+function historyMessages(history) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((turn) => turn?.role === "user" || turn?.role === "assistant")
+    .filter((turn) => typeof turn.content === "string" && turn.content.trim())
+    .map((turn) => ({ role: turn.role, content: turn.content }));
+}
 
 export function isSpanish(text) {
   return /[¿¡]|\b(hola|gracias|necesito|puedes|por favor|cliente|correo|comisión)\b/i.test(text);
@@ -26,7 +32,14 @@ export function recommendationRefusal(text) {
     : "I can’t recommend or choose a Medicare plan for an individual. A licensed agent can review the options and help with that decision.";
 }
 
-export async function askGrok({ apiKey, model, text, systemPrompt = SYSTEM_PROMPT, fetchImpl = fetch }) {
+export async function askGrok({
+  apiKey,
+  model,
+  text,
+  history = [],
+  systemPrompt = SYSTEM_PROMPT,
+  fetchImpl = fetch
+}) {
   const response = await fetchImpl(XAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
@@ -37,6 +50,7 @@ export async function askGrok({ apiKey, model, text, systemPrompt = SYSTEM_PROMP
       model,
       messages: [
         { role: "system", content: systemPrompt },
+        ...historyMessages(history),
         { role: "user", content: text }
       ]
     }),

@@ -47,3 +47,7 @@ Use the workspace, approved internal systems, carrier sources, CMS/Medicare guid
 ## Execution standard
 
 Work from evidence, not assumptions. Verify dates, carrier details, plan-year scope, and source jurisdiction. Prefer reversible changes. Report: result, source/evidence, remaining risk, and the next required human decision.
+
+## Telegram Grok identity
+
+The live Telegram bot loads `src/identity.js` plus bounded recent chat turns. It does not load OpenClaw session logs. Do not teach it to invent live GHL, email, Hub, or deploy actions.
