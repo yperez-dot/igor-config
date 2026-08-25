@@ -83,6 +83,39 @@ test("GHL stale leads mask contact identity", async () => {
   assert.equal(JSON.stringify(result).includes("maria@example.com"), false);
 });
 
+test("stale-leads emails a CSV when SendGrid is set without FROM_EMAIL", async () => {
+  let sent;
+  const result = await executeTool("ghl_stale_leads", { staleDays: 14, emailTo: "yperez@healthexps.com" }, {
+    environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc", SENDGRID_API_KEY: "sg.test" },
+    fetchImpl: async (url, options) => {
+      if (String(url).includes("sendgrid.com")) {
+        sent = JSON.parse(options.body);
+        return { ok: true, headers: { get: () => "msg-1" }, text: async () => "" };
+      }
+      if (String(url).includes("/pipelines")) {
+        return { ok: true, json: async () => ({ pipelines: [] }) };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          opportunities: [{
+            id: "opp-1",
+            status: "open",
+            updatedAt: "2026-07-01T00:00:00Z",
+            contact: { firstName: "Maria", lastName: "Gonzalez" }
+          }],
+          meta: {}
+        })
+      };
+    }
+  });
+  assert.equal(result.delivered.email, true);
+  assert.equal(result.delivered.emailedTo, "yperez@healthexps.com");
+  assert.equal(sent.from.email, "info@healthexps.com");
+  assert.equal(sent.attachments[0].filename, "stale-leads-14d.csv");
+  assert.equal(result.csv, undefined);
+});
+
 test("stale-leads report sends a CSV to Telegram", async () => {
   const calls = [];
   const result = await executeTool("ghl_stale_leads", { staleDays: 14, email: false }, {

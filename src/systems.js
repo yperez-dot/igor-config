@@ -42,7 +42,7 @@ export const SYSTEM_IDS = [
   {
     id: "email",
     label: "Email (SendGrid/SMTP)",
-    env: ["FROM_EMAIL"]
+    env: ["SENDGRID_API_KEY"]
   },
   {
     id: "sheets",
