@@ -51,25 +51,25 @@ export const migrationCapabilities = [
     id: "stale-lead-digest",
     area: "Stale lead digest",
     legacy: "Paused OpenClaw workflow for GHL lead enrichment, classification, agent documents, and email delivery",
-    v2: "Not connected",
-    state: "paused",
-    gate: "GHL authorization, data-minimization review, redacted test, recipient approval, and no-write shadow run."
+    v2: "GHL search and PHI-light stale-opportunity report via Grok tools when GHL_API_TOKEN is set",
+    state: "testing",
+    gate: "Confirm GHL_API_TOKEN on Railway, review a redacted Telegram sample, then enable the scheduled digest."
   },
   {
     id: "lead-management",
     area: "Lead management",
     legacy: "GHL webhooks and credentials",
-    v2: "Not connected",
-    state: "not_started",
-    gate: "Read-only lead sync, redacted logging, consent review, and approval to write."
+    v2: "Read-only GHL contact/opportunity tools when GHL_API_TOKEN is set; writes are not enabled from chat",
+    state: "testing",
+    gate: "Keep Telegram replies masked; require a separate approval before any GHL write adapter."
   },
   {
     id: "commission-tracking",
     area: "Commission tracking",
     legacy: "Existing Railway/Postgres application",
-    v2: "Not connected",
-    state: "not_started",
-    gate: "Read-only API access and reconciliation against the existing tracker."
+    v2: "Allowlisted GET against OLICOMM_BASE_URL when configured",
+    state: "testing",
+    gate: "Set OLICOMM_BASE_URL and OLICOMM_API_KEY; keep writes on the existing OliComm app."
   },
   {
     id: "carrier-updates",
@@ -83,9 +83,9 @@ export const migrationCapabilities = [
     id: "external-actions",
     area: "Email, GitHub, and deployment",
     legacy: "OpenClaw-operated workflows",
-    v2: "Blocked pending integration",
-    state: "not_started",
-    gate: "Per-action approval, least-privilege credentials, audit log, and tested rollback."
+    v2: "Grok function tools for GHL, Notion, GitHub, Netlify, Facebook Ads, Tavily, OliComm, MedicarePro, email, and the sales sheet; live when Railway secrets are set",
+    state: "testing",
+    gate: "Set the documented Railway secrets, then verify a redacted stale-leads pull and a confirm-gated write."
   },
   {
     id: "legacy-retirement",

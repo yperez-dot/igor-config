@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT } from "./identity.js";
+import { systemPromptFor } from "./identity.js";
 
 export async function handleTelegramChat({
   store,
@@ -11,9 +11,13 @@ export async function handleTelegramChat({
   isPlanRecommendationRequest,
   recommendationRefusal,
   unavailableMessage,
-  systemPrompt = SYSTEM_PROMPT
+  systemPrompt,
+  tools,
+  executeTool,
+  environment = process.env
 }) {
   const history = await store.recentChatTurns(message.chatId);
+  const prompt = systemPrompt ?? systemPromptFor(environment);
   const reply = isPlanRecommendationRequest(message.text)
     ? recommendationRefusal(message.text)
     : apiKey
@@ -22,7 +26,10 @@ export async function handleTelegramChat({
         model,
         text: message.text,
         history,
-        systemPrompt
+        systemPrompt: prompt,
+        tools,
+        executeTool,
+        conversationId: message.chatId
       })
       : unavailableMessage(message.text);
 

@@ -5,6 +5,8 @@ import { createStore } from "./store.js";
 import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
 import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
+import { executeTool, grokTools } from "./tools.js";
+import { connectedSystems } from "./systems.js";
 import { legacySchedules } from "./legacy-schedules.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 
@@ -15,6 +17,8 @@ const XAI_API_KEY = process.env.XAI_API_KEY;
 const XAI_MODEL = process.env.XAI_MODEL ?? "grok-4.6";
 const TELEGRAM = telegramConfig();
 const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
+const TOOLS = grokTools();
+const runTool = (name, args) => executeTool(name, args, { environment: process.env });
 const BLOCKED_TASK_TYPES = new Set(["plan_recommendation", "enrollment_decision", "client_plan_selection"]);
 const SENSITIVE_FIELD = /^(ssn|socialSecurityNumber|medicareNumber|mbi|dateOfBirth|dob|memberId|policyNumber)$/i;
 const ALLOWED_TASK_TYPES = new Set([
@@ -84,7 +88,12 @@ app.get("/health", (_request, response) => {
     status: "ok",
     service: "igor-v2",
     scheduledJobs: scheduledJobs.size,
-    telegramConfigured: Boolean(TELEGRAM.botToken && TELEGRAM.webhookSecret && TELEGRAM.allowedUserIds.size)
+    telegramConfigured: Boolean(TELEGRAM.botToken && TELEGRAM.webhookSecret && TELEGRAM.allowedUserIds.size),
+    systems: connectedSystems().map((system) => ({
+      id: system.id,
+      connected: system.connected,
+      missingEnv: system.missingEnv
+    }))
   });
 });
 
@@ -113,7 +122,9 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       model: XAI_MODEL,
       isPlanRecommendationRequest,
       recommendationRefusal,
-      unavailableMessage
+      unavailableMessage,
+      tools: TOOLS,
+      executeTool: runTool
     });
   } catch (error) {
     await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });
@@ -131,6 +142,10 @@ app.post("/v1/telegram/webhook", async (request, response) => {
 });
 
 app.use(authenticated);
+
+app.get("/v1/systems", (_request, response) => {
+  response.json({ systems: connectedSystems() });
+});
 
 app.get("/v1/migration/status", (_request, response) => {
   response.json({ summary: migrationSummary(), capabilities: migrationCapabilities });

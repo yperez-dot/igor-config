@@ -50,4 +50,4 @@ Work from evidence, not assumptions. Verify dates, carrier details, plan-year sc
 
 ## Telegram Grok identity
 
-The live Telegram bot loads `src/identity.js` plus bounded recent chat turns. It does not load OpenClaw session logs. Do not teach it to invent live GHL, email, Hub, or deploy actions.
+The live Telegram bot loads `src/identity.js` plus bounded recent chat turns and Grok function tools for every system whose Railway secrets are present. See `docs/SYSTEMS.md`. Do not invent live GHL, ads, Hub, or deploy results when the matching secret is missing.

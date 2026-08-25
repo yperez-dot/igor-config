@@ -56,5 +56,6 @@ v2 does not load OpenClaw `SOUL.md` / daily notes / session logs. Continuity is:
 
 - a compact identity pack in `src/identity.js` (who Igor is, THEI facts, v2 capability limits)
 - recent turns in the `chat_turns` table for that Telegram chat
+- live API tools documented in [system credentials](SYSTEMS.md)
 
-Audit events still must not contain message text. Live GHL pulls remain disconnected until that adapter passes privacy review.
+Audit events still must not contain message text. GHL/Telegram replies stay PHI-light. Email, GitHub writes, and Netlify deploys require an in-chat confirmation.
