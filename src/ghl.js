@@ -116,6 +116,21 @@ export async function ghlSearchContacts({ token, locationId, query, limit = 20, 
   }));
 }
 
+export function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) return `"${text.replaceAll("\"", "\"\"")}"`;
+  return text;
+}
+
+export function staleLeadsCsv(leads) {
+  const header = ["name", "phoneLast4", "emailDomain", "stage", "pipeline", "status", "lastActivity", "assignedTo", "opportunityId"];
+  const lines = [header.join(",")];
+  for (const lead of leads) {
+    lines.push(header.map((key) => csvEscape(lead[key])).join(","));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 export async function ghlStaleLeads({
   token,
   locationId,
@@ -124,6 +139,7 @@ export async function ghlStaleLeads({
   pipelineId,
   limit = 40,
   now = Date.now(),
+  maxPages = 15,
   fetchImpl = fetch
 }) {
   const pipelines = await ghlListPipelines({ token, locationId, fetchImpl }).catch(() => []);
@@ -132,7 +148,7 @@ export async function ghlStaleLeads({
   let startAfterId;
   let scanned = 0;
 
-  for (let page = 0; page < 5; page += 1) {
+  for (let page = 0; page < maxPages; page += 1) {
     const { opportunities, meta } = await ghlSearchOpportunities({
       token,
       locationId,
@@ -165,7 +181,9 @@ export async function ghlStaleLeads({
     staleDays,
     scanned,
     staleCount: stale.length,
+    truncated: scanned >= maxPages * 100,
     byStage,
-    leads: stale.slice(0, limit)
+    leads: stale.slice(0, limit),
+    csv: staleLeadsCsv(stale)
   };
 }

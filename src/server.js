@@ -18,7 +18,6 @@ const XAI_MODEL = process.env.XAI_MODEL ?? "grok-4.6";
 const TELEGRAM = telegramConfig();
 const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 const TOOLS = grokTools();
-const runTool = (name, args) => executeTool(name, args, { environment: process.env });
 const BLOCKED_TASK_TYPES = new Set(["plan_recommendation", "enrollment_decision", "client_plan_selection"]);
 const SENSITIVE_FIELD = /^(ssn|socialSecurityNumber|medicareNumber|mbi|dateOfBirth|dob|memberId|policyNumber)$/i;
 const ALLOWED_TASK_TYPES = new Set([
@@ -124,7 +123,11 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       recommendationRefusal,
       unavailableMessage,
       tools: TOOLS,
-      executeTool: runTool
+      executeTool: (name, args) => executeTool(name, args, {
+        environment: process.env,
+        chatId: message.chatId,
+        botToken: TELEGRAM.botToken
+      })
     });
   } catch (error) {
     await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });

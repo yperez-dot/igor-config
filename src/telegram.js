@@ -34,6 +34,26 @@ export function supportedMessage(update, allowedUserIds) {
   };
 }
 
+export async function sendTelegramDocument({
+  botToken,
+  chatId,
+  filename,
+  content,
+  caption,
+  fetchImpl = fetch
+}) {
+  const form = new FormData();
+  form.set("chat_id", String(chatId));
+  form.set("document", new Blob([content], { type: "text/csv;charset=utf-8" }), filename);
+  if (caption) form.set("caption", String(caption).slice(0, 1024));
+  const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendDocument`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(30_000)
+  });
+  if (!response.ok) throw new Error(`Telegram document send failed with HTTP ${response.status}`);
+}
+
 export async function sendTelegramMessage({ botToken, chatId, text, fetchImpl = fetch }) {
   const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendMessage`, {
     method: "POST",

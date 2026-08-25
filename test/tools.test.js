@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { connectedSystems } from "../src/systems.js";
 import { executeTool, grokTools } from "../src/tools.js";
-import { isStaleOpportunity } from "../src/ghl.js";
+import { isStaleOpportunity, staleLeadsCsv } from "../src/ghl.js";
 import { last4, maskName } from "../src/redact.js";
 
 test("GHL tools appear only when GHL_API_TOKEN is set", () => {
@@ -26,13 +26,30 @@ test("stale-opportunity filter uses last activity date", () => {
   assert.equal(isStaleOpportunity({ updatedAt: "2026-08-20T00:00:00Z" }, { staleDays: 14, now }), false);
 });
 
-test("write tools require confirmed=true", async () => {
+test("GitHub writes require confirmed=true", async () => {
+  const result = await executeTool("github_write", {
+    method: "POST",
+    path: "yperez-dot/igor-config/issues"
+  }, { environment: { GITHUB_TOKEN: "gh" } });
+  assert.equal(result.needsConfirmation, true);
+});
+
+test("email to Yahoska is standing-approved", async () => {
+  let sent;
   const result = await executeTool("send_internal_email", {
     to: "yperez@healthexps.com",
     subject: "test",
     text: "hello"
-  }, { environment: { FROM_EMAIL: "info@healthexps.com", SENDGRID_API_KEY: "sg" } });
-  assert.equal(result.needsConfirmation, true);
+  }, {
+    environment: { SENDGRID_API_KEY: "sg.test" },
+    fetchImpl: async (_url, options) => {
+      sent = JSON.parse(options.body);
+      return { ok: true, headers: { get: () => "msg-1" }, text: async () => "" };
+    }
+  });
+  assert.equal(result.needsConfirmation, undefined);
+  assert.equal(result.sent, true);
+  assert.equal(sent.from.email, "info@healthexps.com");
 });
 
 test("GHL stale leads mask contact identity", async () => {
@@ -66,7 +83,95 @@ test("GHL stale leads mask contact identity", async () => {
   assert.equal(JSON.stringify(result).includes("maria@example.com"), false);
 });
 
+test("stale-leads emails a CSV when SendGrid is set without FROM_EMAIL", async () => {
+  let sent;
+  const result = await executeTool("ghl_stale_leads", { staleDays: 14, emailTo: "yperez@healthexps.com" }, {
+    environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc", SENDGRID_API_KEY: "sg.test" },
+    fetchImpl: async (url, options) => {
+      if (String(url).includes("sendgrid.com")) {
+        sent = JSON.parse(options.body);
+        return { ok: true, headers: { get: () => "msg-1" }, text: async () => "" };
+      }
+      if (String(url).includes("/pipelines")) {
+        return { ok: true, json: async () => ({ pipelines: [] }) };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          opportunities: [{
+            id: "opp-1",
+            status: "open",
+            updatedAt: "2026-07-01T00:00:00Z",
+            contact: { firstName: "Maria", lastName: "Gonzalez" }
+          }],
+          meta: {}
+        })
+      };
+    }
+  });
+  assert.equal(result.delivered.email, true);
+  assert.equal(result.delivered.emailedTo, "yperez@healthexps.com");
+  assert.equal(sent.from.email, "info@healthexps.com");
+  assert.equal(sent.attachments[0].filename, "stale-leads-14d.csv");
+  assert.equal(result.csv, undefined);
+});
+
+test("stale-leads report sends a CSV to Telegram", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_stale_leads", { staleDays: 14, email: false }, {
+    environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc" },
+    chatId: 99,
+    botToken: "bot",
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), body: options?.body });
+      if (String(url).includes("sendDocument")) {
+        return { ok: true, json: async () => ({ ok: true }) };
+      }
+      if (String(url).includes("/pipelines")) {
+        return { ok: true, json: async () => ({ pipelines: [] }) };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          opportunities: [{
+            id: "opp-1",
+            status: "open",
+            updatedAt: "2026-07-01T00:00:00Z",
+            contact: { firstName: "Maria", lastName: "Gonzalez", phone: "3055551212" }
+          }],
+          meta: {}
+        })
+      };
+    }
+  });
+  assert.equal(result.delivered.telegram, true);
+  assert.match(result.filename, /stale-leads-14d.csv/);
+  assert.equal(calls.some((call) => call.url.includes("sendDocument")), true);
+});
+
+test("SendGrid alone marks email as connected", () => {
+  const email = connectedSystems({ SENDGRID_API_KEY: "sg" }).find((system) => system.id === "email");
+  assert.equal(email.connected, true);
+});
+
 test("redaction helpers keep last 4 only", () => {
   assert.equal(last4("(305) 555-1212"), "1212");
   assert.equal(maskName("Alan Elchami"), "Alan E.");
+});
+
+test("stale leads CSV is PHI-light", () => {
+  const csv = staleLeadsCsv([{
+    name: "Maria G.",
+    phoneLast4: "1212",
+    emailDomain: "example.com",
+    stage: "No Answer",
+    pipeline: "Medicare",
+    status: "open",
+    lastActivity: "2026-07-01",
+    assignedTo: "agent-1",
+    opportunityId: "opp-1"
+  }]);
+  assert.match(csv, /Maria G./);
+  assert.match(csv, /1212/);
+  assert.equal(csv.includes("3055551212"), false);
 });

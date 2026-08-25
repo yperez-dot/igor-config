@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { registerTelegramWebhook, supportedMessage, telegramConfig } from "../src/telegram.js";
+import { registerTelegramWebhook, sendTelegramDocument, supportedMessage, telegramConfig } from "../src/telegram.js";
 import { isPlanRecommendationRequest, isSpanish, recommendationRefusal, unavailableMessage } from "../src/grok.js";
 
 test("Telegram configuration parses an explicit team allowlist", () => {
@@ -55,4 +55,20 @@ test("webhook registration sends the HTTPS endpoint and secret", async () => {
     allowed_updates: ["message"],
     drop_pending_updates: false
   });
+});
+
+test("document send posts a file to Telegram", async () => {
+  let request;
+  await sendTelegramDocument({
+    botToken: "test-token",
+    chatId: 99,
+    filename: "stale-leads.csv",
+    content: "name,phoneLast4\nMaria G.,1212\n",
+    fetchImpl: async (url, options) => {
+      request = { url, body: options.body };
+      return { ok: true };
+    }
+  });
+  assert.match(request.url, /sendDocument$/);
+  assert.equal(request.body instanceof FormData, true);
 });

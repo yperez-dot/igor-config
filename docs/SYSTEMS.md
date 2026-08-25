@@ -14,7 +14,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker if 
 | Tavily | `TAVILY_API_KEY` | `web_search` |
 | OliComm | `OLICOMM_BASE_URL`, optional `OLICOMM_API_KEY` | `olicomm_get` (`/health`, `/api/`, `/v1/` only) |
 | MedicarePro | `MEDICAREPRO_API_KEY`, `MEDICAREPRO_BASE_URL` | `medicarepro_get` |
-| Email | `FROM_EMAIL` plus `SENDGRID_API_KEY` or SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`). Optional `EMAIL_ALLOWED_RECIPIENTS` | `send_internal_email` (confirm required; default allowlist `yperez@healthexps.com`, `info@healthexps.com`) |
+| Email | `SENDGRID_API_KEY` (required for outbound mail). `FROM_EMAIL` is optional and defaults to `info@healthexps.com`. SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`) is an alternative. Optional `EMAIL_ALLOWED_RECIPIENTS` | `send_internal_email` (Yahoska standing-approved). `ghl_stale_leads` auto-emails a PHI-light CSV. |
 | Sales sheet | `SALES_SHEET_CSV_URL` | `sales_sheet_summary` |
 | Leadership inbox | `HEARTBEAT_IMAP_USER`, `HEARTBEAT_IMAP_PASS` | `inbox_status` (no message bodies) |
 
