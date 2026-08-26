@@ -22,16 +22,102 @@ export function verifyTelegramRequest(request, webhookSecret) {
   return crypto.timingSafeEqual(Buffer.from(received), Buffer.from(webhookSecret));
 }
 
+function thumbnailId(media) {
+  return media?.thumbnail?.file_id || media?.thumb?.file_id || null;
+}
+
+function inboundDocument(message) {
+  const document = message?.document;
+  if (!document?.file_id) return null;
+  return {
+    fileId: document.file_id,
+    fileName: document.file_name || "document",
+    mimeType: document.mime_type || "application/octet-stream",
+    fileSize: Number(document.file_size) || 0,
+    thumbnailFileId: thumbnailId(document)
+  };
+}
+
+function inboundPhoto(message) {
+  const photo = Array.isArray(message?.photo) ? message.photo.at(-1) : null;
+  if (!photo?.file_id) return null;
+  return {
+    fileId: photo.file_id,
+    fileName: "photo.jpg",
+    mimeType: "image/jpeg",
+    fileSize: Number(photo.file_size) || 0
+  };
+}
+
+function inboundVideo(message) {
+  const source = message?.video
+    ? { media: message.video, kind: "video", fallbackName: "video.mp4" }
+    : message?.animation
+      ? { media: message.animation, kind: "animation", fallbackName: "animation.mp4" }
+      : message?.video_note
+        ? { media: message.video_note, kind: "video_note", fallbackName: "video-note.mp4" }
+        : null;
+  if (!source?.media?.file_id) return null;
+  return {
+    fileId: source.media.file_id,
+    fileName: source.media.file_name || source.fallbackName,
+    mimeType: source.media.mime_type || "video/mp4",
+    fileSize: Number(source.media.file_size) || 0,
+    duration: Number(source.media.duration) || 0,
+    thumbnailFileId: thumbnailId(source.media),
+    kind: source.kind
+  };
+}
+
 export function supportedMessage(update, allowedUserIds) {
   const message = update?.message;
-  if (!message?.text || !message?.from?.id || !message?.chat?.id) return null;
+  if (!message?.from?.id || !message?.chat?.id) return null;
   if (!allowedUserIds.has(String(message.from.id))) return null;
+  const text = String(message.text ?? message.caption ?? "").trim();
+  const document = inboundDocument(message);
+  const video = document ? null : inboundVideo(message);
+  const photo = document || video ? null : inboundPhoto(message);
+  if (!text && !document && !video && !photo) return null;
   return {
     updateId: update.update_id,
     chatId: message.chat.id,
     senderId: String(message.from.id),
-    text: message.text.trim()
+    text,
+    document,
+    video,
+    photo
   };
+}
+
+export async function downloadTelegramFile({
+  botToken,
+  fileId,
+  fetchImpl = fetch,
+  maxBytes = 20 * 1024 * 1024
+}) {
+  const metaResponse = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/getFile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file_id: fileId }),
+    signal: AbortSignal.timeout(20_000)
+  });
+  const meta = await metaResponse.json();
+  if (!metaResponse.ok || !meta.ok || !meta.result?.file_path) {
+    throw new Error(meta.description || `Telegram getFile failed with HTTP ${metaResponse.status}`);
+  }
+  if (meta.result.file_size && meta.result.file_size > maxBytes) {
+    throw new Error("File is larger than Telegram’s 20 MB bot download limit.");
+  }
+
+  const fileResponse = await fetchImpl(`${TELEGRAM_API}/file/bot${botToken}/${meta.result.file_path}`, {
+    signal: AbortSignal.timeout(30_000)
+  });
+  if (!fileResponse.ok) throw new Error(`Telegram file download failed with HTTP ${fileResponse.status}`);
+  const buffer = Buffer.from(await fileResponse.arrayBuffer());
+  if (buffer.length > maxBytes) {
+    throw new Error("File is larger than Telegram’s 20 MB bot download limit.");
+  }
+  return { buffer, filePath: meta.result.file_path, fileSize: buffer.length };
 }
 
 export async function sendTelegramDocument({

@@ -9,7 +9,7 @@ OpenClaw remains the production source of truth until each capability below is t
 | Capability | Result |
 | --- | --- |
 | Railway service | Running with managed PostgreSQL |
-| Telegram | Separate test bot receives and replies to authorized users |
+| Telegram | Authorized users can send text plus Word, Excel, PowerPoint, PDF, photos, and videos (video stills) |
 | Grok | Connected through the xAI API |
 | Medicare safety | Plan-recommendation request was refused |
 | Persistence | Tasks, schedules, and audit metadata use PostgreSQL |

@@ -35,6 +35,7 @@ On the `igor-v2` service, add:
 5. Confirm a non-allowlisted account gets no response.
 6. Confirm a request to choose a Medicare plan is declined and routed to a licensed agent.
 7. Send two short messages in the same chat (`hi`, then another `hi` or a follow-up). The second reply should not re-introduce Igor as if the conversation just started.
+8. Send a small PPTX, Word/Excel file, photo, and short video. Igor should reply about the contents (video replies are based on still frames). Telegram’s bot download limit is 20 MB.
 
 ## 4. Cut over the current bot
 

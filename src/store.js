@@ -153,13 +153,14 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       );
       return rows.reverse().map((row) => ({ role: row.role, content: row.content }));
     },
-    async appendChatTurn({ chatId, senderId, role, content, keep = 40 }) {
+    async appendChatTurn({ chatId, senderId, role, content, keep = 40, maxChars = 1500 }) {
       if (role !== "user" && role !== "assistant") {
         throw new Error("Chat turns must use role user or assistant.");
       }
+      const limit = Number(maxChars) > 0 ? Number(maxChars) : 1500;
       await pool.query(
         "INSERT INTO chat_turns (chat_id, sender_id, role, content) VALUES ($1, $2, $3, $4)",
-        [String(chatId), String(senderId), role, String(content ?? "").slice(0, 1500)]
+        [String(chatId), String(senderId), role, String(content ?? "").slice(0, limit)]
       );
       await this.pruneChatTurns(chatId, { keep });
     },

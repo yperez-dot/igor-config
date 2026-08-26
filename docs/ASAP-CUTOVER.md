@@ -46,6 +46,7 @@ Redeploy until **Active**.
 2. Confirm Grok replies in English and Spanish when you write in Spanish.
 3. Confirm plan-recommendation requests are refused.
 4. Confirm unauthorized Telegram users get no response.
+5. Send a small PPTX, Word/Excel file, photo, and short video. Igor should reply about the contents, not say the file never arrived.
 
 ### Rollback (if needed)
 

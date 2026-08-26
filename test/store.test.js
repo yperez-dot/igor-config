@@ -78,5 +78,16 @@ test("stores bounded chat turns without writing message text to audit events", a
   assert.equal(audit.length, 0);
   assert.equal(JSON.stringify(audit).includes("stale leads"), false);
 
+  await store.appendChatTurn({
+    chatId: "99",
+    senderId: "111",
+    role: "user",
+    content: "A".repeat(2000),
+    maxChars: 12_000,
+    keep: 4
+  });
+  const longTurn = await store.recentChatTurns("99", { limit: 1 });
+  assert.equal(longTurn[0].content.length, 2000);
+
   await store.close();
 });

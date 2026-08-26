@@ -45,7 +45,7 @@ export function toolCallsFrom(message) {
   return [];
 }
 
-async function completeChat({ apiKey, model, messages, tools, conversationId, fetchImpl }) {
+async function completeChat({ apiKey, model, messages, tools, conversationId, fetchImpl, timeoutMs = 60_000 }) {
   const payload = { model, messages };
   if (tools?.length) {
     payload.tools = tools;
@@ -61,7 +61,7 @@ async function completeChat({ apiKey, model, messages, tools, conversationId, fe
     method: "POST",
     headers,
     body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(60_000)
+    signal: AbortSignal.timeout(timeoutMs)
   });
 
   if (!response.ok) {
@@ -74,10 +74,22 @@ async function completeChat({ apiKey, model, messages, tools, conversationId, fe
   return message;
 }
 
+export function userMessageContent(text, media = []) {
+  if (!Array.isArray(media) || !media.length) return text;
+  return [
+    { type: "text", text },
+    ...media.map((item) => ({
+      type: "image_url",
+      image_url: { url: item.dataUrl, detail: "high" }
+    }))
+  ];
+}
+
 export async function askGrok({
   apiKey,
   model,
   text,
+  media = [],
   history = [],
   systemPrompt = SYSTEM_PROMPT,
   tools,
@@ -89,7 +101,7 @@ export async function askGrok({
   const messages = [
     { role: "system", content: systemPrompt },
     ...historyMessages(history),
-    { role: "user", content: text }
+    { role: "user", content: userMessageContent(text, media) }
   ];
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
@@ -99,7 +111,8 @@ export async function askGrok({
       messages,
       tools,
       conversationId,
-      fetchImpl
+      fetchImpl,
+      timeoutMs: media.length ? 120_000 : 60_000
     });
     const calls = toolCallsFrom(message);
     if (!calls.length) {

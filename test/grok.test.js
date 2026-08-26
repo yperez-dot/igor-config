@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { askGrok } from "../src/grok.js";
+import { askGrok, userMessageContent } from "../src/grok.js";
 
 test("askGrok sends identity system prompt plus prior chat turns", async () => {
   let payload;
@@ -102,4 +102,24 @@ test("askGrok ignores malformed history entries", async () => {
     { role: "assistant", content: "kept" },
     { role: "user", content: "hi" }
   ]);
+});
+
+test("askGrok sends photos as image_url content parts", async () => {
+  let payload;
+  await askGrok({
+    apiKey: "test-key",
+    model: "grok-4.6",
+    text: "what is this",
+    media: [{ dataUrl: "data:image/png;base64,aaa" }],
+    systemPrompt: "You are Igor.",
+    fetchImpl: async (_url, options) => {
+      payload = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "A screenshot." } }] })
+      };
+    }
+  });
+  assert.deepEqual(payload.messages.at(-1).content, userMessageContent("what is this", [{ dataUrl: "data:image/png;base64,aaa" }]));
+  assert.equal(payload.messages.at(-1).content[1].type, "image_url");
 });
