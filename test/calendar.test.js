@@ -149,10 +149,29 @@ test("list events uses the Calendar API", async () => {
   assert.equal(result.events[0].start, "2026-08-26T15:00:00");
 });
 
-test("heartbeat includes imminent calendar events without IMAP", async () => {
+test("heartbeat does not text calendar events by default", async () => {
   const result = await runHeartbeat({
     environment: {
       HEARTBEAT_MODE: "report-only",
+      HEARTBEAT_IMAP_USER: "info@example.com",
+      HEARTBEAT_IMAP_PASS: "secret",
+      ...calendarEnv
+    },
+    now: new Date("2026-08-26T12:30:00.000Z"),
+    scanInbox: async () => [],
+    listCalendar: async () => {
+      throw new Error("calendar should not be fetched");
+    }
+  });
+  assert.equal(result.status, "clear");
+  assert.equal(result.alert, undefined);
+});
+
+test("heartbeat texts calendar events only when HEARTBEAT_CALENDAR_ALERTS is true", async () => {
+  const result = await runHeartbeat({
+    environment: {
+      HEARTBEAT_MODE: "report-only",
+      HEARTBEAT_CALENDAR_ALERTS: "true",
       ...calendarEnv
     },
     now: new Date("2026-08-26T12:30:00.000Z"),

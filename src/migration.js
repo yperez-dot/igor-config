@@ -43,7 +43,7 @@ export const migrationCapabilities = [
     id: "openclaw-heartbeat",
     area: "Proactive operational heartbeat",
     legacy: "Approximate 30-minute OpenClaw polling for carrier, calendar, and urgent-email checks",
-    v2: "IMAP plus Google Calendar (next 48 hours; Telegram alerts for events in the next 4 hours)",
+    v2: "IMAP heartbeat; Google Calendar Telegram pings are off unless HEARTBEAT_CALENDAR_ALERTS=true",
     state: "testing",
     gate: "Set Google Calendar OAuth secrets on Railway, confirm Telegram list/book, shadow-test heartbeat, then disable OpenClaw heartbeat."
   },

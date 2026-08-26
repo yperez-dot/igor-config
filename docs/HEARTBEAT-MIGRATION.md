@@ -15,7 +15,7 @@ Each heartbeat may:
 
 v2 does **not** auto-publish, deploy, or edit knowledge on heartbeat findings.
 
-1. **Detect** carrier/urgent mail and upcoming calendar items with deterministic checks
+1. **Detect** carrier/urgent mail (calendar reminder texts are off unless `HEARTBEAT_CALENDAR_ALERTS=true`)
 2. **Summarize** findings in a Telegram alert when actionable
 3. **Draft** knowledge or deploy work only when a human asks in Telegram
 
@@ -33,8 +33,9 @@ This removes Anthropic from the polling loop. Grok is optional for summarizing f
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | OAuth client secret |
 | `GOOGLE_CALENDAR_REFRESH_TOKEN` | Offline refresh token for Yahoska’s calendar |
 | `GOOGLE_CALENDAR_ID` | Optional, default `primary` |
+| `HEARTBEAT_CALENDAR_ALERTS` | Optional. Set `true` only to resume 4-hour calendar Telegram reminders |
 
-Heartbeat lists the next 48 hours of events. Telegram alerts only when an event starts in the next 4 hours (plus carrier/urgent mail). See [Google Calendar setup](GOOGLE-CALENDAR.md).
+Calendar Telegram pings are **off** by default (`HEARTBEAT_CALENDAR_ALERTS` unset). Asking Igor in chat still uses the live calendar. Set `HEARTBEAT_CALENDAR_ALERTS=true` on **igor-config** only if you want the 4-hour reminder texts back.
 
 ## Cutover
 
