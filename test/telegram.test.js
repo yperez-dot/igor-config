@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { downloadTelegramFile, registerTelegramWebhook, sendTelegramDocument, supportedMessage, telegramConfig, telegramFailureMessage } from "../src/telegram.js";
+import { downloadTelegramFile, registerTelegramWebhook, sendTelegramDocument, sendTelegramMessage, stripTelegramMarkdown, supportedMessage, telegramConfig, telegramFailureMessage } from "../src/telegram.js";
 import { isPlanRecommendationRequest, isSpanish, recommendationRefusal, unavailableMessage } from "../src/grok.js";
 
 test("Telegram configuration parses an explicit team allowlist", () => {
@@ -175,4 +175,27 @@ test("Telegram failures sound like Igor, not a generic bot", () => {
   assert.match(telegramFailureMessage(new Error("xAI tool loop exceeded the maximum number of rounds.")), /too many tools/);
   assert.match(telegramFailureMessage(new Error("boom Bearer secret-token-value")), /Couldn't finish that/);
   assert.equal(telegramFailureMessage(new Error("boom Bearer secret-token-value")).includes("secret-token-value"), false);
+});
+
+test("Telegram texts drop markdown asterisks so they never show in chat", () => {
+  assert.equal(
+    stripTelegramMarkdown("**What’s wrong**\nThe **Sep 2** card is early. Clicking it can **404**."),
+    "What’s wrong\nThe Sep 2 card is early. Clicking it can 404."
+  );
+  assert.equal(stripTelegramMarkdown("* leftover bullet\n`blog/index.html`"), "• leftover bullet\nblog/index.html");
+});
+
+test("sendTelegramMessage strips markdown before posting", async () => {
+  let body;
+  await sendTelegramMessage({
+    botToken: "test-token",
+    chatId: 99,
+    text: "**What’s wrong** Sep 2 should not be up.",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return { ok: true };
+    }
+  });
+  assert.equal(body.text.includes("**"), false);
+  assert.equal(body.text, "What’s wrong Sep 2 should not be up.");
 });

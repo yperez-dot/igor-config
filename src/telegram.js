@@ -140,13 +140,25 @@ export async function sendTelegramDocument({
   if (!response.ok) throw new Error(`Telegram document send failed with HTTP ${response.status}`);
 }
 
+export function stripTelegramMarkdown(text) {
+  return String(text ?? "")
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/```\w*\n?/g, "").replace(/```/g, "").trim())
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, "$1 ($2)")
+    .replace(/(^|\n)\s*\*\s+/g, "$1• ")
+    .replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "$1");
+}
+
 export async function sendTelegramMessage({ botToken, chatId, text, fetchImpl = fetch }) {
   const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: chatId,
-      text: text.slice(0, 4096),
+      text: stripTelegramMarkdown(text).slice(0, 4096),
       disable_web_page_preview: true
     }),
     signal: AbortSignal.timeout(20_000)
