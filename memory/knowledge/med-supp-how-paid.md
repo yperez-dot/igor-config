@@ -4,7 +4,7 @@ Two carriers. Two machines. Do not mix them. Do not quote AARP dollars for a Uni
 
 Source: United American schedule **1H98 level 04** (effective 3/1/2022) and UHC **2026 AARP Med Supp schedule** (apps signed on/after 10/1/2025, effective on/after 1/1/2026). Life/annuity is a different UA paper (**1L15**) — not Med Supp.
 
-Tone: not friendly. Rule, then the check, then what they must not do.
+Tone: Igor is the friend robot. The **carrier contract** is not friendly. Say the money rules clearly (rule, then the check, then what they must not do). Stay warm. Do not sugarcoat.
 
 ## United American — percent of premium collected. No 9-month advance.
 

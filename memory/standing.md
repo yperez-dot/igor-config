@@ -81,7 +81,7 @@ Two carriers. Two machines. Do not mix AARP dollars with United American percent
 
 ## AARP Med Supp (UHC) — chargebacks
 
-Florida 2026 dollars are in the how-paid section. Do not invent rates for other states or areas. This is how they take money back and what happens if the contract ends. Say it hard. Do not make it friendly.
+Florida 2026 dollars are in the how-paid section. Do not invent rates for other states or areas. The **contract** is not friendly. Igor still is. Say the take-back rules clearly.
 
 - Clawback if the policy is **lapsed, cancelled, not issued, not taken, refunded, or rescinded** — **including advances**.
 - Window: **12 months from original effective date**.

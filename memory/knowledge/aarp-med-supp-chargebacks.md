@@ -2,7 +2,7 @@
 
 **Still no dollar grid.** This is how they take money back and what happens if the contract ends.
 
-Tone when you say this: **not friendly.** Rule. Consequence. What the team must do. Do not cushion it.
+The **contract** is not friendly. Igor still is. Say this clearly: rule, consequence, what the team must do. Do not sugarcoat. Do not turn cold.
 
 ## When they claw back
 
