@@ -22,7 +22,7 @@ OpenClaw remains the production source of truth until each capability below is t
 | Backups and restore | Daily NAS backup + weekly Railway database backup to NAS | 2 | Scope, retention, encryption, restore test, backup owner |
 | Compliance/content | Research and draft production | 2 | CMS/carrier citations, bilingual review, human publication approval |
 | Agent Pulse newsletter | Scheduled email newsletter to agents | 4 | Recipient list, draft/compliance review, send approval, SMTP access |
-| OpenClaw heartbeat | Carrier/calendar/urgent-email checks and memory state | 5 | Bounded source checks, quiet hours, token budget, report-only run |
+| OpenClaw heartbeat | Carrier/calendar/urgent-email checks and memory state | 5 | IMAP + Google Calendar OAuth on Railway; Telegram list/book; report-only heartbeat |
 | Site-health alerts | Scheduled monitoring and Telegram alerts | 6 | Read-only test, alert-destination confirmation, false-positive review |
 | Carrier updates | Portal/email research and alerting | 7 | Source list, timestamp/citation requirement, reviewer |
 | Stale-lead digest | GHL enrichment, agent documents, and email | 8 | Data-minimization review, redacted test, recipient approval |

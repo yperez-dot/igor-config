@@ -43,9 +43,9 @@ export const migrationCapabilities = [
     id: "openclaw-heartbeat",
     area: "Proactive operational heartbeat",
     legacy: "Approximate 30-minute OpenClaw polling for carrier, calendar, and urgent-email checks",
-    v2: "Deterministic IMAP heartbeat handler added; calendar and shadow cutover pending",
+    v2: "IMAP plus Google Calendar (next 48 hours; Telegram alerts for events in the next 4 hours)",
     state: "testing",
-    gate: "Configure IMAP on igor-config, shadow-test against legacy, then disable OpenClaw heartbeat."
+    gate: "Set Google Calendar OAuth secrets on Railway, confirm Telegram list/book, shadow-test heartbeat, then disable OpenClaw heartbeat."
   },
   {
     id: "stale-lead-digest",

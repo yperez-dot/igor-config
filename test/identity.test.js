@@ -8,6 +8,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /Katy Robles/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
+  assert.match(SYSTEM_PROMPT, /Google Calendar/);
   assert.match(SYSTEM_PROMPT, /Telegram files/);
   assert.match(SYSTEM_PROMPT, /Igor takes it all/);
   assert.match(SYSTEM_PROMPT, /Photos and image files/);

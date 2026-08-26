@@ -29,8 +29,12 @@ This removes Anthropic from the polling loop. Grok is optional for summarizing f
 | `HEARTBEAT_IMAP_USER` | Mailbox user, usually `info@healthexps.com` |
 | `HEARTBEAT_IMAP_PASS` | Gmail app password for IMAP |
 | `HEARTBEAT_IMAP_HOST` | Optional, default `imap.gmail.com` |
+| `GOOGLE_CALENDAR_CLIENT_ID` | OAuth client id (same as Telegram calendar tools) |
+| `GOOGLE_CALENDAR_CLIENT_SECRET` | OAuth client secret |
+| `GOOGLE_CALENDAR_REFRESH_TOKEN` | Offline refresh token for Yahoska’s calendar |
+| `GOOGLE_CALENDAR_ID` | Optional, default `primary` |
 
-Google Calendar support is phase 2.
+Heartbeat lists the next 48 hours of events. Telegram alerts only when an event starts in the next 4 hours (plus carrier/urgent mail). See [Google Calendar setup](GOOGLE-CALENDAR.md).
 
 ## Cutover
 

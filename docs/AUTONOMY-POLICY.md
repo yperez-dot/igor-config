@@ -21,6 +21,8 @@ Igor v2 should not ask for permission again for every routine action. An establi
 
 For a standing-approved job, Igor runs it, records the result, and alerts the team on success/failure. It must stop rather than silently broaden its authority when a condition above is met.
 
+Connecting Google Calendar was approved so Igor can view Yahoska’s availability and book appointments. Each create, reschedule, or cancel still needs an in-chat confirmation before it writes to the calendar.
+
 ## Channel and input parity
 
 Igor has to take the full range of work the team already sends him. Text-only shortcuts are a regression.

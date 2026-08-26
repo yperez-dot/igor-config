@@ -1,4 +1,5 @@
 import { ImapFlow } from "imapflow";
+import { calendarConfig, listUpcomingEvents } from "./calendar.js";
 
 const CARRIER_HINTS = [
   "uhc", "unitedhealth", "humana", "aetna", "wellcare", "centene", "careplus",
@@ -72,7 +73,9 @@ export async function scanMailbox({
 export async function runHeartbeat({
   environment = process.env,
   now = new Date(),
-  scanInbox = scanMailbox
+  scanInbox = scanMailbox,
+  fetchImpl = fetch,
+  listCalendar = listUpcomingEvents
 } = {}) {
   const mode = environment.HEARTBEAT_MODE ?? "report-only";
   if (mode === "off") {
@@ -84,27 +87,68 @@ export async function runHeartbeat({
 
   const user = environment.HEARTBEAT_IMAP_USER;
   const pass = environment.HEARTBEAT_IMAP_PASS;
-  if (!user || !pass) {
+  const calendarReady = calendarConfig(environment).connected;
+  if ((!user || !pass) && !calendarReady) {
     return { status: "skipped", reason: "imap_not_configured" };
   }
 
-  const findings = await scanInbox({
-    user,
-    pass,
-    host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
-    lookbackMinutes: Number(environment.HEARTBEAT_LOOKBACK_MINUTES ?? 35)
+  const findings = user && pass
+    ? await scanInbox({
+      user,
+      pass,
+      host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
+      lookbackMinutes: Number(environment.HEARTBEAT_LOOKBACK_MINUTES ?? 35)
+    })
+    : [];
+
+  let upcomingCalendar = [];
+  let calendarError = null;
+  if (calendarReady) {
+    try {
+      upcomingCalendar = await listCalendar({
+        environment,
+        now,
+        hours: 48,
+        fetchImpl
+      });
+    } catch (error) {
+      calendarError = error.message;
+    }
+  }
+
+  const imminentMs = 4 * 60 * 60 * 1000;
+  const nowMs = now.getTime();
+  const imminentCalendar = upcomingCalendar.filter((event) => {
+    const start = event.startMs ?? Date.parse(event.start);
+    return !Number.isNaN(start) && start >= nowMs && start <= nowMs + imminentMs;
   });
 
+  const actionable = findings.length > 0 || imminentCalendar.length > 0;
   const result = {
-    status: findings.length ? "actionable" : "clear",
+    status: actionable ? "actionable" : "clear",
     findingCount: findings.length,
-    findings: findings.slice(0, 5)
+    findings: findings.slice(0, 5),
+    upcomingCalendar: upcomingCalendar.slice(0, 8).map((event) => ({
+      summary: event.summary,
+      start: event.start,
+      end: event.end,
+      timeZone: event.timeZone
+    }))
   };
+  if (calendarError) result.calendarError = calendarError;
 
-  if (mode === "shadow" || (mode === "report-only" && findings.length)) {
-    result.alert = findings.length
-      ? `Heartbeat found ${findings.length} actionable message(s): ${findings.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
-      : "Heartbeat clear: no actionable carrier or urgent mail in the lookback window.";
+  if (mode === "shadow" || (mode === "report-only" && actionable)) {
+    const mailBit = findings.length
+      ? `${findings.length} actionable message(s): ${findings.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
+      : null;
+    const calBit = imminentCalendar.length
+      ? `${imminentCalendar.length} event(s) in the next 4 hours: ${imminentCalendar.slice(0, 3).map((event) => `${event.summary} ${event.start}`).join(" | ")}`
+      : null;
+    if (mailBit || calBit) {
+      result.alert = `Heartbeat found ${[mailBit, calBit].filter(Boolean).join(" · ")}`;
+    } else if (mode === "shadow") {
+      result.alert = "Heartbeat clear: no actionable carrier/urgent mail or imminent calendar events.";
+    }
   }
 
   return result;

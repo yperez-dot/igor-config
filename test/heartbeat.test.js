@@ -10,7 +10,20 @@ test("classifies carrier and urgent messages", () => {
 
 test("skips quiet hours and missing imap config", async () => {
   assert.equal(isQuietHours(new Date("2026-08-24T06:00:00.000Z")), true);
-  const skipped = await runHeartbeat({ environment: { HEARTBEAT_MODE: "report-only" } });
+  const quiet = await runHeartbeat({
+    environment: {
+      HEARTBEAT_MODE: "report-only",
+      HEARTBEAT_IMAP_USER: "info@example.com",
+      HEARTBEAT_IMAP_PASS: "secret"
+    },
+    now: new Date("2026-08-24T06:00:00.000Z"),
+    scanInbox: async () => []
+  });
+  assert.equal(quiet.reason, "quiet_hours");
+  const skipped = await runHeartbeat({
+    environment: { HEARTBEAT_MODE: "report-only" },
+    now: new Date("2026-08-26T16:00:00.000Z")
+  });
   assert.equal(skipped.reason, "imap_not_configured");
 });
 
@@ -21,6 +34,7 @@ test("alerts on actionable findings", async () => {
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"
     },
+    now: new Date("2026-08-26T16:00:00.000Z"),
     scanInbox: async () => [{ kind: "carrier", from: "humana@example.com", subject: "Commission update", date: null }]
   });
   assert.equal(result.status, "actionable");
