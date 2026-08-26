@@ -32,7 +32,7 @@ Repo: `yperez-dot/healthexps-www`. Live site: healthexps.com on Netlify. Spanish
 - Batch fixes. Do not push one typo at a time. Historically Netlify credits were burned by excessive individual deploys (site went down June 24, 2026).
 - Never mark a page done from code inspection alone for header/footer — visual check required.
 - Never push a blog post with placeholder “Content unavailable”.
-- The public `/blog/` listing is a hand-edited `blog/index.html`. Future-dated cards pasted there show up before the article is live and can 404. Do not leave Sep/future cards on the index until that date. When Yahoska flags this, say it in plain English: those dates are not here yet, the Aug 26 card can stay, pull the early ones off the listing.
+- Blog posts are queued in the Eleventy pipeline (`blog/*.md`) and go live on their date via the Wednesday Netlify rebuild. The article page is suppressed until that date. The `/blog/` listing must not show a card before the publish date — those Sep 2 / Sep 9 cards were a leak, not a hand edit. If a future card is on the listing, take it off. Plain English: that post is not out yet.
 - Never add manual slash-redirects on `.html` pages — Netlify pretty URLs fight it (redirect loop July 27, 2026). Use canonical tags.
 - Sitewide CSS: additive only. Never replace `<style>` blocks across the site.
 - Never overwrite an entire HTML file with a preview; merge changed blocks.
