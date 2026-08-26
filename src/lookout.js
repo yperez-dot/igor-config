@@ -1,9 +1,29 @@
 export const DEFAULT_FACEBOOK_CAMPAIGN_ID = "120244537840240684";
+export const SITE_UPTIME_REMINDER_MS = 2 * 60 * 60 * 1000;
+export const LOOKOUT_REMINDER_MS = 8 * 60 * 60 * 1000;
 
-export const LOOKOUT_SITES = [
-  { id: "healthexps", label: "healthexps.com", url: "https://www.healthexps.com/" },
-  { id: "hub", label: "agentmedicarehub.com", url: "https://agentmedicarehub.com/" }
+export const LOOKOUT_SITE_GROUPS = [
+  {
+    id: "healthexps",
+    label: "healthexps.com",
+    urls: [
+      "https://www.healthexps.com/",
+      "https://www.healthexps.com/robots.txt"
+    ]
+  },
+  {
+    id: "hub",
+    label: "agentmedicarehub.com",
+    urls: [
+      "https://agentmedicarehub.com/",
+      "https://agentmedicarehub.com/robots.txt"
+    ]
+  }
 ];
+
+export const LOOKOUT_SITES = LOOKOUT_SITE_GROUPS.flatMap((group) => (
+  group.urls.map((url) => ({ id: group.id, label: group.label, url }))
+));
 
 const LOOKOUT_TIMEOUT_MS = 8_000;
 
@@ -109,6 +129,30 @@ export async function probeSite(site, { fetchImpl = fetch } = {}) {
   }
 }
 
+function downReason(probe) {
+  if (probe?.httpStatus) return `HTTP ${probe.httpStatus}`;
+  if (probe?.message?.includes("didn't respond")) return "no response";
+  return "error";
+}
+
+export async function probeSiteGroup(group, { fetchImpl = fetch } = {}) {
+  const probes = await Promise.all(
+    group.urls.map((url) => probeSite({ id: group.id, label: group.label, url }, { fetchImpl }))
+  );
+  if (probes.every((item) => item.status === "down")) {
+    const sample = probes.find((item) => item.message) || probes[0];
+    return {
+      id: group.id,
+      status: "down",
+      urgent: true,
+      httpStatus: sample.httpStatus,
+      message: `${group.label} looks down from here (${downReason(sample)}). I'm watching it.`
+    };
+  }
+  const ok = probes.find((item) => item.status === "ok");
+  return { id: group.id, status: "ok", httpStatus: ok?.httpStatus };
+}
+
 export function lookoutFingerprint(findings) {
   const keys = findings
     .filter((item) => item.status && item.status !== "ok" && item.status !== "secret_missing")
@@ -117,9 +161,11 @@ export function lookoutFingerprint(findings) {
   return keys.join("|") || "clear";
 }
 
-export function formatLookoutAlert(findings, { recovered = false } = {}) {
+export function formatLookoutAlert(findings, { recovered = false, sitesOnly = false } = {}) {
   if (recovered && !findings.length) {
-    return "Good news — the thing that was broken looks clear now. Ads and the sites are answering.";
+    return sitesOnly
+      ? "Good news — the website is answering again."
+      : "Good news — the thing that was broken looks clear now.";
   }
   const lines = findings.map((item) => item.message).filter(Boolean);
   if (!lines.length) return null;
@@ -132,32 +178,73 @@ export function shouldNotifyLookout({
   lastFingerprint,
   lastAlertAt,
   now = new Date(),
-  urgent = false,
-  reminderMs = 8 * 60 * 60 * 1000
+  reminderMs = LOOKOUT_REMINDER_MS
 } = {}) {
   const previous = lastFingerprint || "clear";
   if (fingerprint === "clear") {
     return previous !== "clear";
   }
-  if (urgent) return true;
   if (fingerprint !== previous) return true;
   if (!lastAlertAt) return true;
   return now.getTime() - new Date(lastAlertAt).getTime() >= reminderMs;
 }
 
-export async function runLookout({ environment = {}, fetchImpl = fetch } = {}) {
-  const probes = await Promise.all([
-    probeFacebookAds({ environment, fetchImpl }),
-    ...LOOKOUT_SITES.map((site) => probeSite(site, { fetchImpl }))
-  ]);
+export async function runLookout({
+  environment = {},
+  fetchImpl = fetch,
+  includeFacebook = true,
+  includeSites = true
+} = {}) {
+  const jobs = [];
+  if (includeFacebook) jobs.push(probeFacebookAds({ environment, fetchImpl }));
+  if (includeSites) {
+    jobs.push(...LOOKOUT_SITE_GROUPS.map((group) => probeSiteGroup(group, { fetchImpl })));
+  }
+  const probes = await Promise.all(jobs);
   const findings = probes.filter((item) => item.message);
-  const recovered = false;
   return {
     probes,
     findings,
     fingerprint: lookoutFingerprint(findings),
     urgent: findings.some((item) => item.urgent),
-    recovered,
+    recovered: false,
     alert: formatLookoutAlert(findings)
+  };
+}
+
+export async function runSiteLookout({
+  environment = {},
+  fetchImpl = fetch,
+  lastFingerprint,
+  lastAlertAt,
+  now = new Date()
+} = {}) {
+  const lookout = await runLookout({
+    environment,
+    fetchImpl,
+    includeFacebook: false
+  });
+  const recovered = Boolean(lastFingerprint && lastFingerprint !== "clear" && lookout.fingerprint === "clear");
+  const alert = recovered
+    ? formatLookoutAlert([], { recovered: true, sitesOnly: true })
+    : lookout.alert;
+  const shouldNotify = Boolean(
+    alert
+    && shouldNotifyLookout({
+      fingerprint: lookout.fingerprint,
+      lastFingerprint,
+      lastAlertAt,
+      now,
+      reminderMs: SITE_UPTIME_REMINDER_MS
+    })
+  );
+  return {
+    status: lookout.findings.length || recovered ? "actionable" : "clear",
+    lookout,
+    fingerprint: lookout.fingerprint,
+    urgent: lookout.urgent,
+    recovered,
+    shouldNotify,
+    alert: shouldNotify ? alert : undefined
   };
 }

@@ -39,6 +39,10 @@ Repo: `yperez-dot/healthexps-www`. Live site: healthexps.com on Netlify. Spanish
 - healthexps.com site id historically `super-blancmange-6bb737` — confirm with `netlify_list_sites` before deploying.
 - If either public site goes down: check Netlify deploy state first, redeploy, then investigate.
 
+## Uptime lookout
+
+Igor’s standing job is that **healthexps.com never goes down unnoticed**. `v2-site-uptime` hits the homepage and `/robots.txt` for healthexps.com and agentmedicarehub.com every 5 minutes. A host is down only if every probe times out or returns HTTP ≥ 500. 403 (Cloudflare) is not down. Telegram immediately on down and on recovery; 2-hour reminder while it stays down. Do not probe OliComm as part of this.
+
 ## Pre-deploy (every page you touched)
 
 - Identical header/nav for pages of the same type. Logo links to `/` (EN) or `/es/` (ES).

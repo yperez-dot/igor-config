@@ -213,6 +213,7 @@ test("list_schedules returns the legacy catalog without waiting on IMAP", async 
   const result = await executeTool("list_schedules", {});
   assert.ok(result.catalog.length > 5);
   assert.ok(result.catalog.some((job) => job.id === "v2-igor-heartbeat"));
+  assert.ok(result.catalog.some((job) => job.id === "v2-site-uptime" && job.cron === "*/5 * * * *"));
   assert.ok(result.catalog.some((job) => /cron/i.test(job.cron) || job.cron.includes("*")));
 });
 

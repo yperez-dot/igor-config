@@ -1,3 +1,5 @@
+export const LOOKOUT_LIVE_SCHEDULE_IDS = ["v2-igor-heartbeat", "v2-site-uptime"];
+
 export const legacySchedules = [
   {
     id: "legacy-site-health-daily",
@@ -102,6 +104,14 @@ export const legacySchedules = [
     cron: "*/30 * * * *",
     timezone: "America/New_York",
     payload: { workflow: "igor_heartbeat", mode: "report-only", source: "v2" }
+  },
+  {
+    id: "v2-site-uptime",
+    title: "THEI website uptime",
+    taskType: "daily_operations",
+    cron: "*/5 * * * *",
+    timezone: "America/New_York",
+    payload: { workflow: "site_uptime", mode: "report-only", source: "v2" }
   },
   {
     id: "legacy-openclaw-netlify-credit-check",

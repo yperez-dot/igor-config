@@ -15,7 +15,9 @@ Each heartbeat may:
 
 v2 does **not** auto-publish, deploy, or edit knowledge on heartbeat findings.
 
-1. **Look out** on every Florida daytime cycle: probe the Facebook ads token and public sites (healthexps.com, agentmedicarehub.com). Do **not** probe OliComm. Telegram-ping Yahoska when something actually breaks, when it recovers, or once more after ~8 hours if it is still broken. Site downtime pages through quiet hours. Dead ads tokens wait until morning.
+1. **Look out**
+   - **Website never-down** is its own job (`v2-site-uptime`, every 5 minutes, Florida time). Probe healthexps.com and agentmedicarehub.com (homepage + `/robots.txt`). A host is down only if every probe times out or returns HTTP ≥ 500. 403 is not down. Telegram immediately on down and on recovery, including overnight. Remind after ~2 hours if it stays down. Do **not** probe OliComm.
+   - **Ads token** stays on the 30-minute heartbeat. Telegram-ping when the token dies, when it recovers, or once more after ~8 hours if it is still dead. Dead ads tokens wait until morning.
 2. **Detect** carrier/urgent mail when IMAP is configured (calendar reminder texts stay off unless `HEARTBEAT_CALENDAR_ALERTS=true`)
 3. **Summarize** findings in a Telegram alert when actionable — like a colleague, not a dashboard
 4. **Draft** knowledge or deploy work only when a human asks in Telegram

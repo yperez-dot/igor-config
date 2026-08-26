@@ -118,3 +118,34 @@ test("persists agent memories without writing the note text to audit events", as
 
   await store.close();
 });
+
+test("ensureActiveSchedule turns a seeded shadow job live", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+
+  await store.seedSchedule({
+    id: "v2-site-uptime",
+    taskType: "daily_operations",
+    cron: "*/5 * * * *",
+    payload: { workflow: "site_uptime", mode: "report-only", source: "v2" },
+    timezone: "America/New_York"
+  });
+  assert.deepEqual(await store.activeSchedules(), []);
+
+  await store.ensureActiveSchedule({
+    id: "v2-site-uptime",
+    taskType: "daily_operations",
+    cron: "*/5 * * * *",
+    payload: { workflow: "site_uptime", mode: "report-only", source: "v2" },
+    timezone: "America/New_York"
+  });
+  const live = await store.activeSchedules();
+  assert.equal(live.length, 1);
+  assert.equal(live[0].id, "v2-site-uptime");
+  assert.equal(live[0].cron, "*/5 * * * *");
+  assert.equal(live[0].payload.workflow, "site_uptime");
+
+  await store.close();
+});
