@@ -9,6 +9,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
   assert.match(SYSTEM_PROMPT, /Telegram files/);
+  assert.match(SYSTEM_PROMPT, /Photos and image files/);
   assert.doesNotMatch(SYSTEM_PROMPT, /You are Igor v2/);
   assert.doesNotMatch(SYSTEM_PROMPT, /pit-[a-z0-9-]+/i);
   assert.doesNotMatch(SYSTEM_PROMPT, /sk-[a-zA-Z0-9]+/);

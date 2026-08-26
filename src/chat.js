@@ -34,6 +34,7 @@ export async function handleTelegramChat({
         apiKey,
         model,
         text: userText,
+        media: inbound.media,
         history,
         systemPrompt: prompt,
         tools,

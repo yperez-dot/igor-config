@@ -1,5 +1,12 @@
 import { inflateSync } from "node:zlib";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { readZipEntries } from "./zip.js";
+
+const execFileAsync = promisify(execFile);
 
 export const TELEGRAM_FILE_MAX_BYTES = 20 * 1024 * 1024;
 export const EXTRACTED_TEXT_MAX_CHARS = 80_000;
@@ -48,6 +55,37 @@ function officeKindFromEntries(entries) {
   return "";
 }
 
+function extractXlsxText(entries) {
+  const sharedXml = entries.find((entry) => entry.name === "xl/sharedStrings.xml");
+  const shared = sharedXml ? xmlLocalTagTexts(sharedXml.data.toString("utf8"), "t") : [];
+  const sheets = entries
+    .filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const lines = [];
+  for (const sheet of sheets) {
+    const xml = sheet.data.toString("utf8");
+    for (const cell of xml.matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)) {
+      const attrs = cell[1];
+      const inner = cell[2];
+      const ref = attrs.match(/\br="([^"]+)"/)?.[1];
+      const type = attrs.match(/\bt="([^"]+)"/)?.[1];
+      let value = "";
+      if (type === "s") {
+        const index = Number(inner.match(/<v>(\d+)<\/v>/)?.[1]);
+        value = Number.isFinite(index) ? (shared[index] ?? "") : "";
+      } else if (type === "inlineStr") {
+        value = xmlLocalTagTexts(inner, "t").join(" ");
+      } else {
+        value = inner.match(/<v>([^<]*)<\/v>/)?.[1] ?? "";
+      }
+      if (ref && String(value).trim()) lines.push(`${ref}: ${String(value).trim()}`);
+      if (lines.length >= 2000) break;
+    }
+    if (lines.length >= 2000) break;
+  }
+  return lines.join("\n") || shared.join("\n");
+}
+
 function extractOfficeText(buffer, fileName) {
   const entries = readZipEntries(buffer);
   const kind = officeKindFromEntries(entries) || extensionOf(fileName);
@@ -69,8 +107,7 @@ function extractOfficeText(buffer, fileName) {
   }
 
   if (kind === "xlsx" || kind === "xlsm") {
-    const shared = entries.find((entry) => entry.name === "xl/sharedStrings.xml");
-    return shared ? xmlLocalTagTexts(shared.data.toString("utf8"), "t").join("\n") : "";
+    return extractXlsxText(entries);
   }
 
   return "";
@@ -139,25 +176,124 @@ export function extractInboundDocument({ fileName, mimeType = "", buffer }) {
   return "";
 }
 
-export function formatInboundUserText({ caption = "", fileName, mimeType, fileSize, extracted, photo = false, error = "" }) {
-  const sizeLabel = typeof fileSize === "number" && fileSize > 0
-    ? `${(fileSize / (fileSize >= 1024 * 1024 ? 1024 * 1024 : 1024)).toFixed(1)} ${fileSize >= 1024 * 1024 ? "MB" : "KB"}`
-    : "unknown size";
+export const GROK_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "gif", "webp", "heic", "heif"]);
+const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "m4v", "webm", "avi", "mpeg", "mpg"]);
+
+export function sniffImageMime(buffer, fallback = "") {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return "image/png";
+  }
+  if (fallback === "image/jpg" || fallback === "image/jpeg") return "image/jpeg";
+  if (fallback === "image/png") return "image/png";
+  return "";
+}
+
+export function toGrokImage(buffer, mimeHint) {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  const mime = sniffImageMime(bytes, mimeHint);
+  if (!mime || bytes.length === 0 || bytes.length > GROK_IMAGE_MAX_BYTES) return null;
+  return { mimeType: mime, dataUrl: `data:${mime};base64,${bytes.toString("base64")}` };
+}
+
+export function isImageAttachment(fileName, mimeType = "") {
+  return String(mimeType).startsWith("image/") || IMAGE_EXTENSIONS.has(extensionOf(fileName));
+}
+
+export function isVideoAttachment(fileName, mimeType = "") {
+  return String(mimeType).startsWith("video/") || VIDEO_EXTENSIONS.has(extensionOf(fileName));
+}
+
+function isLegacyOffice(buffer, fileName) {
+  const ext = extensionOf(fileName);
+  const ole = buffer.length >= 4 && buffer[0] === 0xd0 && buffer[1] === 0xcf && buffer[2] === 0x11 && buffer[3] === 0xe0;
+  return ole || ext === "doc" || ext === "xls" || ext === "ppt";
+}
+
+export async function extractVideoFrames(buffer, { maxFrames = 3, execFileImpl = execFileAsync } = {}) {
+  try {
+    await execFileImpl("ffmpeg", ["-version"], { timeout: 3_000 });
+  } catch {
+    return [];
+  }
+  const dir = await mkdtemp(join(tmpdir(), "igor-frames-"));
+  try {
+    const input = join(dir, "input.bin");
+    await writeFile(input, buffer);
+    await execFileImpl("ffmpeg", [
+      "-y",
+      "-i",
+      input,
+      "-vf",
+      "fps=1/2,scale='min(640,iw)':-2",
+      "-frames:v",
+      String(maxFrames),
+      join(dir, "frame-%02d.jpg")
+    ], { timeout: 15_000 });
+    const files = (await readdir(dir)).filter((name) => name.endsWith(".jpg")).sort();
+    const frames = [];
+    for (const name of files) frames.push(await readFile(join(dir, name)));
+    return frames;
+  } catch {
+    return [];
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+function sizeLabel(fileSize) {
+  if (!(typeof fileSize === "number") || fileSize <= 0) return "unknown size";
+  return fileSize >= 1024 * 1024
+    ? `${(fileSize / (1024 * 1024)).toFixed(1)} MB`
+    : `${(fileSize / 1024).toFixed(1)} KB`;
+}
+
+export function formatInboundUserText({
+  caption = "",
+  fileName,
+  mimeType,
+  fileSize,
+  extracted,
+  kind = "document",
+  hasVision = false,
+  duration,
+  error = ""
+}) {
   const parts = [];
   if (caption.trim()) parts.push(caption.trim());
-  if (photo) {
-    parts.push("User sent a photo. Image vision is not enabled on v2, so describe from the caption or ask for a screenshot/PDF if the image content matters.");
+
+  if (kind === "photo") {
+    if (error) {
+      parts.push(`User sent a photo, but it could not be downloaded: ${error}`);
+      return parts.join("\n\n");
+    }
+    parts.push(hasVision
+      ? "User sent a photo. The image is attached for you to see. Do not say the photo never arrived."
+      : "User sent a photo, but it could not be attached for vision. Ask them to resend a JPG or PNG.");
     return parts.join("\n\n");
   }
 
-  parts.push(`User sent a Telegram file: ${fileName} (${mimeType || "unknown type"}, ${sizeLabel}).`);
+  if (kind === "video") {
+    const durationLabel = duration ? `${duration}s` : "unknown duration";
+    parts.push(`User sent a video: ${fileName || "video"} (${mimeType || "video"}, ${sizeLabel(fileSize)}, ${durationLabel}). Grok cannot watch raw video, so still frames/thumbnails are attached when available. Describe what is visible; if audio or motion matters, ask for a longer description.`);
+    if (error) parts.push(`The video could not be fully processed: ${error}`);
+    return parts.join("\n\n");
+  }
+
+  parts.push(`User sent a Telegram file: ${fileName} (${mimeType || "unknown type"}, ${sizeLabel(fileSize)}).`);
   if (error) {
-    parts.push(`The file could not be read: ${error}. Ask the user to resend, export as PDF, or paste the slide/document text.`);
+    parts.push(`The file could not be read: ${error}. Ask the user to resend as .docx/.xlsx/.pdf, a JPG/PNG, or pasted text.`);
+    return parts.join("\n\n");
+  }
+  if (hasVision) {
+    parts.push("The image is attached for you to see. Do not say the file never arrived.");
     return parts.join("\n\n");
   }
   const text = String(extracted ?? "").trim();
   if (!text) {
-    parts.push("The file arrived, but no extractable text was found. Ask for a PDF, screenshots, or pasted slide text if review is needed.");
+    parts.push("The file arrived, but no extractable text was found. Ask for a .docx, .xlsx, PDF, screenshots, or pasted text if review is needed.");
     return parts.join("\n\n");
   }
   const clipped = text.length > EXTRACTED_TEXT_MAX_CHARS
@@ -168,6 +304,37 @@ export function formatInboundUserText({ caption = "", fileName, mimeType, fileSi
   return parts.join("\n\n");
 }
 
+async function collectVisionImages({ fileId, thumbnailFileId, mimeType, downloadTelegramFile, botToken, videoBuffer }) {
+  const media = [];
+  if (thumbnailFileId) {
+    try {
+      const thumb = await downloadTelegramFile({ botToken, fileId: thumbnailFileId });
+      const image = toGrokImage(thumb.buffer, "image/jpeg");
+      if (image) media.push(image);
+    } catch {
+      // Fall through to ffmpeg frames when possible.
+    }
+  }
+  if (!media.length && fileId && !videoBuffer) {
+    try {
+      const downloaded = await downloadTelegramFile({ botToken, fileId });
+      const image = toGrokImage(downloaded.buffer, mimeType);
+      if (image) media.push(image);
+      return { media, buffer: downloaded.buffer, fileSize: downloaded.fileSize };
+    } catch (error) {
+      return { media, error };
+    }
+  }
+  if (videoBuffer && !media.length) {
+    const frames = await extractVideoFrames(videoBuffer);
+    for (const frame of frames) {
+      const image = toGrokImage(frame, "image/jpeg");
+      if (image) media.push(image);
+    }
+  }
+  return { media };
+}
+
 export async function resolveInboundUserText({
   message,
   botToken,
@@ -175,21 +342,155 @@ export async function resolveInboundUserText({
   extractInboundDocument: extract = extractInboundDocument
 }) {
   if (message.photo) {
-    return {
-      text: formatInboundUserText({ caption: message.text, photo: true }),
-      storeMaxChars: DOCUMENT_TURN_MAX_CHARS
-    };
-  }
-  if (!message.document) {
-    return { text: message.text, storeMaxChars: 1500 };
+    try {
+      const downloaded = await downloadTelegramFile({ botToken, fileId: message.photo.fileId });
+      const image = toGrokImage(downloaded.buffer, message.photo.mimeType);
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName: message.photo.fileName,
+          mimeType: message.photo.mimeType,
+          fileSize: downloaded.fileSize ?? message.photo.fileSize,
+          kind: "photo",
+          hasVision: Boolean(image)
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: image ? [image] : []
+      };
+    } catch (error) {
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName: message.photo.fileName,
+          kind: "photo",
+          error: error.message
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: []
+      };
+    }
   }
 
-  const { fileId, fileName, mimeType, fileSize } = message.document;
+  if (message.video) {
+    try {
+      let videoBuffer;
+      if (!message.video.thumbnailFileId && message.video.fileSize <= TELEGRAM_FILE_MAX_BYTES) {
+        const downloaded = await downloadTelegramFile({ botToken, fileId: message.video.fileId });
+        videoBuffer = downloaded.buffer;
+      }
+      const vision = await collectVisionImages({
+        thumbnailFileId: message.video.thumbnailFileId,
+        downloadTelegramFile,
+        botToken,
+        videoBuffer
+      });
+      if (!vision.media.length && message.video.fileId && message.video.fileSize <= TELEGRAM_FILE_MAX_BYTES && !videoBuffer) {
+        const downloaded = await downloadTelegramFile({ botToken, fileId: message.video.fileId });
+        const frames = await extractVideoFrames(downloaded.buffer);
+        for (const frame of frames) {
+          const image = toGrokImage(frame, "image/jpeg");
+          if (image) vision.media.push(image);
+        }
+      }
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName: message.video.fileName,
+          mimeType: message.video.mimeType,
+          fileSize: message.video.fileSize,
+          duration: message.video.duration,
+          kind: "video",
+          hasVision: vision.media.length > 0
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: vision.media
+      };
+    } catch (error) {
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName: message.video.fileName,
+          mimeType: message.video.mimeType,
+          fileSize: message.video.fileSize,
+          duration: message.video.duration,
+          kind: "video",
+          error: error.message
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: []
+      };
+    }
+  }
+
+  if (!message.document) {
+    return { text: message.text, storeMaxChars: 1500, media: [] };
+  }
+
+  const { fileId, fileName, mimeType, fileSize, thumbnailFileId } = message.document;
   try {
     if (fileSize > TELEGRAM_FILE_MAX_BYTES) {
       throw new Error("File is larger than Telegram’s 20 MB bot download limit.");
     }
+    if (isImageAttachment(fileName, mimeType)) {
+      const downloaded = await downloadTelegramFile({ botToken, fileId });
+      const image = toGrokImage(downloaded.buffer, mimeType);
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName,
+          mimeType,
+          fileSize: downloaded.fileSize ?? fileSize,
+          kind: "document",
+          hasVision: Boolean(image)
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: image ? [image] : []
+      };
+    }
+    if (isVideoAttachment(fileName, mimeType)) {
+      const vision = await collectVisionImages({
+        fileId: thumbnailFileId ? undefined : fileId,
+        thumbnailFileId,
+        mimeType,
+        downloadTelegramFile,
+        botToken
+      });
+      if (!vision.media.length) {
+        const downloaded = await downloadTelegramFile({ botToken, fileId });
+        const frames = await extractVideoFrames(downloaded.buffer);
+        for (const frame of frames) {
+          const image = toGrokImage(frame, "image/jpeg");
+          if (image) vision.media.push(image);
+        }
+      }
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName,
+          mimeType,
+          fileSize,
+          kind: "video",
+          hasVision: vision.media.length > 0
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: vision.media
+      };
+    }
+
     const downloaded = await downloadTelegramFile({ botToken, fileId });
+    if (isLegacyOffice(downloaded.buffer, fileName)) {
+      return {
+        text: formatInboundUserText({
+          caption: message.text,
+          fileName,
+          mimeType,
+          fileSize: downloaded.fileSize ?? fileSize,
+          error: "Legacy .doc/.xls/.ppt is not readable. Resend as .docx, .xlsx, or .pptx."
+        }),
+        storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+        media: []
+      };
+    }
     const extracted = extract({
       fileName,
       mimeType,
@@ -203,7 +504,8 @@ export async function resolveInboundUserText({
         fileSize: downloaded.fileSize ?? fileSize,
         extracted
       }),
-      storeMaxChars: DOCUMENT_TURN_MAX_CHARS
+      storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+      media: []
     };
   } catch (error) {
     return {
@@ -214,7 +516,8 @@ export async function resolveInboundUserText({
         fileSize,
         error: error.message
       }),
-      storeMaxChars: DOCUMENT_TURN_MAX_CHARS
+      storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
+      media: []
     };
   }
 }

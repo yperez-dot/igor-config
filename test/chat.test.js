@@ -163,3 +163,32 @@ test("file-only decks are not blocked by the plan-recommendation caption check",
   });
   assert.equal(grokCalled, true);
 });
+
+test("photos pass vision media into Grok", async () => {
+  const store = memoryStore();
+  const grokCalls = [];
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  await handleTelegramChat({
+    store,
+    message: {
+      chatId: 99,
+      senderId: "111",
+      text: "what is this",
+      photo: { fileId: "pic-1", fileName: "photo.jpg", mimeType: "image/jpeg", fileSize: png.length }
+    },
+    askGrok: async (request) => {
+      grokCalls.push(request);
+      return "It's a screenshot of the calculator.";
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline",
+    downloadFile: async () => ({ buffer: png, fileSize: png.length })
+  });
+  assert.equal(grokCalls[0].media.length, 1);
+  assert.match(grokCalls[0].media[0].dataUrl, /^data:image\/png;base64,/);
+});

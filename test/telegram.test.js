@@ -23,6 +23,7 @@ test("only allowlisted text messages are accepted", () => {
     senderId: "111",
     text: "Check carrier updates",
     document: null,
+    video: null,
     photo: null
   });
   assert.equal(supportedMessage(update, new Set(["222"])), null);
@@ -51,8 +52,10 @@ test("allowlisted document-only messages are accepted", () => {
       fileId: "file-1",
       fileName: "medicare-supplement-101.pptx",
       mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      fileSize: 1_048_576
+      fileSize: 1_048_576,
+      thumbnailFileId: null
     },
+    video: null,
     photo: null
   });
 });
@@ -70,6 +73,27 @@ test("captions on documents are kept as text", () => {
   const parsed = supportedMessage(update, new Set(["111"]));
   assert.equal(parsed.text, "review this deck");
   assert.equal(parsed.document.fileName, "deck.pptx");
+});
+
+test("allowlisted videos are accepted", () => {
+  const parsed = supportedMessage({
+    update_id: 45,
+    message: {
+      from: { id: 111 },
+      chat: { id: 999 },
+      video: {
+        file_id: "vid-1",
+        file_name: "clip.mp4",
+        mime_type: "video/mp4",
+        file_size: 500_000,
+        duration: 8,
+        thumbnail: { file_id: "thumb-1" }
+      }
+    }
+  }, new Set(["111"]));
+  assert.equal(parsed.video.fileName, "clip.mp4");
+  assert.equal(parsed.video.thumbnailFileId, "thumb-1");
+  assert.equal(parsed.video.duration, 8);
 });
 
 test("unavailable message preserves Spanish behavior", () => {

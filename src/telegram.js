@@ -22,6 +22,10 @@ export function verifyTelegramRequest(request, webhookSecret) {
   return crypto.timingSafeEqual(Buffer.from(received), Buffer.from(webhookSecret));
 }
 
+function thumbnailId(media) {
+  return media?.thumbnail?.file_id || media?.thumb?.file_id || null;
+}
+
 function inboundDocument(message) {
   const document = message?.document;
   if (!document?.file_id) return null;
@@ -29,7 +33,8 @@ function inboundDocument(message) {
     fileId: document.file_id,
     fileName: document.file_name || "document",
     mimeType: document.mime_type || "application/octet-stream",
-    fileSize: Number(document.file_size) || 0
+    fileSize: Number(document.file_size) || 0,
+    thumbnailFileId: thumbnailId(document)
   };
 }
 
@@ -44,20 +49,42 @@ function inboundPhoto(message) {
   };
 }
 
+function inboundVideo(message) {
+  const source = message?.video
+    ? { media: message.video, kind: "video", fallbackName: "video.mp4" }
+    : message?.animation
+      ? { media: message.animation, kind: "animation", fallbackName: "animation.mp4" }
+      : message?.video_note
+        ? { media: message.video_note, kind: "video_note", fallbackName: "video-note.mp4" }
+        : null;
+  if (!source?.media?.file_id) return null;
+  return {
+    fileId: source.media.file_id,
+    fileName: source.media.file_name || source.fallbackName,
+    mimeType: source.media.mime_type || "video/mp4",
+    fileSize: Number(source.media.file_size) || 0,
+    duration: Number(source.media.duration) || 0,
+    thumbnailFileId: thumbnailId(source.media),
+    kind: source.kind
+  };
+}
+
 export function supportedMessage(update, allowedUserIds) {
   const message = update?.message;
   if (!message?.from?.id || !message?.chat?.id) return null;
   if (!allowedUserIds.has(String(message.from.id))) return null;
   const text = String(message.text ?? message.caption ?? "").trim();
   const document = inboundDocument(message);
-  const photo = document ? null : inboundPhoto(message);
-  if (!text && !document && !photo) return null;
+  const video = document ? null : inboundVideo(message);
+  const photo = document || video ? null : inboundPhoto(message);
+  if (!text && !document && !video && !photo) return null;
   return {
     updateId: update.update_id,
     chatId: message.chat.id,
     senderId: String(message.from.id),
     text,
     document,
+    video,
     photo
   };
 }
