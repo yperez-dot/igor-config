@@ -53,9 +53,11 @@ Set the production bot's webhook back to the prior OpenClaw gateway URL. Keep Op
 
 ## Chat memory
 
-v2 does not load OpenClaw `SOUL.md` / daily notes / session logs. Continuity is:
+v2 does not dump the full OpenClaw workspace into the prompt. Continuity is:
 
-- a compact identity pack in `src/identity.js` (who Igor is, THEI facts, v2 capability limits)
+- a compact identity pack in `src/identity.js`
+- standing THEI facts in `memory/standing.md` (loaded every turn)
+- `memory_search` / `memory_remember` for deeper files and new Postgres notes — see [MEMORY.md](MEMORY.md)
 - recent turns in the `chat_turns` table for that Telegram chat
 - live API tools documented in [system credentials](SYSTEMS.md)
 

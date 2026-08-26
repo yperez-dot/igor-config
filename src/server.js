@@ -127,7 +127,8 @@ app.post("/v1/telegram/webhook", async (request, response) => {
         environment: process.env,
         chatId: message.chatId,
         botToken: TELEGRAM.botToken,
-        senderId: message.senderId
+        senderId: message.senderId,
+        store
       })
     });
   } catch (error) {

@@ -15,6 +15,12 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /Telegram files/);
   assert.match(SYSTEM_PROMPT, /Igor takes it all/);
   assert.match(SYSTEM_PROMPT, /Photos and image files/);
+  assert.match(SYSTEM_PROMPT, /memory_search/);
+  assert.match(SYSTEM_PROMPT, /memory_remember/);
+  assert.match(SYSTEM_PROMPT, /friend robot/);
+  assert.match(SYSTEM_PROMPT, /Warm, professional/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /Not friendly\. Not warm/);
+  assert.doesNotMatch(SYSTEM_PROMPT, /You do not have the old OpenClaw/);
   assert.doesNotMatch(SYSTEM_PROMPT, /You are Igor v2/);
   assert.doesNotMatch(SYSTEM_PROMPT, /pit-[a-z0-9-]+/i);
   assert.doesNotMatch(SYSTEM_PROMPT, /sk-[a-zA-Z0-9]+/);
@@ -49,4 +55,13 @@ test("system prompt treats husband as a calendar delegate for Yahoska", () => {
     TELEGRAM_YAHOSKA_USER_ID: "111"
   }, { senderId: "111" });
   assert.match(hers, /This message is from Yahoska Perez/);
+});
+
+test("system prompt injects standing THEI memory", () => {
+  const prompt = systemPromptFor({}, { standingMemory: "Address: 1695 NW 110 Ave, Suite 224, Doral." });
+  assert.match(prompt, /Standing memory/);
+  assert.match(prompt, /1695 NW 110 Ave/);
+  const live = systemPromptFor({}, { now: new Date("2026-08-26T14:30:00.000Z") });
+  assert.match(live, /Doral FL 33172/);
+  assert.match(live, /BSI split/);
 });

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import pg from "pg";
 
 export function createStore({ connectionString, pool = new pg.Pool({ connectionString }) }) {
@@ -39,6 +40,13 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       role TEXT NOT NULL,
       content TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS agent_memories (
+      id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      tags TEXT,
+      content TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'telegram'
     );
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
@@ -172,6 +180,30 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       for (const row of rows.slice(keep)) {
         await pool.query("DELETE FROM chat_turns WHERE id = $1", [row.id]);
       }
+    },
+    async saveAgentMemory({ id, content, tags, source = "telegram" }) {
+      const memoryId = id || crypto.randomUUID();
+      const tagValue = String(tags ?? "").trim() || null;
+      const body = String(content ?? "");
+      await pool.query(
+        "INSERT INTO agent_memories (id, tags, content, source) VALUES ($1, $2, $3, $4)",
+        [memoryId, tagValue, body, String(source ?? "telegram")]
+      );
+      await record("agent_memory.saved", memoryId, { tags: tagValue, chars: body.length });
+      return { id: memoryId, tags: tagValue, content: body, source: String(source ?? "telegram") };
+    },
+    async listAgentMemories({ limit = 300 } = {}) {
+      const { rows } = await pool.query(
+        "SELECT id, created_at, tags, content, source FROM agent_memories ORDER BY created_at DESC LIMIT $1",
+        [Number(limit) || 300]
+      );
+      return rows.map((row) => ({
+        id: row.id,
+        createdAt: row.created_at,
+        tags: row.tags,
+        content: row.content,
+        source: row.source
+      }));
     },
     record,
     async close() {

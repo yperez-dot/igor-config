@@ -12,6 +12,7 @@ import {
 import { sendEmail, smtpConfig } from "./email.js";
 import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
+import { rememberMemory, searchMemory } from "./memory.js";
 import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
 import { connectedSystems, DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
@@ -41,6 +42,24 @@ export function grokTools(environment = process.env) {
     functionTool("list_connected_systems", "List which THEI systems are live on Igor v2 versus missing Railway secrets.", {
       type: "object",
       properties: {},
+      additionalProperties: false
+    }),
+    functionTool("memory_search", "Search Igor’s standing THEI memory files and persisted notes (team, routing, OliComm parser rules, website/Netlify, operating principles). Use when standing memory in the prompt is not enough. Do not use this for live CRM/commission rows — use those APIs instead.", {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keywords, e.g. BSI split, HealthSun parser, ES promotion." },
+        limit: { type: "integer", description: "Max hits. Default 8." }
+      },
+      required: ["query"],
+      additionalProperties: false
+    }),
+    functionTool("memory_remember", "Save a settled THEI fact so later sessions can find it. Use when Yahoska says remember this. Do not save secrets, tokens, SSN/MBI, or client PHI.", {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "The fact to remember, in one short paragraph." },
+        tags: { type: "string", description: "Optional labels, comma-separated (olicomm, website, team)." }
+      },
+      required: ["content"],
       additionalProperties: false
     })
   ];
@@ -355,7 +374,8 @@ export async function executeTool(name, rawArgs, {
   fetchImpl = fetch,
   chatId,
   botToken,
-  senderId
+  senderId,
+  store
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
@@ -371,6 +391,23 @@ export async function executeTool(name, rawArgs, {
           missingEnv: system.missingEnv
         }))
       };
+    }
+
+    if (name === "memory_search") {
+      return searchMemory({
+        query: args.query,
+        limit: Number(args.limit ?? 8),
+        store
+      });
+    }
+
+    if (name === "memory_remember") {
+      return rememberMemory({
+        content: args.content,
+        tags: args.tags,
+        store,
+        source: senderId ? `telegram:${senderId}` : "telegram"
+      });
     }
 
     if (name === "ghl_stale_leads") {
