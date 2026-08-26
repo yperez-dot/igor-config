@@ -12,6 +12,8 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("github_get"), true);
   assert.equal(names({}).includes("memory_search"), true);
   assert.equal(names({}).includes("memory_remember"), true);
+  assert.equal(names({}).includes("list_schedules"), true);
+  assert.equal(names({}).includes("run_lookout"), true);
 });
 
 test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {
@@ -205,4 +207,24 @@ test("memory tools search files and persist notes", async () => {
   });
   assert.equal(saved.saved, true);
   assert.equal(notes[0].source, "telegram:111");
+});
+
+test("list_schedules returns the legacy catalog without waiting on IMAP", async () => {
+  const result = await executeTool("list_schedules", {});
+  assert.ok(result.catalog.length > 5);
+  assert.ok(result.catalog.some((job) => job.id === "v2-igor-heartbeat"));
+  assert.ok(result.catalog.some((job) => /cron/i.test(job.cron) || job.cron.includes("*")));
+});
+
+test("run_lookout uses the Facebook probe", async () => {
+  const result = await executeTool("run_lookout", {}, {
+    environment: { FACEBOOK_ACCESS_TOKEN: "stale" },
+    fetchImpl: async (url) => {
+      if (String(url).includes("graph.facebook.com")) {
+        return { ok: false, status: 401, json: async () => ({ error: { code: 190 } }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ status: "ok", db: "ok" }) };
+    }
+  });
+  assert.equal(result.fingerprint, "facebook:token_dead");
 });

@@ -36,7 +36,7 @@ async function workOnce() {
   const task = await store.claimQueuedTask();
   if (!task) return false;
   try {
-    const result = await processTask(task, { notify });
+    const result = await processTask(task, { notify, store });
     await store.completeTask(task.id, {
       workflow: task.payload?.workflow,
       result: result.status,

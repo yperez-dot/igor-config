@@ -172,3 +172,21 @@ export async function registerTelegramWebhook({ botToken, webhookSecret, webhook
   }
   if (!body.ok) throw new Error(`Telegram webhook registration rejected: ${body.description ?? "unknown error"}`);
 }
+
+export function telegramFailureMessage(error) {
+  const raw = String(error?.message ?? "unknown error")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9._-]+/g, "[redacted]")
+    .replace(/\bpit-[A-Za-z0-9-]+/gi, "[redacted]")
+    .slice(0, 160);
+  if (/timeout|AbortError|aborted/i.test(raw)) {
+    return "That one ran long and I dropped it. Ask me again — smaller bite if you can.";
+  }
+  if (/xAI request failed|xAI returned no assistant/i.test(raw)) {
+    return "Grok didn't answer that turn. I'm still here — try me again.";
+  }
+  if (/tool loop exceeded/i.test(raw)) {
+    return "I chased too many tools on that one. Ask me one thing at a time.";
+  }
+  return `Couldn't finish that (${raw}). I'm still here — say it again.`;
+}

@@ -17,6 +17,8 @@ import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
 import { connectedSystems, DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
 import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
+import { legacySchedules } from "./legacy-schedules.js";
+import { runLookout } from "./lookout.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
@@ -60,6 +62,16 @@ export function grokTools(environment = process.env) {
         tags: { type: "string", description: "Optional labels, comma-separated (olicomm, website, team)." }
       },
       required: ["content"],
+      additionalProperties: false
+    }),
+    functionTool("list_schedules", "List Igor’s cron/scheduled jobs: live Railway schedules plus the legacy catalog (most are shadow/inactive until turned on).", {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    }),
+    functionTool("run_lookout", "Probe Facebook ads token, OliComm health, and public sites right now. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
+      type: "object",
+      properties: {},
       additionalProperties: false
     })
   ];
@@ -408,6 +420,33 @@ export async function executeTool(name, rawArgs, {
         store,
         source: senderId ? `telegram:${senderId}` : "telegram"
       });
+    }
+
+    if (name === "list_schedules") {
+      const live = store ? await store.allSchedules() : [];
+      return {
+        note: "Legacy jobs are seeded inactive (shadow) on v2 until Yahoska turns them on. Heartbeat should be the live lookout job.",
+        live: live.map((row) => ({
+          id: row.id,
+          cron: row.cron,
+          timezone: row.timezone,
+          active: row.active === true,
+          workflow: row.payload?.workflow,
+          mode: row.payload?.mode
+        })),
+        catalog: legacySchedules.map((schedule) => ({
+          id: schedule.id,
+          title: schedule.title,
+          cron: schedule.cron,
+          timezone: schedule.timezone,
+          workflow: schedule.payload?.workflow,
+          mode: schedule.payload?.mode
+        }))
+      };
+    }
+
+    if (name === "run_lookout") {
+      return runLookout({ environment, fetchImpl });
     }
 
     if (name === "ghl_stale_leads") {

@@ -57,3 +57,28 @@ test("processes industry pulse weekly tasks", async () => {
   assert.equal(result.status, "completed");
   assert.match(notifications[0], /Industry Pulse completed/);
 });
+
+test("heartbeat lookout pings Telegram instead of waiting for a diagnose command", async () => {
+  const notifications = [];
+  const events = [];
+  const result = await processTask(
+    { payload: { workflow: "igor_heartbeat" } },
+    {
+      environment: { HEARTBEAT_MODE: "report-only", FACEBOOK_ACCESS_TOKEN: "stale" },
+      runHeartbeatFn: async () => ({
+        status: "actionable",
+        shouldNotify: true,
+        fingerprint: "facebook:token_dead",
+        alert: "Heads up. Facebook ads token is dead."
+      }),
+      store: {
+        async latestEvent() { return null; },
+        async record(type, subject, detail) { events.push({ type, subject, detail }); }
+      },
+      notify: async (message) => notifications.push(message)
+    }
+  );
+  assert.equal(result.shouldNotify, true);
+  assert.deepEqual(notifications, ["Heads up. Facebook ads token is dead."]);
+  assert.equal(events[0].type, "heartbeat.lookout");
+});
