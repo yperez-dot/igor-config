@@ -12,7 +12,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker if 
 | Netlify | `NETLIFY_AUTH_TOKEN` | `netlify_list_sites`, `netlify_deploy` (confirm required) |
 | Facebook Ads | `FACEBOOK_ACCESS_TOKEN`, optional `FACEBOOK_AD_ACCOUNT_ID` / `FACEBOOK_CAMPAIGN_ID` | `facebook_ads_insights` |
 | Tavily | `TAVILY_API_KEY` | `web_search` |
-| OliComm | `OLICOMM_BASE_URL`, optional `OLICOMM_API_KEY` | `olicomm_get` (`/health`, `/api/`, `/v1/` only) |
+| OliComm | Optional `OLICOMM_BASE_URL` (defaults to the live commission-tracker Railway URL). Optional `OLICOMM_API_KEY` for `/api/records` | `olicomm_get` (`/health`, `/api/`, `/v1/` only). Use `/api/health`. Paid records need the API key. |
 | MedicarePro | `MEDICAREPRO_API_KEY`, `MEDICAREPRO_BASE_URL` | `medicarepro_get` |
 | Email | `SENDGRID_API_KEY` (required for outbound mail). `FROM_EMAIL` is optional and defaults to `info@healthexps.com`. SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`) is an alternative. Optional `EMAIL_ALLOWED_RECIPIENTS` | `send_internal_email` (Yahoska standing-approved). `ghl_stale_leads` auto-emails a PHI-light CSV. |
 | Sales sheet | `SALES_SHEET_CSV_URL` | `sales_sheet_summary` |

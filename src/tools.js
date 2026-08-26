@@ -15,7 +15,7 @@ import { telegramSpeaker } from "./identity.js";
 import { rememberMemory, searchMemory } from "./memory.js";
 import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
-import { connectedSystems } from "./systems.js";
+import { connectedSystems, DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
 import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 
 const WRITE_TOOLS = new Set([
@@ -28,7 +28,6 @@ const WRITE_TOOLS = new Set([
 ]);
 const DEFAULT_EMAIL_ALLOWLIST = ["yperez@healthexps.com", "info@healthexps.com"];
 const DEFAULT_GITHUB_OWNERS = ["yperez-dot"];
-const DEFAULT_OLICOMM = "https://commission-tracker-production-e4fc.up.railway.app";
 
 function functionTool(name, description, parameters) {
   return {
@@ -171,7 +170,7 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("olicomm")) {
-    tools.push(functionTool("olicomm_get", "GET an allowlisted OliComm path such as /health. Host is locked to OLICOMM_BASE_URL.", {
+    tools.push(functionTool("olicomm_get", "GET an allowlisted OliComm path. Use /api/health first. Paid/reconciled records are under /api/ (needs OLICOMM_API_KEY). This is not the FMO AEP schedule — if the user wants a UHC AEP agent rate and records do not contain it, ask for the carrier/FMO grid PDF.", {
       type: "object",
       properties: { path: { type: "string" } },
       required: ["path"],
@@ -617,7 +616,7 @@ export async function executeTool(name, rawArgs, {
       if (!allowlistedAppPath(args.path)) {
         return { error: "OliComm path must be /health or under /api/ or /v1/." };
       }
-      const base = String(environment.OLICOMM_BASE_URL || DEFAULT_OLICOMM).replace(/\/+$/, "");
+      const base = String(environment.OLICOMM_BASE_URL || DEFAULT_OLICOMM_BASE_URL).replace(/\/+$/, "");
       const headers = {};
       if (environment.OLICOMM_API_KEY) headers.Authorization = `Bearer ${environment.OLICOMM_API_KEY}`;
       return jsonFetch(`${base}${`/${String(args.path).replace(/^\/+/, "")}`}`, { headers, fetchImpl });
