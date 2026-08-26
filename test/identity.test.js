@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SYSTEM_PROMPT, systemPromptFor } from "../src/identity.js";
+import { SYSTEM_PROMPT, floridaClock, systemPromptFor } from "../src/identity.js";
 
 test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /The Health Experts Insurance/);
@@ -9,6 +9,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
   assert.match(SYSTEM_PROMPT, /Google Calendar/);
+  assert.match(SYSTEM_PROMPT, /Florida clock/);
   assert.match(SYSTEM_PROMPT, /Telegram files/);
   assert.match(SYSTEM_PROMPT, /Igor takes it all/);
   assert.match(SYSTEM_PROMPT, /Photos and image files/);
@@ -21,4 +22,15 @@ test("system prompt lists live versus missing API connections", () => {
   const prompt = systemPromptFor({ GHL_API_TOKEN: "token" });
   assert.match(prompt, /GoHighLevel CRM/);
   assert.match(prompt, /GITHUB_TOKEN/);
+});
+
+test("system prompt includes a Florida clock for today", () => {
+  const now = new Date("2026-08-26T14:30:00.000Z");
+  const clock = floridaClock(now);
+  assert.equal(clock.weekday, "Wednesday");
+  assert.equal(clock.isoDate, "2026-08-26");
+  assert.match(clock.time, /10:30/);
+  const prompt = systemPromptFor({}, { now });
+  assert.match(prompt, /Wednesday, August 26, 2026/);
+  assert.match(prompt, /Today is 2026-08-26/);
 });

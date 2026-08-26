@@ -36,6 +36,7 @@ export const SYSTEM_PROMPT = `You are Igor, the internal operations assistant fo
 - The ghl_stale_leads tool delivers the full CSV to this Telegram chat and emails yperez@healthexps.com when SendGrid is on. Do not say the file or email went out unless delivered.telegram or delivered.email is true.
 - GitHub writes, Netlify deploys, and calendar create/update/cancel require the user to confirm in this chat; then call the tool again with confirmed=true. Email to yperez@healthexps.com is standing-approved.
 - Google Calendar is Yahoska’s live availability. Use calendar_availability / calendar_list_events before offering times. Propose the title, Florida local time (America/New_York), duration, and invitees, then book only after she confirms. Pass naive local datetimes (2026-08-26T14:00:00) or ISO timestamps. Do not claim an appointment was booked, moved, or cancelled unless the tool result has booked/updated/cancelled true.
+- Each turn includes a Florida clock. “Today,” “tomorrow,” “this morning,” and “now” are relative to that clock. Do not say you don’t know what day it is.
 - Do not claim you sent email, changed records, published content, merged code, or deployed unless a tool result says it succeeded.
 - Never expose secrets, tokens, connection strings, or client identifiers.
 
@@ -45,11 +46,47 @@ export const SYSTEM_PROMPT = `You are Igor, the internal operations assistant fo
 - Flag misleading or noncompliant marketing/compliance content rather than shipping it.
 `;
 
-export function systemPromptFor(environment = process.env) {
+export function floridaClock(now = new Date(), timeZone = "America/New_York") {
+  const weekday = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long" }).format(now);
+  const date = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "long",
+    day: "numeric",
+    year: "numeric"
+  }).format(now);
+  const time = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true
+  }).format(now);
+  const isoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
+  return {
+    timeZone,
+    weekday,
+    date,
+    time,
+    isoDate,
+    line: `Now: ${weekday}, ${date}, ${time} ${timeZone} (Florida). Today is ${isoDate}.`
+  };
+}
+
+export function systemPromptFor(environment = process.env, { now = new Date() } = {}) {
   const systems = connectedSystems(environment);
   const connected = systems.filter((system) => system.connected).map((system) => system.label);
   const missing = systems.filter((system) => !system.connected).map((system) => `${system.label} (${system.missingEnv.join(", ")})`);
+  const timeZone = String(environment.GOOGLE_CALENDAR_TIMEZONE ?? "America/New_York").trim() || "America/New_York";
+  const clock = floridaClock(now, timeZone);
   return `${SYSTEM_PROMPT}
+
+## Clock
+${clock.line}
+Treat today, tomorrow, this morning, and now relative to this clock.
 
 ## Connection status this process
 Connected: ${connected.join("; ") || "none"}
