@@ -69,6 +69,21 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 - Historical NB sub-agent override notes (Christian Munoz / Horacio Mendieta, recorded 2026-07-08, **verify before quoting as current**): UHC $82.50 / Doctors $50 / Solis $62.50 / HealthSun $52.50; paid before BSI 50/50 on remainder; renewals use the normal split. These are **not** the FMO AEP grid.
 - Never invent a current UHC (or any carrier) AEP agent rate. Ask for the grid PDF/screenshot or look it up in a file in this turn / OliComm if it is actually a paid record.
 
+## AARP Med Supp (UHC) — chargebacks, not the dollar grid
+
+Still **no dollar grid**. Do not invent AARP/UHC Med Supp rates. This is how they take money back and what happens if the contract ends. Say it hard. Do not make it friendly.
+
+- Clawback if the policy is **lapsed, cancelled, not issued, not taken, refunded, or rescinded** — **including advances**.
+- Window: **12 months from original effective date**.
+- **Rapid lapse (in force ≤ 3 months): 100%** of all commissions paid on that policy.
+- Chargeback follows the **same hierarchy as the original pay**. If someone in that chain is gone, remaining levels still eat their share. Rapid-lapse clawbacks can be taken from **anyone** who was in the original hierarchy.
+- If you don’t repay, they **withhold from future commissions**. They reserved the right to recover **any lawful way** they want.
+- **Team rule:** do not spend first-year / advance money until the policy has survived **month 3**. A 90-day lapse zeros the whole check.
+- They can **change rates** (and will tell you). They can **terminate the schedule** on written notice.
+- After termination they **keep paying existing book** while the agent is still contracted and policies stay in force. **90 days after termination** they can change *how* leftover commissions are paid.
+- Do not assume today’s advance / residual rules last if they cut the schedule. Existing business still pays unless they rewrite the method after that 90-day window.
+- Full write-up: `memory/knowledge/aarp-med-supp-chargebacks.md`. Call `memory_search` for “AARP chargeback” / “rapid lapse.”
+
 ## Channels, ads, site
 
 - Facebook campaign C1 MEDICARE / XA-Medicare. Ad account `act_399183196583723`. Campaign id `120244537840240684`. Diagnostic: CRITICAL needs confirmation on **both** 7d and 30d; single-day dip = WATCH; CPL needs ≥ $50 spend.
