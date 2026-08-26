@@ -1,3 +1,14 @@
+import {
+  availability as calendarAvailability,
+  calendarConfig,
+  conflictsFor,
+  createEvent,
+  defaultTimeWindow,
+  deleteEvent,
+  listEvents,
+  proposedEvent,
+  updateEvent
+} from "./calendar.js";
 import { sendEmail, smtpConfig } from "./email.js";
 import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
 import { summarizeJson } from "./redact.js";
@@ -5,7 +16,14 @@ import { parseSalesCsv } from "./sales-sync.js";
 import { connectedSystems } from "./systems.js";
 import { sendTelegramDocument } from "./telegram.js";
 
-const WRITE_TOOLS = new Set(["send_internal_email", "netlify_deploy", "github_write"]);
+const WRITE_TOOLS = new Set([
+  "send_internal_email",
+  "netlify_deploy",
+  "github_write",
+  "calendar_create_event",
+  "calendar_update_event",
+  "calendar_delete_event"
+]);
 const DEFAULT_EMAIL_ALLOWLIST = ["yperez@healthexps.com", "info@healthexps.com"];
 const DEFAULT_GITHUB_OWNERS = ["yperez-dot"];
 const DEFAULT_OLICOMM = "https://commission-tracker-production-e4fc.up.railway.app";
@@ -172,6 +190,78 @@ export function grokTools(environment = process.env) {
     }));
   }
 
+  if (connected.has("calendar")) {
+    tools.push(
+      functionTool("calendar_list_events", "List Yahoska’s Google Calendar events in a time window (Florida / America/New_York unless configured otherwise). Use this to see what is already booked.", {
+        type: "object",
+        properties: {
+          timeMin: { type: "string", description: "ISO start. Default now." },
+          timeMax: { type: "string", description: "ISO end. Default now + 7 days." },
+          maxResults: { type: "integer", description: "Default 20." },
+          eventId: { type: "string", description: "If set, fetch this event only." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("calendar_availability", "Return busy blocks and open weekday slots on Yahoska’s calendar. Default work hours 9:00–18:00 America/New_York, Monday–Friday.", {
+        type: "object",
+        properties: {
+          timeMin: { type: "string", description: "ISO start. Default now." },
+          timeMax: { type: "string", description: "ISO end. Default now + 7 days." },
+          durationMinutes: { type: "integer", description: "Slot length. Default 30." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("calendar_create_event", "Book an appointment on Yahoska’s Google Calendar and send invites. Requires confirmed=true after she approves the proposed time in chat. Pass Florida local time as ISO without Z (interpreted in America/New_York) or a full ISO timestamp.", {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: "Event title." },
+          start: { type: "string", description: "Start datetime." },
+          end: { type: "string", description: "End datetime. Optional if durationMinutes is set." },
+          durationMinutes: { type: "integer", description: "Used when end is omitted. Default 30." },
+          location: { type: "string" },
+          description: { type: "string" },
+          attendees: {
+            type: "array",
+            items: { type: "string" },
+            description: "Invitee emails."
+          },
+          sendUpdates: { type: "string", enum: ["all", "none"] },
+          force: { type: "boolean", description: "Book even if the slot overlaps an existing event." },
+          confirmed: { type: "boolean" }
+        },
+        required: ["summary", "start"],
+        additionalProperties: false
+      }),
+      functionTool("calendar_update_event", "Reschedule or edit an existing calendar event. Requires confirmed=true after the user approves.", {
+        type: "object",
+        properties: {
+          eventId: { type: "string" },
+          summary: { type: "string" },
+          start: { type: "string" },
+          end: { type: "string" },
+          durationMinutes: { type: "integer" },
+          location: { type: "string" },
+          description: { type: "string" },
+          attendees: { type: "array", items: { type: "string" } },
+          sendUpdates: { type: "string", enum: ["all", "none"] },
+          confirmed: { type: "boolean" }
+        },
+        required: ["eventId"],
+        additionalProperties: false
+      }),
+      functionTool("calendar_delete_event", "Cancel an event and notify attendees. Requires confirmed=true after the user approves.", {
+        type: "object",
+        properties: {
+          eventId: { type: "string" },
+          sendUpdates: { type: "string", enum: ["all", "none"] },
+          confirmed: { type: "boolean" }
+        },
+        required: ["eventId"],
+        additionalProperties: false
+      })
+    );
+  }
+
   if (connected.has("imap")) {
     tools.push(functionTool("inbox_status", "Report whether leadership IMAP heartbeat credentials are configured. Does not dump email bodies.", {
       type: "object",
@@ -249,7 +339,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked) return blocked;
+  if (blocked && !String(name).startsWith("calendar_")) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -523,6 +613,73 @@ export async function executeTool(name, rawArgs, {
         host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
         note: "IMAP bodies are not dumped into Telegram. Use the scheduled heartbeat worker for carrier-mail summaries."
       };
+    }
+
+    if (name === "calendar_list_events") {
+      const config = calendarConfig(environment);
+      const window = defaultTimeWindow(args, config);
+      if (window.error) return window;
+      return listEvents({
+        config,
+        timeMin: window.timeMin,
+        timeMax: window.timeMax,
+        maxResults: Number(args.maxResults ?? 20),
+        eventId: args.eventId,
+        fetchImpl
+      });
+    }
+
+    if (name === "calendar_availability") {
+      const config = calendarConfig(environment);
+      const window = defaultTimeWindow(args, config);
+      if (window.error) return window;
+      return calendarAvailability({
+        config,
+        timeMin: window.timeMin,
+        timeMax: window.timeMax,
+        durationMinutes: Number(args.durationMinutes ?? 30),
+        fetchImpl
+      });
+    }
+
+    if (name === "calendar_create_event") {
+      const config = calendarConfig(environment);
+      const proposed = proposedEvent(args, config);
+      const conflicts = await conflictsFor({
+        config,
+        startMs: proposed.startMs,
+        endMs: proposed.endMs,
+        fetchImpl
+      });
+      if (conflicts.error) return conflicts;
+      if (blocked) {
+        return { ...blocked, proposed, conflicts, timeZone: config.timeZone };
+      }
+      if (conflicts.length && args.force !== true) {
+        return {
+          error: "time_conflict",
+          proposed,
+          conflicts,
+          hint: "That slot overlaps an existing event. Offer another time from calendar_availability, or retry with force=true after the user confirms overlaying."
+        };
+      }
+      return createEvent({ config, args, fetchImpl });
+    }
+
+    if (name === "calendar_update_event") {
+      const config = calendarConfig(environment);
+      const proposed = { eventId: args.eventId, ...proposedEvent(args, config) };
+      if (blocked) {
+        return { ...blocked, proposed };
+      }
+      return updateEvent({ config, args, fetchImpl });
+    }
+
+    if (name === "calendar_delete_event") {
+      if (blocked) {
+        return { ...blocked, proposed: { eventId: args.eventId } };
+      }
+      return deleteEvent({ config: calendarConfig(environment), args, fetchImpl });
     }
 
     return { error: `Unknown tool: ${name}` };

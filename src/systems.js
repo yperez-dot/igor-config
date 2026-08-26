@@ -50,6 +50,11 @@ export const SYSTEM_IDS = [
     env: ["SALES_SHEET_CSV_URL"]
   },
   {
+    id: "calendar",
+    label: "Google Calendar (Yahoska)",
+    env: ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_CALENDAR_REFRESH_TOKEN"]
+  },
+  {
     id: "imap",
     label: "Leadership inbox (IMAP)",
     env: ["HEARTBEAT_IMAP_USER", "HEARTBEAT_IMAP_PASS"]
