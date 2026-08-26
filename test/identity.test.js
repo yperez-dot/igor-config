@@ -5,6 +5,7 @@ import { SYSTEM_PROMPT, floridaClock, systemPromptFor } from "../src/identity.js
 test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /The Health Experts Insurance/);
   assert.match(SYSTEM_PROMPT, /Yahoska Perez/);
+  assert.match(SYSTEM_PROMPT, /husband/);
   assert.match(SYSTEM_PROMPT, /Katy Robles/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
@@ -33,4 +34,18 @@ test("system prompt includes a Florida clock for today", () => {
   const prompt = systemPromptFor({}, { now });
   assert.match(prompt, /Wednesday, August 26, 2026/);
   assert.match(prompt, /Today is 2026-08-26/);
+});
+
+test("system prompt treats husband as a calendar delegate for Yahoska", () => {
+  const prompt = systemPromptFor({
+    TELEGRAM_YAHOSKA_USER_ID: "111",
+    TELEGRAM_HUSBAND_USER_ID: "222"
+  }, { senderId: "222" });
+  assert.match(prompt, /not Yahoska/);
+  assert.match(prompt, /Yahoska Perez’s calendar/);
+  assert.match(prompt, /book, move, or cancel appointments for her/);
+  const hers = systemPromptFor({
+    TELEGRAM_YAHOSKA_USER_ID: "111"
+  }, { senderId: "111" });
+  assert.match(hers, /This message is from Yahoska Perez/);
 });

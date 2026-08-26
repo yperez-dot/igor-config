@@ -168,3 +168,49 @@ test("heartbeat includes imminent calendar events without IMAP", async () => {
   assert.match(result.alert, /Standup/);
   assert.equal(result.upcomingCalendar[0].summary, "Standup");
 });
+
+test("husband booking notifies Yahoska on Telegram", async () => {
+  resetCalendarTokenCache();
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options?.method ?? "GET", body: options?.body });
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    if (String(url).includes("/freeBusy")) {
+      return jsonResponse({ calendars: { primary: { busy: [] } } });
+    }
+    if (String(url).includes("/events") && options?.method === "POST") {
+      return jsonResponse({
+        id: "evt-9",
+        summary: "Pediatric visit",
+        start: { dateTime: "2026-08-28T15:00:00-04:00" },
+        end: { dateTime: "2026-08-28T15:30:00-04:00" }
+      });
+    }
+    if (String(url).includes("sendMessage")) {
+      return jsonResponse({});
+    }
+    return jsonResponse({ items: [] });
+  };
+  const result = await executeTool("calendar_create_event", {
+    summary: "Pediatric visit",
+    start: "2026-08-28T15:00:00",
+    confirmed: true
+  }, {
+    environment: {
+      ...calendarEnv,
+      TELEGRAM_YAHOSKA_USER_ID: "111",
+      TELEGRAM_HUSBAND_USER_ID: "222"
+    },
+    senderId: "222",
+    botToken: "bot",
+    fetchImpl
+  });
+  assert.equal(result.booked, true);
+  assert.equal(result.notified, true);
+  const ping = calls.find((call) => call.url.includes("sendMessage"));
+  assert.equal(Boolean(ping), true);
+  assert.match(String(ping.body), /Pediatric visit/);
+  assert.match(String(ping.body), /111/);
+});

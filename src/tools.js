@@ -11,10 +11,11 @@ import {
 } from "./calendar.js";
 import { sendEmail, smtpConfig } from "./email.js";
 import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
+import { telegramSpeaker } from "./identity.js";
 import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
 import { connectedSystems } from "./systems.js";
-import { sendTelegramDocument } from "./telegram.js";
+import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
@@ -192,7 +193,7 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("calendar")) {
     tools.push(
-      functionTool("calendar_list_events", "List Yahoska’s Google Calendar events in a time window (Florida / America/New_York unless configured otherwise). Use this to see what is already booked.", {
+      functionTool("calendar_list_events", "List events on Yahoska Perez’s Google Calendar (Florida / America/New_York). Use this for Yahoska or for her husband/other allowlisted users booking for her.", {
         type: "object",
         properties: {
           timeMin: { type: "string", description: "ISO start. Default now." },
@@ -202,7 +203,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_availability", "Return busy blocks and open weekday slots on Yahoska’s calendar. Default work hours 9:00–18:00 America/New_York, Monday–Friday.", {
+      functionTool("calendar_availability", "Return busy blocks and open weekday slots on Yahoska Perez’s calendar. Default work hours 9:00–18:00 America/New_York, Monday–Friday. Use this when her husband or anyone allowlisted asks if she is free.", {
         type: "object",
         properties: {
           timeMin: { type: "string", description: "ISO start. Default now." },
@@ -211,7 +212,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Book an appointment on Yahoska’s Google Calendar and send invites. Requires confirmed=true after she approves the proposed time in chat. Pass Florida local time as ISO without Z (interpreted in America/New_York) or a full ISO timestamp.", {
+      functionTool("calendar_create_event", "Book an appointment on Yahoska Perez’s Google Calendar (including when her husband or another allowlisted user is booking for her) and send invites. Requires confirmed=true after the person in this chat approves. Pass Florida local time as ISO without Z (interpreted in America/New_York) or a full ISO timestamp.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title." },
@@ -279,6 +280,25 @@ function parseArgs(raw) {
   return JSON.parse(raw);
 }
 
+async function notifyCalendarOwner({ environment, senderId, botToken, fetchImpl, text }) {
+  const ownerId = String(environment.TELEGRAM_YAHOSKA_USER_ID ?? "").trim();
+  if (!ownerId || !botToken || !text) return { notified: false };
+  if (String(senderId ?? "").trim() === ownerId) return { notified: false };
+  try {
+    await sendTelegramMessage({ botToken, chatId: ownerId, text, fetchImpl });
+    return { notified: true };
+  } catch (error) {
+    return { notified: false, notifyError: error.message };
+  }
+}
+
+function calendarNotifyLine(action, event, speaker) {
+  const who = speaker?.name || "Someone";
+  const title = event?.summary || "an appointment";
+  const when = [event?.start, event?.end].filter(Boolean).join("–");
+  return `${who} ${action} on your calendar: ${title}${when ? ` (${when})` : ""}.`;
+}
+
 function needsConfirmation(name, args, environment) {
   if (!WRITE_TOOLS.has(name) || args.confirmed === true) return null;
   if (name === "send_internal_email" && allowedEmail(environment, args.to)) return null;
@@ -335,7 +355,8 @@ export async function executeTool(name, rawArgs, {
   environment = process.env,
   fetchImpl = fetch,
   chatId,
-  botToken
+  botToken,
+  senderId
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
@@ -663,7 +684,18 @@ export async function executeTool(name, rawArgs, {
           hint: "That slot overlaps an existing event. Offer another time from calendar_availability, or retry with force=true after the user confirms overlaying."
         };
       }
-      return createEvent({ config, args, fetchImpl });
+      return createEvent({ config, args, fetchImpl }).then(async (result) => {
+        if (!result.booked) return result;
+        const speaker = telegramSpeaker(environment, senderId);
+        const notice = await notifyCalendarOwner({
+          environment,
+          senderId,
+          botToken,
+          fetchImpl,
+          text: calendarNotifyLine("booked", result.event, speaker)
+        });
+        return { ...result, ...notice };
+      });
     }
 
     if (name === "calendar_update_event") {
@@ -672,14 +704,36 @@ export async function executeTool(name, rawArgs, {
       if (blocked) {
         return { ...blocked, proposed };
       }
-      return updateEvent({ config, args, fetchImpl });
+      return updateEvent({ config, args, fetchImpl }).then(async (result) => {
+        if (!result.updated) return result;
+        const speaker = telegramSpeaker(environment, senderId);
+        const notice = await notifyCalendarOwner({
+          environment,
+          senderId,
+          botToken,
+          fetchImpl,
+          text: calendarNotifyLine("updated", result.event, speaker)
+        });
+        return { ...result, ...notice };
+      });
     }
 
     if (name === "calendar_delete_event") {
       if (blocked) {
         return { ...blocked, proposed: { eventId: args.eventId } };
       }
-      return deleteEvent({ config: calendarConfig(environment), args, fetchImpl });
+      return deleteEvent({ config: calendarConfig(environment), args, fetchImpl }).then(async (result) => {
+        if (!result.cancelled) return result;
+        const speaker = telegramSpeaker(environment, senderId);
+        const notice = await notifyCalendarOwner({
+          environment,
+          senderId,
+          botToken,
+          fetchImpl,
+          text: calendarNotifyLine("cancelled", { summary: args.eventId }, speaker)
+        });
+        return { ...result, ...notice };
+      });
     }
 
     return { error: `Unknown tool: ${name}` };

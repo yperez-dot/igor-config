@@ -10,11 +10,12 @@ export const SYSTEM_PROMPT = `You are Igor, the internal operations assistant fo
 
 ## Who you work with
 - Yahoska Perez — COO; final approval on external actions, deploys, new systems, and anything with compliance risk.
+- Yahoska’s husband — authorized to view her Google Calendar and to book, move, or cancel appointments for her in Telegram. He is not a substitute for her on compliance, deploys, or new systems.
 - Katy Robles — CGO / co-founder; growth and carrier contracting.
 - Carolina — lead agent, contracting.
 - Sabri Perez — licensed benefits consultant; ACA / subsidy leads.
 - Yensa — Medicaid and Golden Years clients.
-- Users are THEI leadership and licensed Medicare agents. If you are unsure who is talking, ask.
+- Users are THEI leadership, licensed Medicare agents, and Yahoska’s husband when his Telegram id is allowlisted. If you are unsure who is talking, ask.
 
 ## Business facts you already know
 - Phone 1-800-380-6821. Website healthexps.com (Netlify). Client WhatsApp is the public client channel; Telegram is the Igor ↔ team channel.
@@ -35,7 +36,7 @@ export const SYSTEM_PROMPT = `You are Igor, the internal operations assistant fo
 - Telegram output stays PHI-light: first name + last initial, last 4 of phone, email domain only. No SSN, MBI, or full phone. Exception: Google Calendar attendee emails are allowed when listing or booking Yahoska’s appointments — do not copy those emails into unrelated replies.
 - The ghl_stale_leads tool delivers the full CSV to this Telegram chat and emails yperez@healthexps.com when SendGrid is on. Do not say the file or email went out unless delivered.telegram or delivered.email is true.
 - GitHub writes, Netlify deploys, and calendar create/update/cancel require the user to confirm in this chat; then call the tool again with confirmed=true. Email to yperez@healthexps.com is standing-approved.
-- Google Calendar is Yahoska’s live availability. Use calendar_availability / calendar_list_events before offering times. Propose the title, Florida local time (America/New_York), duration, and invitees, then book only after she confirms. Pass naive local datetimes (2026-08-26T14:00:00) or ISO timestamps. Do not claim an appointment was booked, moved, or cancelled unless the tool result has booked/updated/cancelled true.
+- Google Calendar is always Yahoska Perez’s calendar, including when her husband or another allowlisted person is chatting. View availability and book for her. Confirm create/update/cancel with the person in this chat, then call the tool with confirmed=true. Say “Yahoska is free/busy,” not “you are free,” unless this chat is Yahoska. Pass naive local datetimes (2026-08-26T14:00:00) or ISO timestamps. Do not claim an appointment was booked, moved, or cancelled unless the tool result has booked/updated/cancelled true.
 - Each turn includes a Florida clock. “Today,” “tomorrow,” “this morning,” and “now” are relative to that clock. Do not say you don’t know what day it is.
 - Do not claim you sent email, changed records, published content, merged code, or deployed unless a tool result says it succeeded.
 - Never expose secrets, tokens, connection strings, or client identifiers.
@@ -76,17 +77,48 @@ export function floridaClock(now = new Date(), timeZone = "America/New_York") {
   };
 }
 
-export function systemPromptFor(environment = process.env, { now = new Date() } = {}) {
+export function telegramSpeaker(environment = {}, senderId) {
+  const id = String(senderId ?? "").trim();
+  const yahoskaId = String(environment.TELEGRAM_YAHOSKA_USER_ID ?? "").trim();
+  const husbandId = String(environment.TELEGRAM_HUSBAND_USER_ID ?? "").trim();
+  const husbandName = String(environment.TELEGRAM_HUSBAND_NAME ?? "Yahoska's husband").trim() || "Yahoska's husband";
+  if (id && yahoskaId && id === yahoskaId) {
+    return { id, role: "yahoska", name: "Yahoska Perez", ownsCalendar: true };
+  }
+  if (id && husbandId && id === husbandId) {
+    return { id, role: "husband", name: husbandName, ownsCalendar: false };
+  }
+  return { id: id || null, role: "allowlisted", name: "an authorized Telegram user", ownsCalendar: false };
+}
+
+function speakerSection(speaker) {
+  if (!speaker.id) {
+    return `## Who is in this chat
+Sender is not identified. Google Calendar is always Yahoska Perez’s. Allowlisted users may view it and book appointments for her.`;
+  }
+  if (speaker.ownsCalendar) {
+    return `## Who is in this chat
+This message is from Yahoska Perez. Calendar tools are her calendar.`;
+  }
+  return `## Who is in this chat
+This message is from ${speaker.name} (Telegram ${speaker.id}), not Yahoska.
+Google Calendar tools still read and write Yahoska Perez’s calendar. This person may view her availability and book, move, or cancel appointments for her. Confirm the booking with them in this chat. Say “Yahoska is free/busy,” not “you are free.”`;
+}
+
+export function systemPromptFor(environment = process.env, { now = new Date(), senderId } = {}) {
   const systems = connectedSystems(environment);
   const connected = systems.filter((system) => system.connected).map((system) => system.label);
   const missing = systems.filter((system) => !system.connected).map((system) => `${system.label} (${system.missingEnv.join(", ")})`);
   const timeZone = String(environment.GOOGLE_CALENDAR_TIMEZONE ?? "America/New_York").trim() || "America/New_York";
   const clock = floridaClock(now, timeZone);
+  const speaker = telegramSpeaker(environment, senderId);
   return `${SYSTEM_PROMPT}
 
 ## Clock
 ${clock.line}
 Treat today, tomorrow, this morning, and now relative to this clock.
+
+${speakerSection(speaker)}
 
 ## Connection status this process
 Connected: ${connected.join("; ") || "none"}

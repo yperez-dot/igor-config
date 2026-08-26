@@ -99,6 +99,20 @@ node scripts/google-calendar-oauth.js
 
 - **View:** list events in a window (default next 7 days).
 - **Availability:** busy blocks plus open Mon–Fri slots between 9:00 and 18:00 Florida time. Default slot length is 30 minutes.
-- **Book / move / cancel:** Igor proposes the title, Florida time, and invitees. After you confirm, Google sends calendar invites.
+- **Book / move / cancel:** Igor proposes the title, Florida time, and invitees. After the person in this chat confirms, Google sends calendar invites. This is always Yahoska’s calendar — her husband or another allowlisted user can book for her.
 - Overlapping times return a conflict unless you tell him to overlay.
 - Heartbeat includes the next 48 hours and alerts for events that start in the next 4 hours.
+
+## Husband / family access
+
+The Google connection is Yahoska’s calendar. Anyone on `TELEGRAM_ALLOWED_USER_IDS` who messages @Igor_theibot uses that same calendar. Add his numeric Telegram id, then **redeploy Igor V2**.
+
+On Igor V2 also set:
+
+| Variable | Purpose |
+| --- | --- |
+| `TELEGRAM_YAHOSKA_USER_ID` | Yahoska’s numeric Telegram id (so Igor knows it is her, and can notify her when someone else books) |
+| `TELEGRAM_HUSBAND_USER_ID` | Her husband’s numeric Telegram id |
+| `TELEGRAM_HUSBAND_NAME` | Optional display name (default `Yahoska's husband`) |
+
+He should message **@Igor_theibot** in a direct chat (not only a group). He can ask “Is Yahoska free Thursday at 2?” and “Book 30 minutes Friday at 10 for her pediatric follow-up.” Igor proposes; he says yes; the event lands on her Google Calendar. If `TELEGRAM_YAHOSKA_USER_ID` is set, she gets a Telegram ping.
