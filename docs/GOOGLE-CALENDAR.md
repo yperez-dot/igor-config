@@ -101,7 +101,7 @@ node scripts/google-calendar-oauth.js
 - **Availability:** busy blocks plus open Mon–Fri slots between 9:00 and 18:00 Florida time. Default slot length is 30 minutes.
 - **Book / move / cancel:** Igor proposes the title, Florida time, and invitees. After the person in this chat confirms, Google sends calendar invites. This is always Yahoska’s calendar — her husband or another allowlisted user can book for her.
 - Overlapping times return a conflict unless you tell him to overlay.
-- Heartbeat includes the next 48 hours and alerts for events that start in the next 4 hours.
+- Heartbeat does **not** text upcoming events (that was repeating every 30 minutes). Chat view/book is unchanged. To turn reminder texts back on, set `HEARTBEAT_CALENDAR_ALERTS=true` on **igor-config**.
 
 ## Husband / family access
 

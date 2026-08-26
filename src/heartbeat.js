@@ -87,7 +87,8 @@ export async function runHeartbeat({
 
   const user = environment.HEARTBEAT_IMAP_USER;
   const pass = environment.HEARTBEAT_IMAP_PASS;
-  const calendarReady = calendarConfig(environment).connected;
+  const calendarAlerts = String(environment.HEARTBEAT_CALENDAR_ALERTS ?? "").toLowerCase() === "true";
+  const calendarReady = calendarAlerts && calendarConfig(environment).connected;
   if ((!user || !pass) && !calendarReady) {
     return { status: "skipped", reason: "imap_not_configured" };
   }
