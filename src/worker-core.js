@@ -1,6 +1,7 @@
 import { runSalesTrackerSync } from "./sales-sync.js";
 import { runIndustryPulseWeekly } from "./industry-pulse.js";
 import { runHeartbeat } from "./heartbeat.js";
+import { runSiteLookout } from "./lookout.js";
 
 function salesTrackerMessage(result, environment) {
   return result.status === "aborted"
@@ -19,7 +20,8 @@ function industryPulseMessage(result) {
 export const WORKER_WORKFLOWS = new Set([
   "sales_tracker_sync",
   "industry_pulse_weekly",
-  "igor_heartbeat"
+  "igor_heartbeat",
+  "site_uptime"
 ]);
 
 export function isWorkerWorkflow(payload) {
@@ -32,6 +34,7 @@ export async function processTask(task, {
   runSalesSync = runSalesTrackerSync,
   runIndustryPulse = runIndustryPulseWeekly,
   runHeartbeatFn = runHeartbeat,
+  runSiteLookoutFn = runSiteLookout,
   store
 } = {}) {
   const workflow = task.payload?.workflow;
@@ -73,6 +76,25 @@ export async function processTask(task, {
       await notify(result.alert);
       if (store) {
         await store.record("heartbeat.lookout", "igor", {
+          fingerprint: result.fingerprint,
+          status: result.status
+        });
+      }
+    }
+    return result;
+  }
+
+  if (workflow === "site_uptime") {
+    const last = store ? await store.latestEvent("site_uptime.lookout") : null;
+    const result = await runSiteLookoutFn({
+      environment,
+      lastFingerprint: last?.detail?.fingerprint,
+      lastAlertAt: last?.createdAt ? new Date(last.createdAt) : null
+    });
+    if (result.shouldNotify && result.alert) {
+      await notify(result.alert);
+      if (store) {
+        await store.record("site_uptime.lookout", "igor", {
           fingerprint: result.fingerprint,
           status: result.status
         });
