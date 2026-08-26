@@ -1,3 +1,5 @@
+export const DEFAULT_OLICOMM_BASE_URL = "https://commission-tracker-production-e4fc.up.railway.app";
+
 export const SYSTEM_IDS = [
   {
     id: "ghl",
@@ -69,7 +71,9 @@ export function connectedSystems(environment = process.env) {
   return SYSTEM_IDS.map((system) => {
     const connected = system.id === "email"
       ? Boolean((environment.FROM_EMAIL || environment.SENDGRID_API_KEY) && (environment.SENDGRID_API_KEY || (environment.SMTP_HOST && environment.SMTP_USER && environment.SMTP_PASS)))
-      : envPresent(environment, system.env);
+      : system.id === "olicomm"
+        ? Boolean(String(environment.OLICOMM_BASE_URL ?? DEFAULT_OLICOMM_BASE_URL).trim())
+        : envPresent(environment, system.env);
     const missingEnv = connected
       ? []
       : system.id === "email"

@@ -12,6 +12,12 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("github_get"), true);
 });
 
+test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {
+  const olicomm = connectedSystems({}).find((system) => system.id === "olicomm");
+  assert.equal(olicomm.connected, true);
+  assert.equal(grokTools({}).map((tool) => tool.function.name).includes("olicomm_get"), true);
+});
+
 test("connectedSystems reports missing Railway secrets without values", () => {
   const ghl = connectedSystems({ GHL_API_TOKEN: "token" }).find((system) => system.id === "ghl");
   const github = connectedSystems({}).find((system) => system.id === "github");
