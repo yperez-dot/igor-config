@@ -19,7 +19,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker if 
 | Google Calendar | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REFRESH_TOKEN`. Optional `GOOGLE_CALENDAR_ID` (default `primary`), `GOOGLE_CALENDAR_TIMEZONE` (default `America/New_York`). Optional `TELEGRAM_YAHOSKA_USER_ID` / `TELEGRAM_HUSBAND_USER_ID` so Igor knows who is chatting and can ping Yahoska when her husband books | `calendar_list_events`, `calendar_availability` (read). `calendar_create_event`, `calendar_update_event`, `calendar_delete_event` (confirm required; allowlisted users including her husband book her calendar) |
 | Leadership inbox | `HEARTBEAT_IMAP_USER`, `HEARTBEAT_IMAP_PASS` | `inbox_status` (no message bodies) |
 | Standing memory | none (files in `memory/` + Postgres `agent_memories`) | `memory_search`, `memory_remember`. See [MEMORY.md](MEMORY.md). |
-| Lookout / crons | none | `run_lookout` (ads token, OliComm, public sites), `list_schedules` (live + shadow catalog) |
+| Lookout / crons | none | `run_lookout` (ads token, public sites — not OliComm), `list_schedules` (live + shadow catalog) |
 
 Copy values from the BOSGAME OpenClaw files (`ghl-ai-token.env`, `github-igor-thei.env`, `netlify-olicomm.env`, `tavily.env`, `sendgrid-thei.env`, `.ghl-credentials-thei` for Facebook). Do not paste tokens into Telegram or GitHub.
 

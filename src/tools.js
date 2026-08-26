@@ -69,7 +69,7 @@ export function grokTools(environment = process.env) {
       properties: {},
       additionalProperties: false
     }),
-    functionTool("run_lookout", "Probe Facebook ads token, OliComm health, and public sites right now. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
+    functionTool("run_lookout", "Probe Facebook ads token and public sites right now. Do not check OliComm. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
       type: "object",
       properties: {},
       additionalProperties: false

@@ -1,5 +1,3 @@
-import { DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
-
 export const DEFAULT_FACEBOOK_CAMPAIGN_ID = "120244537840240684";
 
 export const LOOKOUT_SITES = [
@@ -85,29 +83,6 @@ export async function probeFacebookAds({ environment = {}, fetchImpl = fetch } =
   }
 }
 
-export async function probeOliComm({ environment = {}, fetchImpl = fetch } = {}) {
-  const base = String(environment.OLICOMM_BASE_URL || DEFAULT_OLICOMM_BASE_URL).replace(/\/+$/, "");
-  try {
-    const result = await getJson(`${base}/api/health`, { fetchImpl });
-    if (result.ok && (result.body?.status === "ok" || result.body?.db === "ok")) {
-      return { id: "olicomm", status: "ok", httpStatus: result.status };
-    }
-    return {
-      id: "olicomm",
-      status: "down",
-      httpStatus: result.status,
-      urgent: false,
-      message: `OliComm isn't answering right. /api/health came back HTTP ${result.status || "blank"}.`
-    };
-  } catch (error) {
-    return {
-      id: "olicomm",
-      status: "down",
-      message: `OliComm didn't respond (${error.message}).`
-    };
-  }
-}
-
 export async function probeSite(site, { fetchImpl = fetch } = {}) {
   try {
     const result = await getJson(site.url, {
@@ -144,7 +119,7 @@ export function lookoutFingerprint(findings) {
 
 export function formatLookoutAlert(findings, { recovered = false } = {}) {
   if (recovered && !findings.length) {
-    return "Good news — the thing that was broken looks clear now. Ads, OliComm, and the sites are answering.";
+    return "Good news — the thing that was broken looks clear now. Ads and the sites are answering.";
   }
   const lines = findings.map((item) => item.message).filter(Boolean);
   if (!lines.length) return null;
@@ -173,7 +148,6 @@ export function shouldNotifyLookout({
 export async function runLookout({ environment = {}, fetchImpl = fetch } = {}) {
   const probes = await Promise.all([
     probeFacebookAds({ environment, fetchImpl }),
-    probeOliComm({ environment, fetchImpl }),
     ...LOOKOUT_SITES.map((site) => probeSite(site, { fetchImpl }))
   ]);
   const findings = probes.filter((item) => item.message);

@@ -15,7 +15,7 @@ Each heartbeat may:
 
 v2 does **not** auto-publish, deploy, or edit knowledge on heartbeat findings.
 
-1. **Look out** on every Florida daytime cycle: probe the Facebook ads token, OliComm `/api/health`, and public sites (healthexps.com, agentmedicarehub.com). Telegram-ping Yahoska when something actually breaks, when it recovers, or once more after ~8 hours if it is still broken. Site downtime pages through quiet hours. Dead ads tokens wait until morning.
+1. **Look out** on every Florida daytime cycle: probe the Facebook ads token and public sites (healthexps.com, agentmedicarehub.com). Do **not** probe OliComm. Telegram-ping Yahoska when something actually breaks, when it recovers, or once more after ~8 hours if it is still broken. Site downtime pages through quiet hours. Dead ads tokens wait until morning.
 2. **Detect** carrier/urgent mail when IMAP is configured (calendar reminder texts stay off unless `HEARTBEAT_CALENDAR_ALERTS=true`)
 3. **Summarize** findings in a Telegram alert when actionable — like a colleague, not a dashboard
 4. **Draft** knowledge or deploy work only when a human asks in Telegram

@@ -33,9 +33,6 @@ test("lookout reports a dead Facebook token without guessing spend", async () =>
       if (String(url).includes("graph.facebook.com")) {
         return jsonResponse(401, { error: { message: "Session invalidated", code: 190 } });
       }
-      if (String(url).includes("/api/health")) {
-        return jsonResponse(200, { status: "ok", db: "ok" });
-      }
       return jsonResponse(200, {});
     }
   });
@@ -50,13 +47,24 @@ test("lookout treats a 5xx public site as urgent", async () => {
     environment: {},
     fetchImpl: async (url) => {
       if (String(url).includes("healthexps.com")) return jsonResponse(502, {});
-      if (String(url).includes("/api/health")) return jsonResponse(200, { status: "ok", db: "ok" });
       return jsonResponse(200, {});
     }
   });
   assert.equal(result.urgent, true);
   assert.match(result.fingerprint, /healthexps:down/);
   assert.match(result.alert, /healthexps.com looks down/);
+});
+
+test("lookout does not probe OliComm", async () => {
+  const urls = [];
+  await runLookout({
+    environment: {},
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      return jsonResponse(200, {});
+    }
+  });
+  assert.equal(urls.some((url) => /olicomm|commission-tracker|\/api\/health/i.test(url)), false);
 });
 
 test("dedupes lookout alerts except for new issues, recovery, and 8h reminders", () => {
