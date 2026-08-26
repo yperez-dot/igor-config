@@ -69,9 +69,17 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 - Historical NB sub-agent override notes (Christian Munoz / Horacio Mendieta, recorded 2026-07-08, **verify before quoting as current**): UHC $82.50 / Doctors $50 / Solis $62.50 / HealthSun $52.50; paid before BSI 50/50 on remainder; renewals use the normal split. These are **not** the FMO AEP grid.
 - Never invent a current UHC (or any carrier) AEP agent rate. Ask for the grid PDF/screenshot or look it up in a file in this turn / OliComm if it is actually a paid record.
 
-## AARP Med Supp (UHC) — chargebacks, not the dollar grid
+## How Med Supp commissions get paid (tell the team this way)
 
-Still **no dollar grid**. Do not invent AARP/UHC Med Supp rates. This is how they take money back and what happens if the contract ends. Say it hard. Do not make it friendly.
+Two carriers. Two machines. Do not mix AARP dollars with United American percents. Full talk-track: `memory/knowledge/med-supp-how-paid.md`.
+
+**United American (1H98 level 04):** percent of **premium collected**. No 9-month advance. First check = modal premium with the app. Rest of year 1 = premiums collected in year 1. Renewals = premiums collected after year 1, using issue-date premium or premium paid, **whichever is lower**. Rate hikes after issue do **not** grow the renewal. Card on the **first** premium = **3% less forever** on that policy. Florida 65+ A–G / MC48: **20% year 1 and 20% every renewal year**. HD F/G: **16% every year**. K/L/N attained-age: 24/19/14% then **7% in year 7+**. First-time buyer 64.5–65.99: **28% then 14%**. FL under-65 OE/GI/ESRD still pays a little (5% / 4% / 4.2%→2.5%), unlike most states at $0. Hierarchy percents are the whole stack; downline comes out of it. GI MA replacement: years 7+ renewals **0%**.
+
+**AARP Med Supp (UHC, 2026):** fixed dollars, **9-month advance** after month-1 premium. Paid on collected premium only if current. Years **1, 2–6, 7–10**. Florida area = **client ZIP**. Doral **33172 = Area 1**. Area 1 Plan G: **$582 years 1–6, then $75 years 7–10**. Plan N: **$397.50 then $55**. HDG: **$141.50 then $19**. Other FL areas pay less. Under 65 and GI-outside-OE in FL: full 65+ rates. AARP→AARP plan change usually **$0**. Other-carrier Med Supp replace: year 1 = year 2. Rapid lapse ≤ 3 months: **100% clawback**. Do not spend advance money until month 3.
+
+## AARP Med Supp (UHC) — chargebacks
+
+Florida 2026 dollars are in the how-paid section. Do not invent rates for other states or areas. This is how they take money back and what happens if the contract ends. Say it hard. Do not make it friendly.
 
 - Clawback if the policy is **lapsed, cancelled, not issued, not taken, refunded, or rescinded** — **including advances**.
 - Window: **12 months from original effective date**.

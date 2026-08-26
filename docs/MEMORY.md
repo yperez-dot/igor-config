@@ -26,7 +26,8 @@ Knowledge files (not always in the prompt — searched on demand):
 - `memory/knowledge/olicomm.md`
 - `memory/knowledge/website.md`
 - `memory/knowledge/team-and-channels.md`
-- `memory/knowledge/aarp-med-supp-chargebacks.md` (UHC AARP Med Supp clawbacks / schedule kill — no dollar grid)
+- `memory/knowledge/aarp-med-supp-chargebacks.md` (UHC AARP Med Supp clawbacks / schedule kill)
+- `memory/knowledge/med-supp-how-paid.md` (plain-language UA vs AARP Med Supp pay, including renewals)
 
 No extra Railway secret is required. `DATABASE_URL` already persists notes.
 

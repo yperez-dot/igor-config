@@ -8,8 +8,8 @@ test("standing memory includes THEI facts and no API tokens", () => {
   assert.match(standing, /BSI split/i);
   assert.match(standing, /Sabri/);
   assert.match(standing, /Typeform/);
-  assert.match(standing, /Rapid lapse/);
-  assert.match(standing, /month 3/);
+  assert.match(standing, /United American/);
+  assert.match(standing, /9-month advance/);
   assert.doesNotMatch(standing, /pit-[a-z0-9-]+/i);
   assert.doesNotMatch(standing, /sk-[a-zA-Z0-9]+/);
   assert.doesNotMatch(standing, /Luz Rivas Polo/);
@@ -24,6 +24,12 @@ test("memory_search finds OliComm parser rules", async () => {
   assert.equal(result.error, undefined);
   assert.equal(result.hits.some((hit) => hit.source.includes("olicomm.md")), true);
   assert.match(result.hits[0].snippet, /HealthSun|serial|period/i);
+});
+
+test("memory_search finds Med Supp how-paid talk-track", async () => {
+  const result = await searchMemory({ query: "United American Med Supp renewals credit card" });
+  assert.equal(result.error, undefined);
+  assert.equal(result.hits.some((hit) => String(hit.source).includes("med-supp-how-paid")), true);
 });
 
 test("memory_search finds AARP Med Supp chargeback rules", async () => {
