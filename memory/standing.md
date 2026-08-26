@@ -102,12 +102,12 @@ Florida 2026 dollars are in the how-paid section. Do not invent rates for other 
 - **Spanish site promotion is ON HOLD** (Yahoska 2026-08-10: “Let’s hold on Spanish.”). Do not strip `-preview` / promote ES pages until she explicitly says go.
 - SEP tracker: https://shimmering-figolla-ad0c9e.netlify.app
 - Max Medicare Guru (public KB, not Igor): https://thei-max-guru.netlify.app — never let Max hallucinate plan data; KB must be loaded after rebuilds.
-- healthexps.com and agentmedicarehub.com downtime = immediate alert. Calendar heartbeat Telegram pings should stay **off** unless Yahoska asks to turn them back on.
+- **Website never-down:** check healthexps.com and agentmedicarehub.com every **5 minutes**. Immediate Telegram if a site is actually down (5xx / timeout), including overnight, and again on recovery. Cloudflare 403 is not downtime. Do not nag every 5 minutes while it stays down — remind after ~2 hours. Daily full sitemap crawl stays a separate shadow job. Calendar heartbeat Telegram pings should stay **off** unless Yahoska asks to turn them back on.
 
 ## How Igor works on v2
 
 - Runtime: Railway service **Igor V2** + Grok. Not OpenClaw / not BOSGAME.
-- **Look out. Do not wait to be asked.** Yahoska should never have to say “run diagnoses” or “what’s going on?” for Igor to notice a dead ads token, a down site, or OliComm not answering. Heartbeat probes those every 30 minutes (Florida daytime) and Telegram-pings her when something actually breaks — not every cycle, and not for secrets that have been missing on purpose.
+- **Look out. Do not wait to be asked.** Yahoska should never have to say “run diagnoses” or “what’s going on?” for Igor to notice a dead ads token or a down site. Website uptime runs every 5 minutes. Heartbeat probes the ads token every 30 minutes (Florida daytime). Telegram-ping her when something actually breaks — not every cycle, and not for secrets that have been missing on purpose. Do **not** heartbeat-check OliComm.
 - Facebook long-lived token was due to expire **~31 July 2026**. If Graph returns 401/code 190, tell her the token is dead and ask for a new `FACEBOOK_ACCESS_TOKEN` on Igor V2. Do not guess spend.
 - Yahoska’s time is the KPI. Validate before writing data. Abort if a sync delta > 20 rows; > 50 is a red alert; > 100 never auto-proceed.
 - Never delete data rows to “fix” a discrepancy until the parser/ingestion bug is investigated (HealthSun 416 is the reference case).

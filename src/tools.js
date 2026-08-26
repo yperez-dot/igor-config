@@ -69,7 +69,7 @@ export function grokTools(environment = process.env) {
       properties: {},
       additionalProperties: false
     }),
-    functionTool("run_lookout", "Probe Facebook ads token, OliComm health, and public sites right now. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
+    functionTool("run_lookout", "Probe Facebook ads token and public sites (healthexps.com, agentmedicarehub.com) right now. Website uptime also runs every 5 minutes on its own. Do not check OliComm. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
       type: "object",
       properties: {},
       additionalProperties: false
@@ -425,7 +425,7 @@ export async function executeTool(name, rawArgs, {
     if (name === "list_schedules") {
       const live = store ? await store.allSchedules() : [];
       return {
-        note: "Legacy jobs are seeded inactive (shadow) on v2 until Yahoska turns them on. Heartbeat should be the live lookout job.",
+        note: "Legacy jobs are seeded inactive (shadow) on v2 until Yahoska turns them on. Live lookout: v2-site-uptime every 5 min (websites) and v2-igor-heartbeat every 30 min (ads token).",
         live: live.map((row) => ({
           id: row.id,
           cron: row.cron,

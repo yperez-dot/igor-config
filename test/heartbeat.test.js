@@ -16,7 +16,7 @@ test("classifies carrier and urgent messages", () => {
   assert.equal(classifyMessage({ from: "newsletter@example.com", subject: "Hello" }), null);
 });
 
-test("skips quiet hours unless a site is down", async () => {
+test("skips quiet hours for a dead ads token", async () => {
   assert.equal(isQuietHours(new Date("2026-08-24T06:00:00.000Z")), true);
   const quiet = await runHeartbeat({
     environment: {
@@ -36,19 +36,6 @@ test("skips quiet hours unless a site is down", async () => {
   });
   assert.equal(quiet.reason, "quiet_hours");
   assert.equal(quiet.shouldNotify, false);
-
-  const outage = await runHeartbeat({
-    environment: { HEARTBEAT_MODE: "report-only" },
-    now: new Date("2026-08-24T06:00:00.000Z"),
-    fetchImpl: async (url) => {
-      if (String(url).includes("healthexps.com")) {
-        return { ok: false, status: 502, json: async () => ({}) };
-      }
-      return { ok: true, status: 200, json: async () => ({ status: "ok", db: "ok" }) };
-    }
-  });
-  assert.equal(outage.shouldNotify, true);
-  assert.match(outage.alert, /healthexps.com looks down/);
 });
 
 test("looks out even when IMAP is not configured", async () => {

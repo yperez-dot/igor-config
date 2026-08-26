@@ -82,3 +82,27 @@ test("heartbeat lookout pings Telegram instead of waiting for a diagnose command
   assert.deepEqual(notifications, ["Heads up. Facebook ads token is dead."]);
   assert.equal(events[0].type, "heartbeat.lookout");
 });
+
+test("site uptime lookout pings Telegram when healthexps.com is down", async () => {
+  const notifications = [];
+  const events = [];
+  const result = await processTask(
+    { payload: { workflow: "site_uptime" } },
+    {
+      runSiteLookoutFn: async () => ({
+        status: "actionable",
+        shouldNotify: true,
+        fingerprint: "healthexps:down",
+        alert: "Heads up. healthexps.com looks down from here (HTTP 502). I'm watching it."
+      }),
+      store: {
+        async latestEvent() { return null; },
+        async record(type, subject, detail) { events.push({ type, subject, detail }); }
+      },
+      notify: async (message) => notifications.push(message)
+    }
+  );
+  assert.equal(result.shouldNotify, true);
+  assert.match(notifications[0], /healthexps.com looks down/);
+  assert.equal(events[0].type, "site_uptime.lookout");
+});
