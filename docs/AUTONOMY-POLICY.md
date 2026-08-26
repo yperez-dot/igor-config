@@ -20,3 +20,11 @@ Igor v2 should not ask for permission again for every routine action. An establi
 ## Runtime behavior
 
 For a standing-approved job, Igor runs it, records the result, and alerts the team on success/failure. It must stop rather than silently broaden its authority when a condition above is met.
+
+## Channel and input parity
+
+Igor has to take the full range of work the team already sends him. Text-only shortcuts are a regression.
+
+- Telegram (and any later team channel) must ingest text, Word, Excel, PowerPoint, PDF, CSV, photos, and videos, or fail loudly in chat.
+- Do not ship a feature that silently drops an input type Telegram delivered.
+- If a format is not supported yet, the bot says so and names the alternative. It does not claim the file never arrived.
