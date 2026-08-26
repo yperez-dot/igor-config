@@ -20,7 +20,7 @@ export async function handleTelegramChat({
   downloadFile = downloadTelegramFile
 }) {
   const history = await store.recentChatTurns(message.chatId);
-  const prompt = systemPrompt ?? systemPromptFor(environment);
+  const prompt = systemPrompt ?? systemPromptFor(environment, { senderId: message.senderId });
   const inbound = await resolveInboundUserText({
     message,
     botToken,

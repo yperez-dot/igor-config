@@ -126,7 +126,8 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       executeTool: (name, args) => executeTool(name, args, {
         environment: process.env,
         chatId: message.chatId,
-        botToken: TELEGRAM.botToken
+        botToken: TELEGRAM.botToken,
+        senderId: message.senderId
       })
     });
   } catch (error) {
