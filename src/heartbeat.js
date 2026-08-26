@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { calendarConfig, listUpcomingEvents } from "./calendar.js";
+import { formatLookoutAlert, runLookout, shouldNotifyLookout } from "./lookout.js";
 
 const CARRIER_HINTS = [
   "uhc", "unitedhealth", "humana", "aetna", "wellcare", "centene", "careplus",
@@ -75,23 +76,43 @@ export async function runHeartbeat({
   now = new Date(),
   scanInbox = scanMailbox,
   fetchImpl = fetch,
-  listCalendar = listUpcomingEvents
+  listCalendar = listUpcomingEvents,
+  lastFingerprint,
+  lastAlertAt
 } = {}) {
   const mode = environment.HEARTBEAT_MODE ?? "report-only";
   if (mode === "off") {
-    return { status: "skipped", reason: "disabled" };
+    return { status: "skipped", reason: "disabled", shouldNotify: false };
   }
-  if (isQuietHours(now)) {
-    return { status: "skipped", reason: "quiet_hours" };
+
+  const lookout = await runLookout({ environment, fetchImpl });
+  const recovered = Boolean(lastFingerprint && lastFingerprint !== "clear" && lookout.fingerprint === "clear");
+  const lookoutAlert = recovered
+    ? formatLookoutAlert([], { recovered: true })
+    : lookout.alert;
+  const lookoutShouldNotify = shouldNotifyLookout({
+    fingerprint: lookout.fingerprint,
+    lastFingerprint,
+    lastAlertAt,
+    now,
+    urgent: lookout.urgent
+  });
+
+  const quiet = isQuietHours(now);
+  if (quiet && !lookout.urgent) {
+    return {
+      status: "skipped",
+      reason: "quiet_hours",
+      shouldNotify: false,
+      fingerprint: lookout.fingerprint,
+      lookout
+    };
   }
 
   const user = environment.HEARTBEAT_IMAP_USER;
   const pass = environment.HEARTBEAT_IMAP_PASS;
   const calendarAlerts = String(environment.HEARTBEAT_CALENDAR_ALERTS ?? "").toLowerCase() === "true";
   const calendarReady = calendarAlerts && calendarConfig(environment).connected;
-  if ((!user || !pass) && !calendarReady) {
-    return { status: "skipped", reason: "imap_not_configured" };
-  }
 
   const findings = user && pass
     ? await scanInbox({
@@ -124,11 +145,15 @@ export async function runHeartbeat({
     return !Number.isNaN(start) && start >= nowMs && start <= nowMs + imminentMs;
   });
 
-  const actionable = findings.length > 0 || imminentCalendar.length > 0;
+  const mailActionable = findings.length > 0 || imminentCalendar.length > 0;
+  const lookoutActionable = lookout.findings.length > 0 || recovered;
   const result = {
-    status: actionable ? "actionable" : "clear",
+    status: mailActionable || lookoutActionable ? "actionable" : "clear",
     findingCount: findings.length,
     findings: findings.slice(0, 5),
+    lookout,
+    fingerprint: lookout.fingerprint,
+    shouldNotify: false,
     upcomingCalendar: upcomingCalendar.slice(0, 8).map((event) => ({
       summary: event.summary,
       start: event.start,
@@ -138,18 +163,21 @@ export async function runHeartbeat({
   };
   if (calendarError) result.calendarError = calendarError;
 
-  if (mode === "shadow" || (mode === "report-only" && actionable)) {
-    const mailBit = findings.length
-      ? `${findings.length} actionable message(s): ${findings.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
-      : null;
-    const calBit = imminentCalendar.length
-      ? `${imminentCalendar.length} event(s) in the next 4 hours: ${imminentCalendar.slice(0, 3).map((event) => `${event.summary} ${event.start}`).join(" | ")}`
-      : null;
-    if (mailBit || calBit) {
-      result.alert = `Heartbeat found ${[mailBit, calBit].filter(Boolean).join(" · ")}`;
-    } else if (mode === "shadow") {
-      result.alert = "Heartbeat clear: no actionable carrier/urgent mail or imminent calendar events.";
-    }
+  const mailBit = findings.length
+    ? `${findings.length} carrier/urgent mail item(s): ${findings.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
+    : null;
+  const calBit = imminentCalendar.length
+    ? `${imminentCalendar.length} event(s) in the next 4 hours: ${imminentCalendar.slice(0, 3).map((event) => `${event.summary} ${event.start}`).join(" | ")}`
+    : null;
+
+  if (lookoutShouldNotify && lookoutAlert) {
+    result.alert = lookoutAlert;
+    result.shouldNotify = true;
+  }
+  if (mailBit || calBit) {
+    const extra = [mailBit, calBit].filter(Boolean).join(" · ");
+    result.alert = result.alert ? `${result.alert} Also: ${extra}` : `Heads up. ${extra}`;
+    result.shouldNotify = true;
   }
 
   return result;

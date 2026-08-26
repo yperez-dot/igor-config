@@ -15,9 +15,12 @@ Each heartbeat may:
 
 v2 does **not** auto-publish, deploy, or edit knowledge on heartbeat findings.
 
-1. **Detect** carrier/urgent mail (calendar reminder texts are off unless `HEARTBEAT_CALENDAR_ALERTS=true`)
-2. **Summarize** findings in a Telegram alert when actionable
-3. **Draft** knowledge or deploy work only when a human asks in Telegram
+1. **Look out** on every Florida daytime cycle: probe the Facebook ads token, OliComm `/api/health`, and public sites (healthexps.com, agentmedicarehub.com). Telegram-ping Yahoska when something actually breaks, when it recovers, or once more after ~8 hours if it is still broken. Site downtime pages through quiet hours. Dead ads tokens wait until morning.
+2. **Detect** carrier/urgent mail when IMAP is configured (calendar reminder texts stay off unless `HEARTBEAT_CALENDAR_ALERTS=true`)
+3. **Summarize** findings in a Telegram alert when actionable — like a colleague, not a dashboard
+4. **Draft** knowledge or deploy work only when a human asks in Telegram
+
+Heartbeat no longer no-ops just because IMAP is missing. Missing secrets that were never set (Notion, Tavily) are not a 30-minute nag.
 
 This removes Anthropic from the polling loop. Grok is optional for summarizing flagged mail; default v2 heartbeat avoids an LLM call when nothing is actionable.
 

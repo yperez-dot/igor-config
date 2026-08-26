@@ -149,6 +149,14 @@ test("list events uses the Calendar API", async () => {
   assert.equal(result.events[0].start, "2026-08-26T15:00:00");
 });
 
+function lookoutOkFetch() {
+  return async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ status: "ok", db: "ok", id: "1" })
+  });
+}
+
 test("heartbeat does not text calendar events by default", async () => {
   const result = await runHeartbeat({
     environment: {
@@ -161,7 +169,8 @@ test("heartbeat does not text calendar events by default", async () => {
     scanInbox: async () => [],
     listCalendar: async () => {
       throw new Error("calendar should not be fetched");
-    }
+    },
+    fetchImpl: lookoutOkFetch()
   });
   assert.equal(result.status, "clear");
   assert.equal(result.alert, undefined);
@@ -181,7 +190,8 @@ test("heartbeat texts calendar events only when HEARTBEAT_CALENDAR_ALERTS is tru
       end: "2026-08-26T09:15:00",
       startMs: Date.parse("2026-08-26T13:00:00.000Z"),
       timeZone: "America/New_York"
-    }]
+    }],
+    fetchImpl: lookoutOkFetch()
   });
   assert.equal(result.status, "actionable");
   assert.match(result.alert, /Standup/);

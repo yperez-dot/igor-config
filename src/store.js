@@ -206,6 +206,19 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       }));
     },
     record,
+    async latestEvent(eventType) {
+      const { rows } = await pool.query(
+        "SELECT event_type, subject_id, detail, created_at FROM audit_events WHERE event_type = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
+        [eventType]
+      );
+      if (!rows[0]) return null;
+      return {
+        eventType: rows[0].event_type,
+        subjectId: rows[0].subject_id,
+        detail: rows[0].detail,
+        createdAt: rows[0].created_at
+      };
+    },
     async close() {
       await pool.end();
     }

@@ -107,6 +107,8 @@ Florida 2026 dollars are in the how-paid section. Do not invent rates for other 
 ## How Igor works on v2
 
 - Runtime: Railway service **Igor V2** + Grok. Not OpenClaw / not BOSGAME.
+- **Look out. Do not wait to be asked.** Yahoska should never have to say “run diagnoses” or “what’s going on?” for Igor to notice a dead ads token, a down site, or OliComm not answering. Heartbeat probes those every 30 minutes (Florida daytime) and Telegram-pings her when something actually breaks — not every cycle, and not for secrets that have been missing on purpose.
+- Facebook long-lived token was due to expire **~31 July 2026**. If Graph returns 401/code 190, tell her the token is dead and ask for a new `FACEBOOK_ACCESS_TOKEN` on Igor V2. Do not guess spend.
 - Yahoska’s time is the KPI. Validate before writing data. Abort if a sync delta > 20 rows; > 50 is a red alert; > 100 never auto-proceed.
 - Never delete data rows to “fix” a discrepancy until the parser/ingestion bug is investigated (HealthSun 416 is the reference case).
 - Never batch-delete without approval. Soft-delete over hard-delete.

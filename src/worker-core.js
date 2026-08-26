@@ -30,7 +30,9 @@ export async function processTask(task, {
   environment = process.env,
   notify = async () => {},
   runSalesSync = runSalesTrackerSync,
-  runIndustryPulse = runIndustryPulseWeekly
+  runIndustryPulse = runIndustryPulseWeekly,
+  runHeartbeatFn = runHeartbeat,
+  store
 } = {}) {
   const workflow = task.payload?.workflow;
 
@@ -61,14 +63,20 @@ export async function processTask(task, {
   }
 
   if (workflow === "igor_heartbeat") {
-    const result = await runHeartbeat({ environment });
-    if (result.alert) {
-      await notify(result.alert.startsWith("Heartbeat clear") ? `✅ ${result.alert}` : `📬 ${result.alert}`);
-    } else if (
-      result.reason === "imap_not_configured"
-      && (environment.HEARTBEAT_MODE === "shadow" || task.payload?.source === "manual-test")
-    ) {
-      await notify("⚠️ Heartbeat skipped: add HEARTBEAT_IMAP_USER and HEARTBEAT_IMAP_PASS on igor-config.");
+    const last = store ? await store.latestEvent("heartbeat.lookout") : null;
+    const result = await runHeartbeatFn({
+      environment,
+      lastFingerprint: last?.detail?.fingerprint,
+      lastAlertAt: last?.createdAt ? new Date(last.createdAt) : null
+    });
+    if (result.shouldNotify && result.alert) {
+      await notify(result.alert);
+      if (store) {
+        await store.record("heartbeat.lookout", "igor", {
+          fingerprint: result.fingerprint,
+          status: result.status
+        });
+      }
     }
     return result;
   }

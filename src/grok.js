@@ -112,7 +112,7 @@ export async function askGrok({
       tools,
       conversationId,
       fetchImpl,
-      timeoutMs: media.length ? 120_000 : 60_000
+      timeoutMs: media.length ? 120_000 : (tools?.length ? 90_000 : 60_000)
     });
     const calls = toolCallsFrom(message);
     if (!calls.length) {

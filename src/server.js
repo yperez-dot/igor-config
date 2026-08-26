@@ -8,7 +8,7 @@ import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
 import { legacySchedules } from "./legacy-schedules.js";
-import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
+import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -137,7 +137,7 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       await sendTelegramMessage({
         botToken: TELEGRAM.botToken,
         chatId: message.chatId,
-        text: "I couldn’t process that right now. Please try again shortly."
+        text: telegramFailureMessage(error)
       });
     } catch {
       // The update is already recorded; avoid logging message content or secrets.

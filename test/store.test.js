@@ -112,6 +112,9 @@ test("persists agent memories without writing the note text to audit events", as
   const { rows: audit } = await pool.query("SELECT event_type, detail FROM audit_events");
   assert.equal(audit[0].event_type, "agent_memory.saved");
   assert.equal(JSON.stringify(audit).includes("Yesika"), false);
+  const latest = await store.latestEvent("agent_memory.saved");
+  assert.equal(latest.eventType, "agent_memory.saved");
+  assert.equal(latest.detail.chars > 0, true);
 
   await store.close();
 });
