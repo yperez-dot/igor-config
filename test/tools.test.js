@@ -10,6 +10,8 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({}).includes("ghl_stale_leads"), false);
   assert.equal(names({ GHL_API_TOKEN: "token" }).includes("ghl_stale_leads"), true);
   assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("github_get"), true);
+  assert.equal(names({}).includes("memory_search"), true);
+  assert.equal(names({}).includes("memory_remember"), true);
 });
 
 test("connectedSystems reports missing Railway secrets without values", () => {
@@ -174,4 +176,27 @@ test("stale leads CSV is PHI-light", () => {
   assert.match(csv, /Maria G./);
   assert.match(csv, /1212/);
   assert.equal(csv.includes("3055551212"), false);
+});
+
+test("memory tools search files and persist notes", async () => {
+  const found = await executeTool("memory_search", { query: "BSI split Doctors Solis" });
+  assert.equal(found.error, undefined);
+  assert.ok(found.hits.length > 0);
+  assert.match(JSON.stringify(found.hits), /50\/50|100% THEI/);
+
+  const notes = [];
+  const saved = await executeTool("memory_remember", {
+    content: "AEP 2027 UHC grid PDF is the source of truth for agent rates.",
+    tags: "aep"
+  }, {
+    senderId: "111",
+    store: {
+      async saveAgentMemory(row) {
+        notes.push(row);
+        return { id: "mem-1", tags: row.tags };
+      }
+    }
+  });
+  assert.equal(saved.saved, true);
+  assert.equal(notes[0].source, "telegram:111");
 });

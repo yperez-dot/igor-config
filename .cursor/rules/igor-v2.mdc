@@ -59,4 +59,4 @@ Work from evidence, not assumptions. Verify dates, carrier details, plan-year sc
 
 ## Telegram Grok identity
 
-The live Telegram bot loads `src/identity.js` plus bounded recent chat turns and Grok function tools for every system whose Railway secrets are present. See `docs/SYSTEMS.md`. Do not invent live GHL, ads, Hub, or deploy results when the matching secret is missing. Inbound Telegram files are extracted or sent to vision in the current turn; do not claim a named file never arrived if extracted text or a photo/video note is in this prompt or recent turns.
+The live Telegram bot loads `src/identity.js`, `memory/standing.md`, bounded recent chat turns, and Grok function tools for every system whose Railway secrets are present. Use `memory_search` / `memory_remember` for THEI facts beyond the standing pack. See `docs/SYSTEMS.md` and `docs/MEMORY.md`. Do not invent live GHL, ads, Hub, or deploy results when the matching secret is missing. Inbound Telegram files are extracted or sent to vision in the current turn; do not claim a named file never arrived if extracted text or a photo/video note is in this prompt or recent turns.

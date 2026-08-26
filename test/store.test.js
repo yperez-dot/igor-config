@@ -91,3 +91,27 @@ test("stores bounded chat turns without writing message text to audit events", a
 
   await store.close();
 });
+
+test("persists agent memories without writing the note text to audit events", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+
+  const saved = await store.saveAgentMemory({
+    content: "Dual-eligible work still routes Yesika, Paulette, Yahoska, then catch-all.",
+    tags: "routing"
+  });
+  const listed = await store.listAgentMemories();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].id, saved.id);
+  assert.match(listed[0].content, /Yesika/);
+  assert.equal(listed[0].tags, "routing");
+
+  const { rows: audit } = await pool.query("SELECT event_type, detail FROM audit_events");
+  assert.equal(audit[0].event_type, "agent_memory.saved");
+  assert.equal(JSON.stringify(audit).includes("Yesika"), false);
+
+  await store.close();
+});
