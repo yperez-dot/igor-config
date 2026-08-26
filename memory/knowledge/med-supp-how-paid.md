@@ -75,8 +75,26 @@ Lapse / death / take-back:
 
 IN / OK / TN on UHICA AARP: **$0 on new apps**. Existing book still pays.
 
+## Upfront: AARP pays more cash. UA is the rumor because of renewals.
+
+Do not tell the team “UA pays better up front.” That is wrong.
+
+**First check / first 9 months:** AARP. They advance **nine months** after month-1 premium. Florida Area 1 Plan G year-1 is **$582**, so the advance is in that neighborhood (about 9/12 of year 1) in one hit. UA has **no advance**. Monthly client at UA: first check is **20% of one month’s premium**. That is small money.
+
+**Year 1 total:** AARP Area 1 Plan G is a locked **$582**. UA is **20% of year-1 collected premium**. UA only beats $582 in year 1 if that policy’s annual premium is **over ~$2,910** (~$243/month). Same math for Plan N: UA 20% vs AARP **$397.50** → UA wins year 1 only if N premium is over **~$1,988/year**. HD: UA 16% vs AARP HDG **$141.50** → UA wins year 1 only if HD premium is over **~$884/year**.
+
+**Years 2–6:** AARP Area 1 G stays **$582**. UA stays 20% of the **issue** premium (not the hiked premium). Same breakeven: UA needs ~$243/month at issue to match.
+
+**Years 7+:** this is where UA actually wins. UA A–G stays **20%**. AARP G drops to **$75**. If the policy is still there, UA is the better residual.
+
+**First-time buyer at UA (64.5–65.99):** **28% year 1** — the one UA row that can look fatter in year 1. Then it drops to 14%.
+
+Also: UA 20% is the **whole hierarchy**. Writing agent does not pocket 20% if someone sits under them. AARP $582 is the agent line on that schedule (downline rolls up if missing).
+
 ## One-breath version for the team
 
 United American: percent of premium that actually comes in. **Every year, including renewals.** No 9-month advance. Rate hikes after issue do not grow your renewal. Card on the first premium cuts you 3% for the life of the policy.
 
 AARP: fixed dollar by Florida ZIP area and plan. **Nine-month advance** after first premium. Years 2–6 usually stay in the same neighborhood as year 1. Years 7–10 drop hard. If it lapses in 90 days they take 100% back. Do not spend it.
+
+Up front AARP pays more cash. UA pays better if the policy is still there in year 7. Do not tell the team UA is the better first check.

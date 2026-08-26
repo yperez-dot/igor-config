@@ -77,6 +77,8 @@ Two carriers. Two machines. Do not mix AARP dollars with United American percent
 
 **AARP Med Supp (UHC, 2026):** fixed dollars, **9-month advance** after month-1 premium. Paid on collected premium only if current. Years **1, 2–6, 7–10**. Florida area = **client ZIP**. Doral **33172 = Area 1**. Area 1 Plan G: **$582 years 1–6, then $75 years 7–10**. Plan N: **$397.50 then $55**. HDG: **$141.50 then $19**. Other FL areas pay less. Under 65 and GI-outside-OE in FL: full 65+ rates. AARP→AARP plan change usually **$0**. Other-carrier Med Supp replace: year 1 = year 2. Rapid lapse ≤ 3 months: **100% clawback**. Do not spend advance money until month 3.
 
+**Who pays better up front:** AARP, not UA. AARP advances ~9 months. UA pays as premium comes in — monthly first check is 20% of one month. UA year-1 20% only beats AARP Area 1 Plan G **$582** if annual premium is over **~$2,910**. UA’s real edge is **years 7+** (20% vs AARP **$75**) and persistency, not the first check. UA 20% is the whole hierarchy, not always the writing agent’s pocket.
+
 ## AARP Med Supp (UHC) — chargebacks
 
 Florida 2026 dollars are in the how-paid section. Do not invent rates for other states or areas. This is how they take money back and what happens if the contract ends. Say it hard. Do not make it friendly.

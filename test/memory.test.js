@@ -10,6 +10,7 @@ test("standing memory includes THEI facts and no API tokens", () => {
   assert.match(standing, /Typeform/);
   assert.match(standing, /United American/);
   assert.match(standing, /9-month advance/);
+  assert.match(standing, /Who pays better up front/);
   assert.doesNotMatch(standing, /pit-[a-z0-9-]+/i);
   assert.doesNotMatch(standing, /sk-[a-zA-Z0-9]+/);
   assert.doesNotMatch(standing, /Luz Rivas Polo/);
