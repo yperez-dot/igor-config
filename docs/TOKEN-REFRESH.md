@@ -1,6 +1,6 @@
 # Tokens to refresh
 
-Compiled 2026-08-27 from the credentials map in `igor-config-full.md`, Igor v2 `docs/SYSTEMS.md`, and this Cursor Cloud Agent session’s MCP status.
+Compiled 2026-08-27. **Session closed 2026-08-27** — Facebook watch list, GHL rotation, and Notion MCP are done. Cursor Gmail/Calendar/Drive MCP skipped (Google Error 400 on `cursor://`). Railway MCP and SendGrid left for later.
 
 **Do not paste token values into git, Telegram, or this file.** Store new values in Railway (Igor V2 + igor-config worker) and/or the BOSGAME path listed below.
 
