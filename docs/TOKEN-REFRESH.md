@@ -42,7 +42,7 @@ Copy from BOSGAME onto **both** Railway services (**Igor V2** web and **igor-con
 | 14 | Notion integration token | `NOTION_TOKEN` | **Missing as an env file** (may be hardcoded in legacy scripts) | Executive dashboard + sales tracker. Create/rotate at notion.so → Settings → Integrations. Also put it in a BOSGAME env file so it is not only in scripts. |
 | 15 | Telegram bot token | `TELEGRAM_BOT_TOKEN` | BotFather (`@Igor_theibot`) | Production Telegram. Rotate only if leaked; then update Railway + webhook. Also needs `TELEGRAM_WEBHOOK_SECRET`. |
 | 16 | xAI / Grok | `XAI_API_KEY` | Railway only (v2) | Telegram Grok replies. |
-| 17 | SendGrid | `SENDGRID_API_KEY` | `~/.openclaw/credentials/sendgrid-thei.env` | Outbound mail / site-health alerts. Alternative: SMTP above. |
+| 17 | SendGrid | `SENDGRID_API_KEY` | `~/.openclaw/credentials/sendgrid-thei.env` | Outbound mail / site-health alerts. **Not on Igor V2 as of 2026-08-27** (stale-leads had nothing to email). Add to Igor V2 if Telegram should email CSVs. Alternative: SMTP above. |
 | 18 | Tavily | `TAVILY_API_KEY` | `~/.openclaw/secrets/tavily.env` | Igor web search. |
 | 19 | Anthropic (OliComm) | *(not on v2 SYSTEMS.md)* | `~/.openclaw/credentials/anthropic-olicomm.env` | OliComm Claude usage. |
 | 20 | MedicarePro | `MEDICAREPRO_API_KEY` + `MEDICAREPRO_BASE_URL` | `~/.openclaw/credentials/medicarepro-api.env` | CRM sales exports. |
