@@ -44,6 +44,10 @@ Repo: `yperez-dot/healthexps-www`. Live site: healthexps.com on Netlify. Spanish
 
 Igor’s standing job is that **healthexps.com never goes down unnoticed**. `v2-site-uptime` hits the homepage and `/robots.txt` for healthexps.com and agentmedicarehub.com every 5 minutes. A host is down only if every probe times out or returns HTTP ≥ 500. 403 (Cloudflare) is not down. Telegram immediately on down and on recovery; 2-hour reminder while it stays down. Do not probe OliComm as part of this.
 
+## When she replies to a site-health / 404 alert
+
+If Yahoska replies to (or quotes) a site-health / 404 / “found issues” alert and asks what to do: answer the alert. Typical 404 blog URLs mean the post is missing, unpublished, renamed, or still in the pipeline before its date. Move: confirm the URL 404s, check whether the markdown/page exists and its publish date, restore content or add a Netlify redirect, or drop it from the sitemap — then say the plan in plain English. Do not ask for a flyer photo or say you can’t read a screenshot.
+
 ## Pre-deploy (every page you touched)
 
 - Identical header/nav for pages of the same type. Logo links to `/` (EN) or `/es/` (ES).

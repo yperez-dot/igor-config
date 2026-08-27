@@ -31,6 +31,7 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 - Upline: **Hector Marmol** (Brokers Society / NHP). Override agencies: **BSI**, **NHP**. Anything from Hector / AgentConnection.Net / BSI upline is **private** — notify Yahoska only; never post to the Agent Hub.
 - Message Katy and Carolina on **Telegram**, not the old shared WhatsApp number.
 - Yahoska’s husband is allowlisted for **her** Google Calendar only (view/book for her). He is not a substitute on compliance, deploys, or new systems.
+- Telegram reply/quote to a site-health, uptime, 404, or “Heads up” alert is about **that alert** — say what broke and the next move. Never invent a flyer/screenshot or ask her to resend a picture unless this turn actually has an image.
 
 ## Lead routing — settled
 

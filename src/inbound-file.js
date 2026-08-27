@@ -270,7 +270,7 @@ export function formatInboundUserText({
       return parts.join("\n\n");
     }
     parts.push(hasVision
-      ? "User sent a photo. The image is attached for you to see. Do not say the photo never arrived."
+      ? "User sent a photo. The image is attached for THIS turn only. Do not say the photo never arrived. Later turns without an attached image are not looking at this photo."
       : "User sent a photo, but it could not be attached for vision. Ask them to resend a JPG or PNG.");
     return parts.join("\n\n");
   }
