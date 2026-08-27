@@ -95,7 +95,7 @@ Never commit the value. LastPass (or the password manager) is the backup copy.
 
 **Skip. Verified live 2026-08-27** (Graph answering; account `act_399183196583723`). The June note that this expired ~31 July 2026 was a false alarm.
 
-Campaign id `120244537840240684` (C1 MEDICARE) is **paused / do not query**. Watch **Medi-Medi V3 | Elena | Aug 2026** (live) and **Close Now ES — T65 | Sep 2026** (paused, still monitor). Campaign ids are not confirmed yet — do not set `FACEBOOK_CAMPAIGN_ID` to `120252903227370684` or to the C1 id. Set `FACEBOOK_AD_ACCOUNT_ID=act_399183196583723` and filter by campaign name.
+Campaign id `120244537840240684` (C1 MEDICARE) is **paused / do not query**. Watch **Medi-Medi V3 | Elena | Aug 2026** `120252903227370684` (live) and **Close Now ES — T65 | Sep 2026** `120252557151210684` (paused, still monitor). Set `FACEBOOK_AD_ACCOUNT_ID=act_399183196583723` and `FACEBOOK_CAMPAIGN_ID=120252903227370684` for the live campaign.
 
 If Graph later returns an expired-token error, use the steps below.
 
@@ -108,7 +108,7 @@ If Graph later returns an expired-token error, use the steps below.
 7. Open [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken).
 8. Paste → **Debug**. Confirm the app and `ads_read` / `ads_management` are present.
 9. Click **Extend Access Token**. Copy the new token. Debug it again — **Expires** should be ~60 days (or Never for a system-user token).
-10. Add it on Railway as `FACEBOOK_ACCESS_TOKEN` (Igor V2 + igor-config) using the recipe above. Set `FACEBOOK_AD_ACCOUNT_ID=act_399183196583723`. Do **not** set `FACEBOOK_CAMPAIGN_ID` to `120244537840240684` (C1, paused) or to `120252903227370684` until Ads Manager/Graph names that object. Watch Medi-Medi V3 and Close Now ES by **name**.
+10. Add it on Railway as `FACEBOOK_ACCESS_TOKEN` (Igor V2 + igor-config) using the recipe above. Set `FACEBOOK_AD_ACCOUNT_ID=act_399183196583723` and `FACEBOOK_CAMPAIGN_ID=120252903227370684` (Medi-Medi V3, live). Do **not** use `120244537840240684` (C1, paused). Close Now ES is `120252557151210684` (paused, still report — query that id separately, do not make it the default).
 11. BOSGAME (if still used): put the same value in `~/.openclaw/workspace/.ghl-credentials-thei`.
 12. Redeploy Igor V2. In Telegram: ask for Facebook ads insights. If Igor says Facebook is missing, the Railway name is wrong or the redeploy did not finish.
 

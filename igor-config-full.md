@@ -830,11 +830,14 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 
 | Campaign | Status | Role | Ads Manager snapshot (2026-08-27) |
 | --- | --- | --- | --- |
-| **Medi-Medi V3 \| Elena \| Aug 2026** | ON / Active | **Primary live campaign** — all new spend. Campaign id **not confirmed.** | Spend $51.11 · 2,207 imp · 1,682 reach · freq 1.31 · CPM $23.16 |
-| **Close Now ES — T65 \| Sep 2026** | OFF / paused | Still watch (history + if it is turned back on). Campaign id **not confirmed.** | Spend $184.11 · 11,390 imp · 8,691 reach · freq 1.31 · CPM $16.16 |
+| **Medi-Medi V3 \| Elena \| Aug 2026** (`120252903227370684`) | ON / Active | **Primary live campaign** — all new spend. Confirmed from Ads Manager URL 2026-08-27. Ad set `120252903227350684` · Ad `120252903227360684` | Spend $51.11 · 2,207 imp · 1,682 reach · freq 1.31 · CPM $23.16 |
+| **Close Now ES — T65 \| Sep 2026** (`120252557151210684`) | OFF / paused | Still watch (history + if it is turned back on). Confirmed from Ads Manager URL 2026-08-27. | Spend $184.11 · 11,390 imp · 8,691 reach · freq 1.31 · CPM $16.16 |
 | C1 MEDICARE (`120244537840240684`) | Paused | **Do not monitor.** Graph insights for this id came back empty. | — |
 
-Unverified id `120252903227370684` was pasted 2026-08-27 — **do not treat it as Medi-Medi V3**. Confirm in Ads Manager (click the campaign → URL `selected_campaign_ids=`) or Graph `GET {id}?fields=id,name,effective_status` before recording it. Until both watch-list ids are confirmed, query the ad account `act_399183196583723` and filter by campaign **name**. Do not query C1.
+Graph objects (Yahoska confirmed 2026-08-27 from Ads Manager `selected_campaign_ids`):
+- **Medi-Medi V3** = `120252903227370684` (live)
+- **Close Now ES** = `120252557151210684` (paused, still report)
+- **C1** = `120244537840240684` — do not query
 
 These two campaigns spent **$235.22** in the current Ads Manager view vs account 30d **$235.24** — they are the whole account for that window. Close Now ES was ~78% of spend and is now off, so forward CPL/CPM is Medi-Medi V3 only (higher CPM $23.16 vs Close Now $16.16).
 
@@ -1077,7 +1080,7 @@ Entry types: `event` (trainings/AEP), `urgent` (compliance deadlines), `update` 
 4. **FB Ads single-day dips are noise.** Need 7d AND 30d confirmation before calling CRITICAL.
 5. **Nav deployment:** ALWAYS create backup branch first. Test on 1 page → Netlify preview → batches. Never touch `<head>` for nav changes. Use non-greedy regex in Python: `re.sub(r'<header[\s\S]*?</header>', NEW_HEADER, html, count=1)`.
 6. **Seniors:** Text first, simple responses (HOY/MAÑANA), WhatsApp for Spanish speakers, avoid 3pm calls.
-7. **API tokens expire.** Facebook token was flagged for ~July 31, 2026 — **false alarm 2026-08-27** (Graph answering; ads live). Re-check only on an actual `OAuthException`. **Do not query C1** (`120244537840240684`, paused). Monitor **Medi-Medi V3 | Elena | Aug 2026** (live) and **Close Now ES — T65 | Sep 2026** (paused, still watch) on account `act_399183196583723`. Campaign ids not confirmed — do not use `120252903227370684` until Graph/Ads Manager names it.
+7. **API tokens expire.** Facebook token was flagged for ~July 31, 2026 — **false alarm 2026-08-27** (Graph answering; ads live). Re-check only on an actual `OAuthException`. **Do not query C1** (`120244537840240684`, paused). Monitor **Medi-Medi V3** `120252903227370684` (live) and **Close Now ES** `120252557151210684` (paused, still watch) on account `act_399183196583723`.
 8. **Always verify contact info from LIVE site** — cached data had wrong phone/dates for months.
 
 ---
@@ -1718,9 +1721,8 @@ Last reviewed: 2026-08-09 by Igor 🤖
 - All four test scenarios (EN/ES × Sabri/standard) confirmed passing
 
 ### Facebook Ads — ACTIVE (Updated 2026-08-27)
-- **Watch:** `Medi-Medi V3 | Elena | Aug 2026` (ON) and `Close Now ES — T65 | Sep 2026` (OFF, still report)
+- **Watch:** `Medi-Medi V3 | Elena | Aug 2026` (`120252903227370684`, ON) and `Close Now ES — T65 | Sep 2026` (`120252557151210684`, OFF, still report)
 - **Do not watch:** C1 MEDICARE (`120244537840240684`) — paused
-- Campaign ids: not confirmed. Do not map `120252903227370684` until named in Ads Manager / Graph.
 - Account: `act_399183196583723`
 - Legacy: XA-Medicare (4 AI character ads: Elena, Roberto, Maria, Mom+Daughter), launched April 2026, benchmark CPL $10.48
 - Roberto Testing campaign: isolated CPL testing at $15/day
