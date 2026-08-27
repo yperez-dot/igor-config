@@ -125,10 +125,10 @@ Location ID (keep, do not rotate): `RINM4TCnM4hN06UA1aK0`.
 3. **Create New Integration**. Name: `Igor v2`.
 4. Enable scopes Igor actually uses: contacts (read), opportunities / pipelines (read), and any other scopes the old PIT had. Create.
 5. Copy the token **immediately**. It starts with `pit-` and is shown once.
-6. Add it on Railway as `GHL_API_TOKEN` on **Igor V2** and **igor-config**. Optional: `GHL_LOCATION_ID=RINM4TCnM4hN06UA1aK0`.
-7. Redeploy Igor V2.
-8. In Telegram: “pull the stale leads report”. If it still says GHL is disconnected, the variable is on the wrong service.
-9. Back in Private Integrations, delete the **old** integration (the leaked PIT). Only after the new one works.
+6. Add it on Railway as `GHL_API_TOKEN` on **Igor V2** and **igor-config**. Optional: `GHL_LOCATION_ID=RINM4TCnM4hN06UA1aK0`. **Done 2026-08-27** (Yahoska).
+7. **Redeploy both** Igor V2 and igor-config. Variables do not load until a new deploy.
+8. In Telegram: “pull the stale leads report”. If it still says GHL is disconnected, the variable is on the wrong service or the deploy did not finish.
+9. Back in Private Integrations, delete only the **unused** old row (`igor` or `igor v2`) after Telegram works. Keep whichever row is still Last Used for production until then.
 10. BOSGAME (if still used): replace `~/.openclaw/credentials/ghl-ai-token.env` and `.ghl-credentials-thei`.
 
 Do not paste the new PIT into git or Telegram.
