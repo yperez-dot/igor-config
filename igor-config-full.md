@@ -822,15 +822,37 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 
 ---
 
-## 📊 Facebook Ads (C1 MEDICARE)
-**Campaign ID:** 120244537840240684 | **Ad Account:** act_399183196583723
-**Top performers (30-day baseline):** Elena ~$8.69 CPL, Roberto ~$6.62 CPL (best), Cumplir 65 ~$7.83 CPL
-**Diagnostic rule:** CRITICAL requires confirmation across BOTH 7d AND 30d. Single-day anomaly = WATCH only. CPL requires ≥$50 spend. See `fb-ad-diagnostic-v2.py`.
+## 📊 Facebook Ads — watch list (Updated 2026-08-27)
+**Ad Account:** `act_399183196583723`
+**Token:** Graph live 2026-08-27. Do not rotate unless Graph returns an expired-token error.
+
+**Monitor these two. Do not query C1 — it is paused and the old id is stale.**
+
+| Campaign | Status | Role | Ads Manager snapshot (2026-08-27) |
+| --- | --- | --- | --- |
+| **Medi-Medi V3 \| Elena \| Aug 2026** (`120252903227370684`) | ON / Active | **Primary live campaign** — all new spend. Confirmed from Ads Manager URL 2026-08-27. Ad set `120252903227350684` · Ad `120252903227360684` | Spend $51.11 · 2,207 imp · 1,682 reach · freq 1.31 · CPM $23.16 |
+| **Close Now ES — T65 \| Sep 2026** (`120252557151210684`) | OFF / paused | Still watch (history + if it is turned back on). Confirmed from Ads Manager URL 2026-08-27. | Spend $184.11 · 11,390 imp · 8,691 reach · freq 1.31 · CPM $16.16 |
+| C1 MEDICARE (`120244537840240684`) | Paused | **Do not monitor.** Graph insights for this id came back empty. | — |
+
+Graph objects (Yahoska confirmed 2026-08-27 from Ads Manager `selected_campaign_ids`):
+- **Medi-Medi V3** = `120252903227370684` (live)
+- **Close Now ES** = `120252557151210684` (paused, still report)
+- **C1** = `120244537840240684` — do not query
+
+These two campaigns spent **$235.22** in the current Ads Manager view vs account 30d **$235.24** — they are the whole account for that window. Close Now ES was ~78% of spend and is now off, so forward CPL/CPM is Medi-Medi V3 only (higher CPM $23.16 vs Close Now $16.16).
+
+**Account-level snapshot (2026-08-27):**
+- Last 30d (Jul 28–Aug 26): spend $235.24 · 53 leads · CPL $4.44 · 551 clicks · CPC $0.43 · CTR 4.1% · 27 first-message replies
+- Last 7d: spend $88.39 · 18 leads · CPL $4.91 · CPC $0.54 · CTR 3.5%
+- Read: spending a bit harder this week; blended CPL still under $5. WATCH, not CRITICAL. Need a Results/CPL column on the next Ads Manager shot for campaign-level CPL.
+
+**Older 30-day ad-level baseline (pre-Aug / C1 era):** Elena ~$8.69 CPL, Roberto ~$6.62 CPL (best), Cumplir 65 ~$7.83 CPL. Do not treat those as Medi-Medi V3 targets until V3 has its own 7d+30d.
+**Diagnostic rule:** CRITICAL requires confirmation across BOTH 7d AND 30d. Single-day anomaly = WATCH only. CPL requires ≥$50 spend. See `fb-ad-diagnostic-v2.py`. Report **per campaign** for the watch list, plus account total.
 
 ---
 
 ## 📊 GoHighLevel Pipeline
-**API token:** `pit-c3f3aaba-87a8-4c2c-9326-c70997cb4845` | Location: `RINM4TCnM4hN06UA1aK0`
+**API token:** Railway `GHL_API_TOKEN` live 2026-08-27 (Igor V2 + igor-config). Telegram stale-leads verified: open / 14d / **zero stale**. Location: `RINM4TCnM4hN06UA1aK0`. Optional cleanup: delete unused GHL Private Integration row. `SENDGRID_API_KEY` still not on Igor V2.
 **File:** `~/.openclaw/workspace/.ghl-credentials-thei`
 **Stage breakdown (baseline):** No Answer 67%, Follow Up 9%, New Lead 8%, Future Eligible 6%, Appt Scheduled 4%
 **Best agent:** Alan Elchami (44% no-answer vs team 67%)
@@ -894,10 +916,12 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 
 ---
 
-## 🔑 API Tokens Status (Updated 2026-06-01)
-- **GHL:** ✅ Working — `pit-c3f3aaba-87a8-4c2c-9326-c70997cb4845`
-- **Facebook:** ✅ Long-lived token (~expires July 31, 2026) — saved in `.ghl-credentials-thei`
-- **Netlify:** ✅ Token at `~/.openclaw/credentials/netlify-token.txt`
+## 🔑 API Tokens Status (Updated 2026-08-27)
+**Current refresh checklist:** `docs/TOKEN-REFRESH.md`.
+
+- **GHL:** ⚠️ Rotate — PIT was in this file in plaintext; treat as leaked
+- **Facebook:** ✅ Graph live 2026-08-27 (false alarm on the July 31 expiry). Saved in `.ghl-credentials-thei`
+- **Netlify:** ✅ Token at `~/.openclaw/credentials/netlify-token.txt` (no documented expiry)
 - **SMTP:** ✅ `~/.openclaw/secrets/smtp.env` (info@healthexps.com / smtp.gmail.com:587)
 
 ---
@@ -1056,7 +1080,7 @@ Entry types: `event` (trainings/AEP), `urgent` (compliance deadlines), `update` 
 4. **FB Ads single-day dips are noise.** Need 7d AND 30d confirmation before calling CRITICAL.
 5. **Nav deployment:** ALWAYS create backup branch first. Test on 1 page → Netlify preview → batches. Never touch `<head>` for nav changes. Use non-greedy regex in Python: `re.sub(r'<header[\s\S]*?</header>', NEW_HEADER, html, count=1)`.
 6. **Seniors:** Text first, simple responses (HOY/MAÑANA), WhatsApp for Spanish speakers, avoid 3pm calls.
-7. **API tokens expire.** FB token expires ~July 31, 2026.
+7. **API tokens expire.** Facebook token was flagged for ~July 31, 2026 — **false alarm 2026-08-27** (Graph answering; ads live). Re-check only on an actual `OAuthException`. **Do not query C1** (`120244537840240684`, paused). Monitor **Medi-Medi V3** `120252903227370684` (live) and **Close Now ES** `120252557151210684` (paused, still watch) on account `act_399183196583723`.
 8. **Always verify contact info from LIVE site** — cached data had wrong phone/dates for months.
 
 ---
@@ -1696,10 +1720,11 @@ Last reviewed: 2026-08-09 by Igor 🤖
 - Plan Finder: already live
 - All four test scenarios (EN/ES × Sabri/standard) confirmed passing
 
-### Facebook Ads — ACTIVE
-- Campaign: XA-Medicare (4 AI character ads: Elena, Roberto, Maria, Mom+Daughter)
-- Launched: April 2026
-- Benchmark CPL: $10.48
+### Facebook Ads — ACTIVE (Updated 2026-08-27)
+- **Watch:** `Medi-Medi V3 | Elena | Aug 2026` (`120252903227370684`, ON) and `Close Now ES — T65 | Sep 2026` (`120252557151210684`, OFF, still report)
+- **Do not watch:** C1 MEDICARE (`120244537840240684`) — paused
+- Account: `act_399183196583723`
+- Legacy: XA-Medicare (4 AI character ads: Elena, Roberto, Maria, Mom+Daughter), launched April 2026, benchmark CPL $10.48
 - Roberto Testing campaign: isolated CPL testing at $15/day
 - If underperforming after 7–10 days: add Higgsfield consequence scenes (hospital/bills b-roll)
 
