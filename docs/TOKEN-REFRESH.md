@@ -138,13 +138,18 @@ These are **Cursor desktop logins**, not Railway secrets. They do not replace Ig
 
 1. On your laptop, open **Cursor desktop** (not only the Cloud Agent page).
 2. **Cursor Settings → Tools & MCP** (or Customize → MCPs).
-3. Find **Gmail**. If it says Needs authentication, click **Connect** (or the Needs authentication text).
-4. Browser opens. Sign in as **yperez@healthexps.com**. Allow Gmail. Wait until the MCP shows as connected / green.
-5. Repeat for **Google Calendar**, **Google Drive**, **Notion**, **Railway**.
-6. Notion: sign in to the THEI workspace and allow the pages Igor already uses (Executive Dashboard, sales tracker).
-7. Railway: complete OAuth for the THEI Railway workspace. If Connect flickers and nothing opens, click **Needs authentication** or copy the auth URL from Output → MCP logs and paste it in the browser.
+3. Find **Gmail**. If it says Needs authentication, **do not** use the Cloud-row Authenticate button if Google shows **Access blocked / Authorization Error**. That is a known Cursor bug: Cloud login sends `redirect_uri=cursor://…` and Google rejects it.
 
-A new Cloud Agent started after this will pick up the connected MCPs. This running session may still show the old `needsAuth` until a new agent starts.
+   **Workaround (do this instead):**
+   1. Open [cursor.com/agents](https://cursor.com/agents) in the browser (same Cursor account).
+   2. **+** → **MCP Servers** (or the MCP panel) → **Gmail** → **Login**.
+   3. Sign in as **yperez@healthexps.com**. That path uses an `https` callback Google accepts.
+   4. If Gmail/Calendar/Drive still fail on Cloud: in desktop **Tools & MCP**, connect the **Local** row (not Cloud). Local auth works today; Cloud Google plugins are broken on `cursor://`.
+   5. If Google says the **Workspace admin blocked** the app: [admin.google.com](https://admin.google.com) → Security → Access and data control → API controls → manage third-party apps → add Cursor / the OAuth client from the error → **Trusted**.
+   6. If it is the unverified-app screen: **Advanced** → **Go to … (unsafe)**.
+
+4. Calendar, Drive, Notion, Railway: same pattern. Notion and Railway are not Google — Connect in desktop should still work.
+5. **Skip Gmail MCP if Cloud Login stays blocked.** Igor sending mail is **SendGrid / SMTP on Railway**, not this Cursor plugin. Gmail MCP is only for Cloud Agents in Cursor.
 
 ### 8. Google Calendar for Igor (Railway) — do after 1–7
 
