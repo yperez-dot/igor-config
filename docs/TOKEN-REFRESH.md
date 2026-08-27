@@ -144,7 +144,12 @@ These are **Cursor desktop logins**, not Railway secrets. They do not replace Ig
    1. Open [cursor.com/agents](https://cursor.com/agents) in the browser (same Cursor account).
    2. **+** → **MCP Servers** (or the MCP panel) → **Gmail** → **Login**.
    3. Sign in as **yperez@healthexps.com**. That path uses an `https` callback Google accepts.
-   4. If Gmail/Calendar/Drive still fail on Cloud: in desktop **Tools & MCP**, connect the **Local** row (not Cloud). Local auth works today; Cloud Google plugins are broken on `cursor://`.
+   **If Connect / Login opens GitHub (`cursor/plugins` … `gmail/mcp.json`):** that is the plugin source file, not Google login. Close the tab.
+
+   Then in **Cursor desktop** (local Agent, not this Cloud Agent):
+   1. **Settings → Tools & MCP** → Gmail → click the blue **Connect** / **Authenticate** button only (not the plugin name, not the GitHub link).
+   2. Or start a **local** chat: “search my Gmail for a test message from last week.” OAuth often starts on first tool use.
+   3. Cloud Agent Gmail cannot finish interactive Google login from this session. Skip it if Local Connect still goes to GitHub or Access blocked.
    5. If Google says the **Workspace admin blocked** the app: [admin.google.com](https://admin.google.com) → Security → Access and data control → API controls → manage third-party apps → add Cursor / the OAuth client from the error → **Trusted**.
    6. If it is the unverified-app screen: **Advanced** → **Go to … (unsafe)**.
 
