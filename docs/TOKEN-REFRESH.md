@@ -8,11 +8,10 @@ Compiled 2026-08-27 from the credentials map in `igor-config-full.md`, Igor v2 `
 
 ## Refresh now
 
-These are expired, leaked, or currently failing auth.
+These are leaked or currently failing auth. **Facebook Ads is not on this list** — Graph is live as of 2026-08-27 (the July 31 expiry note was a false alarm).
 
 | # | Token | Why | Where it lives | How to refresh |
 | --- | --- | --- | --- | --- |
-| 1 | **Facebook Ads long-lived token** | Documented expiry **~31 July 2026**. Today is 27 Aug 2026 — **overdue by ~27 days**. Ads insights will fail until this is replaced. | BOSGAME `~/.openclaw/workspace/.ghl-credentials-thei` → Railway `FACEBOOK_ACCESS_TOKEN` | Meta Ads Manager / Graph API Explorer → generate a new long-lived user token for ad account `act_399183196583723` → update the file and Railway, then redeploy **Igor V2** |
 | 2 | **GoHighLevel PIT** | The live PIT is committed in plaintext in `igor-config-full.md`. Treat it as leaked and rotate it. | BOSGAME `ghl-ai-token.env` + `.ghl-credentials-thei` → Railway `GHL_API_TOKEN` (location defaults to THEI loc `RINM4TCnM4hN06UA1aK0`) | GHL → Settings → Private Integrations → revoke the old PIT → create a new one → update BOSGAME + Railway (both **Igor V2** and **igor-config**) → redeploy. Then remove the old value from git. |
 | 3 | **Cursor MCP: Gmail** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Gmail | Re-authenticate the Gmail MCP in Cursor (desktop) |
 | 4 | **Cursor MCP: Google Calendar** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-calendar | Re-authenticate the Google Calendar MCP in Cursor |
@@ -94,7 +93,11 @@ Never commit the value. LastPass (or the password manager) is the backup copy.
 
 ### 1. Facebook Ads — `FACEBOOK_ACCESS_TOKEN`
 
-Ad account: `act_399183196583723`. Campaign: C1 MEDICARE `120244537840240684`.
+**Skip. Verified live 2026-08-27** (Graph answering; account `act_399183196583723`). The June note that this expired ~31 July 2026 was a false alarm.
+
+Campaign id `120244537840240684` (labeled C1 MEDICARE) returned empty insights. Account-level numbers work. To split by campaign, copy the live campaign id from Ads Manager (or `GET act_399183196583723/campaigns?fields=id,name,effective_status`) — do not keep querying the stale C1 id.
+
+If Graph later returns an expired-token error, use the steps below.
 
 1. Open [Graph API Explorer](https://developers.facebook.com/tools/explorer) while logged into the Meta user who owns THEI ads.
 2. **Meta App:** pick the THEI / Health Experts app (not “Graph API Explorer” unless that is the only app).
@@ -105,7 +108,7 @@ Ad account: `act_399183196583723`. Campaign: C1 MEDICARE `120244537840240684`.
 7. Open [Access Token Debugger](https://developers.facebook.com/tools/debug/accesstoken).
 8. Paste → **Debug**. Confirm the app and `ads_read` / `ads_management` are present.
 9. Click **Extend Access Token**. Copy the new token. Debug it again — **Expires** should be ~60 days (or Never for a system-user token).
-10. Add it on Railway as `FACEBOOK_ACCESS_TOKEN` (Igor V2 + igor-config) using the recipe above. Optional extras: `FACEBOOK_AD_ACCOUNT_ID=act_399183196583723` and `FACEBOOK_CAMPAIGN_ID=120244537840240684`.
+10. Add it on Railway as `FACEBOOK_ACCESS_TOKEN` (Igor V2 + igor-config) using the recipe above. Set `FACEBOOK_AD_ACCOUNT_ID=act_399183196583723`. Do **not** set `FACEBOOK_CAMPAIGN_ID` to `120244537840240684` — that id is stale (empty insights 2026-08-27). Use a live campaign id from Ads Manager if you want a split.
 11. BOSGAME (if still used): put the same value in `~/.openclaw/workspace/.ghl-credentials-thei`.
 12. Redeploy Igor V2. In Telegram: ask for Facebook ads insights. If Igor says Facebook is missing, the Railway name is wrong or the redeploy did not finish.
 

@@ -823,8 +823,14 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 ---
 
 ## 📊 Facebook Ads (C1 MEDICARE)
-**Campaign ID:** 120244537840240684 | **Ad Account:** act_399183196583723
-**Top performers (30-day baseline):** Elena ~$8.69 CPL, Roberto ~$6.62 CPL (best), Cumplir 65 ~$7.83 CPL
+**Ad Account:** act_399183196583723
+**Campaign ID `120244537840240684`:** STALE as of 2026-08-27 — Graph insights for that id came back empty. Account-level numbers work. Need a live campaign id from Ads Manager (memory also names the live campaign **XA-Medicare**).
+**Token:** Graph live 2026-08-27. The ~31 July 2026 expiry note was a false alarm. Do not rotate unless Graph returns an expired-token error.
+**Account-level snapshot (2026-08-27):**
+- Last 30d (Jul 28–Aug 26): spend $235.24 · 53 leads · CPL $4.44 · 551 clicks · CPC $0.43 · CTR 4.1% · 27 first-message replies
+- Last 7d: spend $88.39 · 18 leads · CPL $4.91 · CPC $0.54 · CTR 3.5%
+- Read: spending a bit harder this week; CPL still under $5. WATCH, not CRITICAL.
+**Older 30-day ad-level baseline (pre-Aug):** Elena ~$8.69 CPL, Roberto ~$6.62 CPL (best), Cumplir 65 ~$7.83 CPL
 **Diagnostic rule:** CRITICAL requires confirmation across BOTH 7d AND 30d. Single-day anomaly = WATCH only. CPL requires ≥$50 spend. See `fb-ad-diagnostic-v2.py`.
 
 ---
@@ -894,11 +900,11 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 
 ---
 
-## 🔑 API Tokens Status (Updated 2026-06-01)
-**Current refresh checklist:** `docs/TOKEN-REFRESH.md` (compiled 2026-08-27).
+## 🔑 API Tokens Status (Updated 2026-08-27)
+**Current refresh checklist:** `docs/TOKEN-REFRESH.md`.
 
-- **GHL:** ⚠️ Rotate — PIT is in this file in plaintext; treat as leaked
-- **Facebook:** ❌ Long-lived token expired ~July 31, 2026 — saved in `.ghl-credentials-thei`
+- **GHL:** ⚠️ Rotate — PIT was in this file in plaintext; treat as leaked
+- **Facebook:** ✅ Graph live 2026-08-27 (false alarm on the July 31 expiry). Saved in `.ghl-credentials-thei`
 - **Netlify:** ✅ Token at `~/.openclaw/credentials/netlify-token.txt` (no documented expiry)
 - **SMTP:** ✅ `~/.openclaw/secrets/smtp.env` (info@healthexps.com / smtp.gmail.com:587)
 
@@ -1058,7 +1064,7 @@ Entry types: `event` (trainings/AEP), `urgent` (compliance deadlines), `update` 
 4. **FB Ads single-day dips are noise.** Need 7d AND 30d confirmation before calling CRITICAL.
 5. **Nav deployment:** ALWAYS create backup branch first. Test on 1 page → Netlify preview → batches. Never touch `<head>` for nav changes. Use non-greedy regex in Python: `re.sub(r'<header[\s\S]*?</header>', NEW_HEADER, html, count=1)`.
 6. **Seniors:** Text first, simple responses (HOY/MAÑANA), WhatsApp for Spanish speakers, avoid 3pm calls.
-7. **API tokens expire.** FB token expires ~July 31, 2026.
+7. **API tokens expire.** Facebook token was flagged for ~July 31, 2026 — **false alarm 2026-08-27** (Graph answering; ads live). Re-check only on an actual `OAuthException`. Campaign id `120244537840240684` is stale; use account `act_399183196583723` or a live Ads Manager campaign id.
 8. **Always verify contact info from LIVE site** — cached data had wrong phone/dates for months.
 
 ---
