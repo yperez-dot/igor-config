@@ -12,7 +12,7 @@ These are currently failing auth. **Done this session:** Facebook Graph, GHL sta
 
 | # | Token | Why | Where it lives | How to refresh |
 | --- | --- | --- | --- | --- |
-| 3–5 | **Cursor MCP: Gmail / Calendar / Drive** | **Skip.** Cloud Google OAuth is blocked (`cursor://` or GitHub plugin file). Workspace API controls already Allow. | Cursor Google plugins | Not needed for Telegram Igor. Mail = SendGrid/SMTP on Railway. |
+| 3–5 | **Cursor MCP: Gmail / Calendar / Drive** | **Skip — blocked 2026-08-27.** Google `Error 400: invalid_request` `redirect_uri=cursor://anysphere.cursor-mcp/oauth/callback`. Workspace already Allows third-party apps; trusting Cursor in Admin does not change this. | Cursor Google plugins | Do not retry from Cloud Authenticate. Igor mail = SendGrid/SMTP on Railway. |
 | 6 | **Cursor MCP: Notion** | **Done 2026-08-27.** This Cloud Agent session now has Notion tools. | Cursor MCP: Notion | Re-auth later if it drops to needsAuth. |
 | 7 | **Cursor MCP: Railway** | This Cloud Agent session reports connection **error** (tools unavailable) | Cursor MCP: Railway | Desktop **Tools & MCP → Railway → Connect** (blue button, not the GitHub/external-link). Sign in to the THEI Railway workspace. |
 
