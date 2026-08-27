@@ -69,6 +69,24 @@ function inboundVideo(message) {
   };
 }
 
+export function inboundReplyTo(message) {
+  const parent = message?.reply_to_message;
+  if (!parent) return null;
+  const text = String(parent.text ?? parent.caption ?? "").trim();
+  const hasPhoto = Array.isArray(parent.photo) && parent.photo.length > 0;
+  const hasDocument = Boolean(parent.document?.file_id);
+  const hasVideo = Boolean(parent.video?.file_id || parent.animation?.file_id || parent.video_note?.file_id);
+  if (!text && !hasPhoto && !hasDocument && !hasVideo) return null;
+  return {
+    messageId: parent.message_id ?? null,
+    text,
+    fromBot: Boolean(parent.from?.is_bot),
+    hasPhoto,
+    hasDocument,
+    hasVideo
+  };
+}
+
 export function supportedMessage(update, allowedUserIds) {
   const message = update?.message;
   if (!message?.from?.id || !message?.chat?.id) return null;
@@ -85,7 +103,8 @@ export function supportedMessage(update, allowedUserIds) {
     text,
     document,
     video,
-    photo
+    photo,
+    replyTo: inboundReplyTo(message)
   };
 }
 

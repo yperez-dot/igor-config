@@ -102,7 +102,7 @@ test("photos are attached as Grok vision images", async () => {
     downloadTelegramFile: async () => ({ buffer: TINY_PNG, fileSize: TINY_PNG.length })
   });
   assert.match(inbound.text, /photo/i);
-  assert.match(inbound.text, /attached for you to see/);
+  assert.match(inbound.text, /attached for THIS turn only/);
   assert.equal(inbound.media.length, 1);
   assert.match(inbound.media[0].dataUrl, /^data:image\/png;base64,/);
 });
@@ -136,7 +136,7 @@ test("videos attach Telegram thumbnails for vision", async () => {
 test("formatInboundUserText labels photos with vision when attached", () => {
   const text = formatInboundUserText({ caption: "screenshot of slide 2", kind: "photo", hasVision: true });
   assert.match(text, /screenshot of slide 2/);
-  assert.match(text, /attached for you to see/);
+  assert.match(text, /attached for THIS turn only/);
 });
 
 test("toGrokImage accepts PNG bytes", () => {

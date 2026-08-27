@@ -24,9 +24,35 @@ test("only allowlisted text messages are accepted", () => {
     text: "Check carrier updates",
     document: null,
     video: null,
-    photo: null
+    photo: null,
+    replyTo: null
   });
   assert.equal(supportedMessage(update, new Set(["222"])), null);
+});
+
+test("reply_to_message text is kept so ops alerts stay the topic", () => {
+  const parsed = supportedMessage({
+    update_id: 46,
+    message: {
+      text: "I meant w this one",
+      from: { id: 111 },
+      chat: { id: 999 },
+      reply_to_message: {
+        message_id: 77,
+        from: { id: 1, is_bot: true, first_name: "Igor" },
+        text: "site-health found issues\n• /blog/private-health-insurance-miami-guide/ → HTTP 404"
+      }
+    }
+  }, new Set(["111"]));
+  assert.equal(parsed.text, "I meant w this one");
+  assert.deepEqual(parsed.replyTo, {
+    messageId: 77,
+    text: "site-health found issues\n• /blog/private-health-insurance-miami-guide/ → HTTP 404",
+    fromBot: true,
+    hasPhoto: false,
+    hasDocument: false,
+    hasVideo: false
+  });
 });
 
 test("allowlisted document-only messages are accepted", () => {
@@ -56,7 +82,8 @@ test("allowlisted document-only messages are accepted", () => {
       thumbnailFileId: null
     },
     video: null,
-    photo: null
+    photo: null,
+    replyTo: null
   });
 });
 

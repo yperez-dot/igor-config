@@ -25,11 +25,25 @@ healthServer.listen(PORT);
 
 async function notify(text) {
   if (!TELEGRAM.botToken || !process.env.TELEGRAM_ALERT_CHAT_ID) return;
+  const chatId = process.env.TELEGRAM_ALERT_CHAT_ID;
   await sendTelegramMessage({
     botToken: TELEGRAM.botToken,
-    chatId: process.env.TELEGRAM_ALERT_CHAT_ID,
+    chatId,
     text
   });
+  // Keep alerts in chat history so a follow-up reply ("what do we do here")
+  // still sees the site/ads warning even if Telegram reply-to is missing.
+  try {
+    await store.appendChatTurn({
+      chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: text,
+      maxChars: 4000
+    });
+  } catch {
+    // Delivery already succeeded; history is best-effort.
+  }
 }
 
 async function workOnce() {

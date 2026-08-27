@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleTelegramChat } from "../src/chat.js";
+import { handleTelegramChat, looksLikeOpsAlert, withReplyContext } from "../src/chat.js";
 import { isPlanRecommendationRequest, recommendationRefusal } from "../src/grok.js";
 import { writeStoredZip } from "../src/zip.js";
 
@@ -162,6 +162,57 @@ test("file-only decks are not blocked by the plan-recommendation caption check",
     })
   });
   assert.equal(grokCalled, true);
+});
+
+test("reply context keeps a site-health alert as the topic", () => {
+  assert.equal(looksLikeOpsAlert("site-health found issues\nHTTP 404"), true);
+  const text = withReplyContext("I meant w this one", {
+    text: "site-health found issues\n• /blog/how-to-pick-aca-marketplace-plan-florida/ → HTTP 404",
+    fromBot: true,
+    hasPhoto: false
+  });
+  assert.match(text, /site-health found issues/);
+  assert.match(text, /ops\/site alert/i);
+  assert.match(text, /I meant w this one/);
+  assert.match(text, /no attached image/i);
+  assert.match(text, /do not ask them to resend closer/i);
+});
+
+test("replying to a site-health alert injects the quoted alert into Grok", async () => {
+  const store = memoryStore();
+  const grokCalls = [];
+  await handleTelegramChat({
+    store,
+    message: {
+      chatId: 99,
+      senderId: "111",
+      text: "What do we do here",
+      replyTo: {
+        messageId: 12,
+        text: "site-health found issues\n• /blog/private-health-insurance-miami-guide/ → HTTP 404",
+        fromBot: true,
+        hasPhoto: false,
+        hasDocument: false,
+        hasVideo: false
+      }
+    },
+    askGrok: async (request) => {
+      grokCalls.push(request);
+      return "Those two blog URLs are 404ing — I'll check if the posts are missing or just unpublished.";
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.match(grokCalls[0].text, /site-health found issues/);
+  assert.match(grokCalls[0].text, /What do we do here/);
+  assert.match(grokCalls[0].text, /no attached image/i);
+  assert.equal(grokCalls[0].media?.length ?? 0, 0);
+  assert.match(store.turns[0].content, /HTTP 404/);
 });
 
 test("photos pass vision media into Grok", async () => {
