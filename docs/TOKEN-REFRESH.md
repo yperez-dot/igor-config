@@ -8,15 +8,13 @@ Compiled 2026-08-27 from the credentials map in `igor-config-full.md`, Igor v2 `
 
 ## Refresh now
 
-These are currently failing auth. **Facebook Ads** and **GoHighLevel** are not on this list (Graph live; GHL stale-leads verified 2026-08-27).
+These are currently failing auth. **Done this session:** Facebook Graph, GHL stale-leads, Notion MCP.
 
 | # | Token | Why | Where it lives | How to refresh |
 | --- | --- | --- | --- | --- |
-| 3 | **Cursor MCP: Gmail** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Gmail | Re-authenticate the Gmail MCP in Cursor (desktop) |
-| 4 | **Cursor MCP: Google Calendar** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-calendar | Re-authenticate the Google Calendar MCP in Cursor |
-| 5 | **Cursor MCP: Google Drive** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-drive | Re-authenticate the Google Drive MCP in Cursor |
-| 6 | **Cursor MCP: Notion** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Notion | Re-authenticate the Notion MCP in Cursor |
-| 7 | **Cursor MCP: Railway** | This Cloud Agent session reports connection **error** (tools unavailable) | Cursor MCP: Railway | Reconnect / re-auth Railway MCP; if it still errors, check the Railway plugin status |
+| 3–5 | **Cursor MCP: Gmail / Calendar / Drive** | **Skip.** Cloud Google OAuth is blocked (`cursor://` or GitHub plugin file). Workspace API controls already Allow. | Cursor Google plugins | Not needed for Telegram Igor. Mail = SendGrid/SMTP on Railway. |
+| 6 | **Cursor MCP: Notion** | **Done 2026-08-27.** This Cloud Agent session now has Notion tools. | Cursor MCP: Notion | Re-auth later if it drops to needsAuth. |
+| 7 | **Cursor MCP: Railway** | This Cloud Agent session reports connection **error** (tools unavailable) | Cursor MCP: Railway | Desktop **Tools & MCP → Railway → Connect** (blue button, not the GitHub/external-link). Sign in to the THEI Railway workspace. |
 
 ---
 
@@ -153,8 +151,9 @@ These are **Cursor desktop logins**, not Railway secrets. They do not replace Ig
    5. If Google says the **Workspace admin blocked** the app: [admin.google.com](https://admin.google.com) → Security → Access and data control → API controls → manage third-party apps → add Cursor / the OAuth client from the error → **Trusted**.
    6. If it is the unverified-app screen: **Advanced** → **Go to … (unsafe)**.
 
-4. Calendar, Drive, Notion, Railway: same pattern. Notion and Railway are not Google — Connect in desktop should still work.
-5. **Skip Gmail MCP if Cloud Login stays blocked.** Igor sending mail is **SendGrid / SMTP on Railway**, not this Cursor plugin. Gmail MCP is only for Cloud Agents in Cursor.
+4. Calendar, Drive: **skip** (same Google Cloud OAuth bug as Gmail). Workspace Admin already allows unconfigured third-party apps.
+5. **Notion:** **Done 2026-08-27** (Yahoska). This session’s Notion MCP is `ready`.
+6. **Railway:** **Settings → Tools & MCP → Railway → Connect** (blue Authenticate, not the external-link/GitHub icon). Sign in to the THEI Railway account. This is separate from the `GHL_API_TOKEN` you already set on the Igor V2 service.
 
 ### 8. Google Calendar for Igor (Railway) — do after 1–7
 
