@@ -12,7 +12,7 @@ These are leaked or currently failing auth. **Facebook Ads is not on this list**
 
 | # | Token | Why | Where it lives | How to refresh |
 | --- | --- | --- | --- | --- |
-| 2 | **GoHighLevel PIT** | The live PIT is committed in plaintext in `igor-config-full.md`. Treat it as leaked and rotate it. | BOSGAME `ghl-ai-token.env` + `.ghl-credentials-thei` → Railway `GHL_API_TOKEN` (location defaults to THEI loc `RINM4TCnM4hN06UA1aK0`) | GHL → Settings → Private Integrations → revoke the old PIT → create a new one → update BOSGAME + Railway (both **Igor V2** and **igor-config**) → redeploy. Then remove the old value from git. |
+| 2 | **GoHighLevel PIT** | Leaked in git (old PIT). **Railway `GHL_API_TOKEN` updated 2026-08-27** on Igor V2 + igor-config. Still: redeploy, Telegram-verify, then delete unused GHL Private Integration. | Railway `GHL_API_TOKEN` · GHL Private Integrations · BOSGAME `ghl-ai-token.env` | Redeploy both services → Telegram “pull the stale leads report” → delete the unused GHL row. Git history still has the old value. |
 | 3 | **Cursor MCP: Gmail** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Gmail | Re-authenticate the Gmail MCP in Cursor (desktop) |
 | 4 | **Cursor MCP: Google Calendar** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-calendar | Re-authenticate the Google Calendar MCP in Cursor |
 | 5 | **Cursor MCP: Google Drive** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-drive | Re-authenticate the Google Drive MCP in Cursor |
