@@ -830,7 +830,7 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 ---
 
 ## 📊 GoHighLevel Pipeline
-**API token:** `pit-c3f3aaba-87a8-4c2c-9326-c70997cb4845` | Location: `RINM4TCnM4hN06UA1aK0`
+**API token:** rotate — value was committed here in plaintext; use `ghl-ai-token.env` / Railway `GHL_API_TOKEN` | Location: `RINM4TCnM4hN06UA1aK0`
 **File:** `~/.openclaw/workspace/.ghl-credentials-thei`
 **Stage breakdown (baseline):** No Answer 67%, Follow Up 9%, New Lead 8%, Future Eligible 6%, Appt Scheduled 4%
 **Best agent:** Alan Elchami (44% no-answer vs team 67%)
@@ -895,9 +895,11 @@ Remove when: `normClient()` gets trailing-initial regex: `REGEXP_REPLACE(LOWER(T
 ---
 
 ## 🔑 API Tokens Status (Updated 2026-06-01)
-- **GHL:** ✅ Working — `pit-c3f3aaba-87a8-4c2c-9326-c70997cb4845`
-- **Facebook:** ✅ Long-lived token (~expires July 31, 2026) — saved in `.ghl-credentials-thei`
-- **Netlify:** ✅ Token at `~/.openclaw/credentials/netlify-token.txt`
+**Current refresh checklist:** `docs/TOKEN-REFRESH.md` (compiled 2026-08-27).
+
+- **GHL:** ⚠️ Rotate — PIT is in this file in plaintext; treat as leaked
+- **Facebook:** ❌ Long-lived token expired ~July 31, 2026 — saved in `.ghl-credentials-thei`
+- **Netlify:** ✅ Token at `~/.openclaw/credentials/netlify-token.txt` (no documented expiry)
 - **SMTP:** ✅ `~/.openclaw/secrets/smtp.env` (info@healthexps.com / smtp.gmail.com:587)
 
 ---
