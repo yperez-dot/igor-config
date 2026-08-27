@@ -8,11 +8,10 @@ Compiled 2026-08-27 from the credentials map in `igor-config-full.md`, Igor v2 `
 
 ## Refresh now
 
-These are leaked or currently failing auth. **Facebook Ads is not on this list** — Graph is live as of 2026-08-27 (the July 31 expiry note was a false alarm).
+These are currently failing auth. **Facebook Ads** and **GoHighLevel** are not on this list (Graph live; GHL stale-leads verified 2026-08-27).
 
 | # | Token | Why | Where it lives | How to refresh |
 | --- | --- | --- | --- | --- |
-| 2 | **GoHighLevel PIT** | Leaked in git (old PIT). **Railway `GHL_API_TOKEN` updated 2026-08-27** on Igor V2 + igor-config. Still: redeploy, Telegram-verify, then delete unused GHL Private Integration. | Railway `GHL_API_TOKEN` · GHL Private Integrations · BOSGAME `ghl-ai-token.env` | Redeploy both services → Telegram “pull the stale leads report” → delete the unused GHL row. Git history still has the old value. |
 | 3 | **Cursor MCP: Gmail** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Gmail | Re-authenticate the Gmail MCP in Cursor (desktop) |
 | 4 | **Cursor MCP: Google Calendar** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-calendar | Re-authenticate the Google Calendar MCP in Cursor |
 | 5 | **Cursor MCP: Google Drive** | This Cloud Agent session reports `needsAuth` | Cursor MCP: Google-drive | Re-authenticate the Google Drive MCP in Cursor |
@@ -126,10 +125,10 @@ Location ID (keep, do not rotate): `RINM4TCnM4hN06UA1aK0`.
 4. Enable scopes Igor actually uses: contacts (read), opportunities / pipelines (read), and any other scopes the old PIT had. Create.
 5. Copy the token **immediately**. It starts with `pit-` and is shown once.
 6. Add it on Railway as `GHL_API_TOKEN` on **Igor V2** and **igor-config**. Optional: `GHL_LOCATION_ID=RINM4TCnM4hN06UA1aK0`. **Done 2026-08-27** (Yahoska).
-7. **Redeploy both** Igor V2 and igor-config. Variables do not load until a new deploy.
-8. In Telegram: “pull the stale leads report”. If it still says GHL is disconnected, the variable is on the wrong service or the deploy did not finish.
-9. Back in Private Integrations, delete only the **unused** old row (`igor` or `igor v2`) after Telegram works. Keep whichever row is still Last Used for production until then.
-10. BOSGAME (if still used): replace `~/.openclaw/credentials/ghl-ai-token.env` and `.ghl-credentials-thei`.
+7. Redeploy both Igor V2 and igor-config. **Done 2026-08-27.**
+8. Telegram: “pull the stale leads report”. **Verified 2026-08-27:** default open opps, 14 days, **zero stale**. CSV stayed out of chat. Email skipped — `SENDGRID_API_KEY` is not on Igor V2 (and there was nothing to send).
+9. Back in Private Integrations, delete only the **unused** old row (`igor` or `igor v2`) now that Telegram works. Keep the row that is Last Used for the new token.
+10. BOSGAME (if still used): replace `~/.openclaw/credentials/ghl-ai-token.env` and `.ghl-credentials-thei`. Git history still has the old PIT — do not put the new value in git.
 
 Do not paste the new PIT into git or Telegram.
 

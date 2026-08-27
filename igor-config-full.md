@@ -852,7 +852,7 @@ These two campaigns spent **$235.22** in the current Ads Manager view vs account
 ---
 
 ## 📊 GoHighLevel Pipeline
-**API token:** Railway `GHL_API_TOKEN` updated 2026-08-27 on Igor V2 + igor-config. Redeploy + Telegram-verify, then delete the unused GHL Private Integration. Location: `RINM4TCnM4hN06UA1aK0`
+**API token:** Railway `GHL_API_TOKEN` live 2026-08-27 (Igor V2 + igor-config). Telegram stale-leads verified: open / 14d / **zero stale**. Location: `RINM4TCnM4hN06UA1aK0`. Optional cleanup: delete unused GHL Private Integration row. `SENDGRID_API_KEY` still not on Igor V2.
 **File:** `~/.openclaw/workspace/.ghl-credentials-thei`
 **Stage breakdown (baseline):** No Answer 67%, Follow Up 9%, New Lead 8%, Future Eligible 6%, Appt Scheduled 4%
 **Best agent:** Alan Elchami (44% no-answer vs team 67%)
