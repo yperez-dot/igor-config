@@ -22,6 +22,25 @@ const UPLOAD_CATEGORIES = {
   bsi_statement: "bsi_statement"
 };
 
+export const UPLOAD_BUCKET_LABELS = {
+  commission_statement: "Commission Statements",
+  bsi_statement: "BSI Statements",
+  agent_payout: "Agent Payout Uploads",
+  medicarepro: "MedicarePro Sales",
+  agency_production: "Agency Production"
+};
+
+function confidenceRank(value) {
+  if (value === "high") return 3;
+  if (value === "medium") return 2;
+  if (value === "low") return 1;
+  return 0;
+}
+
+function maxConfidence(a, b) {
+  return confidenceRank(a) >= confidenceRank(b) ? a : b;
+}
+
 function normalizeFilename(fileName = "") {
   return String(fileName).toLowerCase().replace(/\s+/g, "_").replace(/['()]/g, "");
 }
@@ -185,6 +204,161 @@ export function classifyUploadFilename(fileName) {
     label: "Unknown",
     reason: "Could not classify from filename — pick the upload bucket that matches the file type",
     confidence: "low"
+  };
+}
+
+export function classifyUploadContent(parsed) {
+  if (!parsed?.readable) {
+    return {
+      id: "unknown",
+      label: "Unknown",
+      confidence: "none",
+      reason: parsed?.reason || "File content is not readable for bucket detection."
+    };
+  }
+
+  const headerText = (parsed.headers ?? []).join(" ").toLowerCase();
+  const sampleText = (parsed.sampleRows ?? []).flat().join(" ").toLowerCase();
+  const blob = `${headerText} ${sampleText}`;
+
+  const scores = {
+    medicarepro: 0,
+    agency_production: 0,
+    bsi_statement: 0,
+    agent_payout: 0,
+    commission_statement: 0
+  };
+
+  if (/medicarepro|medicare pro|sales by agency|agent first|agent last|enrollment date|book date|mbi|medicare number/.test(blob)) {
+    scores.medicarepro += 4;
+  }
+  if (/enrollment|effective date/.test(headerText) && /agent/.test(headerText)) scores.medicarepro += 2;
+
+  if (/agency production|production report|override amount|broker society|brokers society|hector/.test(blob)) {
+    scores.agency_production += 4;
+  }
+  if (/production/.test(headerText) && /carrier|uhc|humana|aetna|devoted|anthem/.test(headerText)) {
+    scores.agency_production += 2;
+  }
+
+  if (/bsi statement|broker society insurance|carrier.?bsi|aetna bsi|humana bsi|nhp agency override|statement-health_experts/.test(blob)) {
+    scores.bsi_statement += 4;
+  }
+  if (/bsi override|nhp agency override/.test(headerText)) scores.bsi_statement += 3;
+  if (/\bbsi\b/.test(blob) && /statement|override/.test(blob)) scores.bsi_statement += 2;
+
+  if (/writing agent|tailored|jill taylor|producer payout|agent commission report|nhp commission report/.test(blob)) {
+    scores.agent_payout += 4;
+  }
+  if (/writing/.test(headerText) && /agent|producer/.test(headerText)) scores.agent_payout += 2;
+
+  if (/commission|statement|paid amount|override|remittance|producer statement/.test(blob)) scores.commission_statement += 2;
+  if (parsed.commissionColumn) scores.commission_statement += 1;
+
+  const ranked = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+  const [topId, topScore] = ranked[0];
+  const [secondId, secondScore] = ranked[1] ?? ["", 0];
+
+  if (topScore === 0) {
+    return {
+      id: "unknown",
+      label: "Unknown",
+      confidence: "low",
+      reason: "Headers do not clearly match a known OliComm upload bucket.",
+      scores
+    };
+  }
+
+  let confidence = "medium";
+  if (topScore >= 4 && topScore > secondScore + 1) confidence = "high";
+  if (topScore <= 1 || topScore === secondScore) confidence = "low";
+
+  return {
+    id: topId,
+    label: UPLOAD_BUCKET_LABELS[topId],
+    confidence,
+    reason: `File headers/content look like ${UPLOAD_BUCKET_LABELS[topId]}.`,
+    scores,
+    runnerUp: secondScore > 0
+      ? { id: secondId, label: UPLOAD_BUCKET_LABELS[secondId], score: secondScore }
+      : null
+  };
+}
+
+export function resolveUploadBucket({ fileName, buffer, parsed }) {
+  const byFilename = classifyUploadFilename(fileName);
+  const sheet = parsed ?? previewSpreadsheet({ fileName, buffer });
+  const byContent = classifyUploadContent(sheet);
+
+  if (byFilename.id === "unknown" && byContent.id === "unknown") {
+    return {
+      id: "unknown",
+      label: "Unknown",
+      confidence: "low",
+      reason: "Could not determine the OliComm upload bucket from filename or file content.",
+      method: "none",
+      byFilename,
+      byContent,
+      needsUserBucket: true,
+      sourcePreview: sheet
+    };
+  }
+
+  if (byFilename.id === "unknown") {
+    return {
+      ...byContent,
+      method: "content",
+      byFilename,
+      byContent,
+      needsUserBucket: byContent.confidence === "low",
+      sourcePreview: sheet
+    };
+  }
+
+  if (byContent.id === "unknown") {
+    return {
+      ...byFilename,
+      method: "filename",
+      byFilename,
+      byContent,
+      needsUserBucket: byFilename.confidence === "low",
+      sourcePreview: sheet
+    };
+  }
+
+  if (byFilename.id === byContent.id) {
+    return {
+      id: byFilename.id,
+      label: UPLOAD_BUCKET_LABELS[byFilename.id],
+      confidence: maxConfidence(byFilename.confidence, byContent.confidence),
+      reason: `Filename and file headers agree on ${UPLOAD_BUCKET_LABELS[byFilename.id]}.`,
+      method: "filename+content",
+      byFilename,
+      byContent,
+      needsUserBucket: false,
+      sourcePreview: sheet
+    };
+  }
+
+  const filenameWins = confidenceRank(byFilename.confidence) > confidenceRank(byContent.confidence);
+  const contentWins = confidenceRank(byContent.confidence) > confidenceRank(byFilename.confidence);
+  const winner = filenameWins ? byFilename : contentWins ? byContent : byContent;
+  const loser = winner.id === byFilename.id ? byContent : byFilename;
+
+  return {
+    id: winner.id,
+    label: UPLOAD_BUCKET_LABELS[winner.id],
+    confidence: filenameWins || contentWins ? winner.confidence : "low",
+    reason: filenameWins || contentWins
+      ? `${winner.label} (${winner.id === byFilename.id ? "filename" : "headers"} signal won over ${loser.label}).`
+      : `Filename suggests ${byFilename.label}, headers suggest ${byContent.label}. Ask which bucket is correct unless the user confirms.`,
+    method: filenameWins ? "filename" : contentWins ? "content" : "conflict",
+    byFilename,
+    byContent,
+    conflict: true,
+    needsUserBucket: !filenameWins && !contentWins,
+    alternatives: [byFilename, byContent].filter((item) => item.id !== winner.id),
+    sourcePreview: sheet
   };
 }
 

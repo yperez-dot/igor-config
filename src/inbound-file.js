@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { classifyUploadFilename } from "./olicomm.js";
+import { resolveUploadBucket } from "./olicomm.js";
 import { readZipEntries } from "./zip.js";
 
 const execFileAsync = promisify(execFile);
@@ -308,7 +308,7 @@ export function formatInboundUserText({
   if (!text) {
     parts.push("The file arrived, but no extractable text was found locally. OliComm may still parse it on upload — do not refuse ingest just because Telegram extraction was empty.");
     if (uploadable && uploadClassification) {
-      parts.push(`OliComm bucket guess: ${uploadClassification.label} (${uploadClassification.confidence} confidence — ${uploadClassification.reason}). If the user wants ingest, CALL olicomm_preview_upload first, show the numbers, then propose olicomm_upload with confirmed=true only after they approve. Never call an upload clean unless verification.status is match.`);
+      parts.push(`OliComm bucket guess: ${uploadClassification.label} (${uploadClassification.confidence} confidence — ${uploadClassification.reason}). Igor checks filename and headers — if they disagree, he asks which tab. CALL olicomm_preview_upload first, then propose olicomm_upload only after bucket confirm. Never call an upload clean unless verification.status is match (row-by-row + totals).`);
     } else {
       parts.push("Ask for a .docx, .xlsx, PDF, screenshots, or pasted text if review is needed.");
     }
@@ -319,7 +319,7 @@ export function formatInboundUserText({
     : text;
   parts.push("Extracted text from the file follows. Use it as the source. Do not say the file never arrived.");
   if (uploadable && uploadClassification) {
-    parts.push(`This file can go to OliComm → ${uploadClassification.label}. CALL olicomm_preview_upload before proposing upload. After upload, require verification.status=match before calling it clean.`);
+    parts.push(`This file can go to OliComm → ${uploadClassification.label}. Igor auto-detects the bucket from filename + headers when you do not say which tab. CALL olicomm_preview_upload first. After upload, require verification.status=match including row-by-row reconciliation.`);
   }
   parts.push(clipped);
   return parts.join("\n\n");
@@ -517,8 +517,17 @@ export async function resolveInboundUserText({
       mimeType,
       buffer: downloaded.buffer
     });
-    const uploadClassification = classifyUploadFilename(fileName);
-    const uploadable = uploadClassification.id !== "unknown";
+    const bucket = resolveUploadBucket({
+      fileName,
+      buffer: downloaded.buffer
+    });
+    const uploadClassification = {
+      id: bucket.id,
+      label: bucket.label,
+      confidence: bucket.confidence,
+      reason: bucket.reason
+    };
+    const uploadable = bucket.id !== "unknown";
     return {
       text: formatInboundUserText({
         caption: message.text,

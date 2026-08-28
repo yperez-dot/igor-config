@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   classifyUploadFilename,
+  classifyUploadContent,
   olicommUpload,
   olicommUploadWithVerification,
+  resolveUploadBucket,
   uploadPathForType
 } from "../src/olicomm.js";
 
@@ -80,6 +82,34 @@ test("olicomm_upload_with_verification compares source and imported totals", asy
   assert.equal(result.uploaded, true);
   assert.equal(result.verification.status, "match");
   assert.equal(result.verified, true);
+});
+
+test("resolveUploadBucket prefers headers for generic commission filenames", () => {
+  const bucket = resolveUploadBucket({
+    fileName: "Commission-Statement-2026-08-28.csv",
+    buffer: Buffer.from("Agent First,Agent Last,Enrollment Date,Carrier\nMaria,Gonzalez,2026-01-01,Humana\n")
+  });
+  assert.equal(bucket.id, "medicarepro");
+  assert.equal(bucket.method, "content");
+});
+
+test("resolveUploadBucket agrees when filename and headers match", () => {
+  const bucket = resolveUploadBucket({
+    fileName: "humana_bsi_statement.csv",
+    buffer: Buffer.from("Policy,Client,Commission,BSI Override\nP1,Maria,$10.00,$5.00\n")
+  });
+  assert.equal(bucket.id, "bsi_statement");
+  assert.equal(bucket.method, "filename+content");
+});
+
+test("classifyUploadContent detects MedicarePro headers", () => {
+  const result = classifyUploadContent({
+    readable: true,
+    headers: ["Agent First", "Agent Last", "Enrollment Date", "Carrier"],
+    sampleRows: [["Maria", "Gonzalez", "2026-01-01", "Humana"]],
+    commissionColumn: null
+  });
+  assert.equal(result.id, "medicarepro");
 });
 
 test("olicomm_upload surfaces duplicate warnings", async () => {

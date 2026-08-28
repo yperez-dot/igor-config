@@ -50,13 +50,42 @@ test("verifyUploadAgainstPreview flags row and commission mismatches", () => {
   assert.equal(verification.issues.length, 2);
 });
 
-test("verifyUploadAgainstPreview passes when counts and totals align", () => {
-  const preview = { dataRowCount: 4, commissionTotal: 120.5 };
+test("verifyUploadAgainstPreview passes when counts, totals, and rows align", () => {
+  const preview = {
+    dataRowCount: 2,
+    commissionTotal: 15,
+    sourceRows: [
+      { key: "1|10.00", policyNumber: "1", clientName: "Maria", commission: 10 },
+      { key: "2|5.00", policyNumber: "2", clientName: "Alan", commission: 5 }
+    ]
+  };
   const verification = verifyUploadAgainstPreview(
     preview,
-    { rowCount: 4, commissionSum: 120.5 },
-    []
+    { rowCount: 2, commissionSum: 15 },
+    [
+      { policy_number: "1", client_name: "Maria", commission_amount: 10 },
+      { policy_number: "2", client_name: "Alan", commission_amount: 5 }
+    ]
   );
   assert.equal(verification.status, "match");
-  assert.equal(verification.verified, undefined);
+  assert.equal(verification.rowReconciliation.status, "match");
+});
+
+test("verifyUploadAgainstPreview flags row-level mismatches", () => {
+  const preview = {
+    dataRowCount: 2,
+    commissionTotal: 15,
+    sourceRows: [
+      { key: "1|10.00", policyNumber: "1", clientName: "Maria", commission: 10 },
+      { key: "2|5.00", policyNumber: "2", clientName: "Alan", commission: 5 }
+    ]
+  };
+  const verification = verifyUploadAgainstPreview(
+    preview,
+    { rowCount: 2, commissionSum: 15 },
+    [{ policy_number: "1", client_name: "Maria", commission_amount: 10 }]
+  );
+  assert.equal(verification.status, "mismatch");
+  assert.equal(verification.rowReconciliation.extraCount, 0);
+  assert.equal(verification.rowReconciliation.missingCount, 1);
 });

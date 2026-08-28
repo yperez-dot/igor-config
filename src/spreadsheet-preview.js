@@ -1,6 +1,9 @@
 import { readZipEntries } from "./zip.js";
 
 const COMMISSION_HEADER = /\b(commission|amount|paid|payment|override|net)\b/i;
+const POLICY_HEADER = /\b(policy|contract|cert(?:ificate)?|member id|subscriber id|group id|policy number)\b/i;
+const CLIENT_HEADER = /\b(client|member|insured|beneficiary|customer|name)\b/i;
+const CARRIER_HEADER = /\b(carrier|company|insurer|plan name|plan)\b/i;
 const MONEY = /^\(?-?\$?\s*-?\d[\d,]*(?:\.\d+)?\)?$/;
 
 function extensionOf(fileName = "") {
@@ -50,7 +53,7 @@ function rowIndex(ref) {
   return Number(String(ref).replace(/^[A-Z]+/i, "")) || 0;
 }
 
-function parseMoney(value) {
+export function parseMoney(value) {
   const raw = String(value ?? "").trim();
   if (!raw || !MONEY.test(raw)) return null;
   const negative = raw.includes("(") && raw.includes(")");
@@ -139,16 +142,177 @@ function rowsFromGrid(cells) {
 function findHeaderRow(rows) {
   for (let index = 0; index < Math.min(rows.length, 20); index += 1) {
     const row = rows[index];
-    if (row.some((cell) => COMMISSION_HEADER.test(cell))) return index;
+    if (row.some((cell) => COMMISSION_HEADER.test(cell) || POLICY_HEADER.test(cell) || CLIENT_HEADER.test(cell))) {
+      return index;
+    }
   }
   return rows.length ? 0 : -1;
 }
 
-function findCommissionColumn(headers) {
+function findColumn(headers, pattern) {
   for (let index = 0; index < headers.length; index += 1) {
-    if (COMMISSION_HEADER.test(headers[index])) return index;
+    if (pattern.test(String(headers[index] ?? ""))) return index;
   }
   return -1;
+}
+
+export function normalizePolicyNumber(value) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.replace(/^0+/, "") || digits;
+}
+
+export function normalizeClientName(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function rowMatchKey({ policyNumber, clientName, commission }) {
+  const policy = normalizePolicyNumber(policyNumber);
+  const amount = commission != null ? Math.round(Number(commission) * 100) / 100 : null;
+  if (policy && amount != null) return `${policy}|${amount.toFixed(2)}`;
+  if (policy) return `policy:${policy}`;
+  const client = normalizeClientName(clientName);
+  if (client && amount != null) return `${client}|${amount.toFixed(2)}`;
+  return null;
+}
+
+function extractSourceRows(headers, dataRows) {
+  const policyCol = findColumn(headers, POLICY_HEADER);
+  const clientCol = findColumn(headers, CLIENT_HEADER);
+  const commissionCol = findColumn(headers, COMMISSION_HEADER);
+  const carrierCol = findColumn(headers, CARRIER_HEADER);
+  const sourceRows = [];
+
+  for (let index = 0; index < dataRows.length; index += 1) {
+    const row = dataRows[index];
+    const policyNumber = policyCol >= 0 ? row[policyCol] : "";
+    const clientName = clientCol >= 0 ? row[clientCol] : "";
+    const commission = commissionCol >= 0 ? parseMoney(row[commissionCol]) : null;
+    const carrier = carrierCol >= 0 ? row[carrierCol] : "";
+    const key = rowMatchKey({ policyNumber, clientName, commission });
+    if (!key && commission == null) continue;
+    sourceRows.push({
+      rowNumber: index + 1,
+      policyNumber: String(policyNumber ?? "").trim(),
+      clientName: String(clientName ?? "").trim(),
+      commission,
+      carrier: String(carrier ?? "").trim(),
+      key
+    });
+  }
+  return sourceRows;
+}
+
+function normalizeOlicommRecord(record, index) {
+  const policyNumber = record.policy_number
+    ?? record.policy_number_production
+    ?? record.policyNumber
+    ?? "";
+  const clientName = record.client_name ?? record.clientName ?? "";
+  const commission = Number(record.commission ?? record.commission_amount ?? record.amount ?? NaN);
+  const normalizedCommission = Number.isFinite(commission) ? Math.round(commission * 100) / 100 : null;
+  const key = rowMatchKey({
+    policyNumber,
+    clientName,
+    commission: normalizedCommission
+  });
+  return {
+    index,
+    policyNumber: String(policyNumber).trim(),
+    clientName: String(clientName).trim(),
+    commission: normalizedCommission,
+    carrier: String(record.carrier ?? record.company ?? "").trim(),
+    key
+  };
+}
+
+export function reconcileSourceRows(sourceRows = [], records = []) {
+  const olicommRows = records.map(normalizeOlicommRecord).filter((row) => row.key || row.policyNumber);
+  const keyedOlicomm = olicommRows.filter((row) => row.key);
+  const olicommByKey = new Map();
+  for (const row of keyedOlicomm) {
+    if (!olicommByKey.has(row.key)) olicommByKey.set(row.key, []);
+    olicommByKey.get(row.key).push(row);
+  }
+
+  const matched = [];
+  const missingInOlicomm = [];
+  const amountMismatches = [];
+  const used = new Set();
+
+  for (const source of sourceRows) {
+    if (!source.key) {
+      missingInOlicomm.push({ ...source, reason: "Could not build a row match key from the source file." });
+      continue;
+    }
+    const candidates = olicommByKey.get(source.key) ?? [];
+    const hit = candidates.find((row) => !used.has(row.index));
+    if (hit) {
+      matched.push({ source, olicomm: hit });
+      used.add(hit.index);
+      continue;
+    }
+
+    const policy = normalizePolicyNumber(source.policyNumber);
+    if (policy) {
+      const policyMatches = olicommRows.filter((row) => !used.has(row.index) && normalizePolicyNumber(row.policyNumber) === policy);
+      if (policyMatches.length === 1) {
+        const row = policyMatches[0];
+        if (source.commission != null && row.commission != null && Math.abs(source.commission - row.commission) > 0.02) {
+          amountMismatches.push({
+            policyNumber: policy,
+            sourceCommission: source.commission,
+            olicommCommission: row.commission,
+            clientName: source.clientName || row.clientName
+          });
+          used.add(row.index);
+          continue;
+        }
+        matched.push({ source, olicomm: row, matchedBy: "policy_only" });
+        used.add(row.index);
+        continue;
+      }
+    }
+
+    missingInOlicomm.push({ ...source, reason: "No matching OliComm record." });
+  }
+
+  const extraInOlicomm = olicommRows
+    .filter((row) => !used.has(row.index))
+    .map(({ index, policyNumber, clientName, commission, carrier }) => ({
+      policyNumber,
+      clientName,
+      commission,
+      carrier
+    }));
+
+  const keyedSource = sourceRows.filter((row) => row.key);
+  const comparable = keyedSource.length > 0 && keyedOlicomm.length > 0;
+  let status = "inconclusive";
+  if (comparable) {
+    if (!missingInOlicomm.length && !extraInOlicomm.length && !amountMismatches.length) status = "match";
+    else status = "mismatch";
+  }
+
+  return {
+    status,
+    comparable,
+    sourceRowCount: sourceRows.length,
+    keyedSourceRowCount: keyedSource.length,
+    olicommRowCount: olicommRows.length,
+    matchedCount: matched.length,
+    missingInOlicomm: missingInOlicomm.slice(0, 12),
+    missingCount: missingInOlicomm.length,
+    extraInOlicomm: extraInOlicomm.slice(0, 12),
+    extraCount: extraInOlicomm.length,
+    amountMismatches: amountMismatches.slice(0, 12),
+    amountMismatchCount: amountMismatches.length
+  };
 }
 
 function analyzeRows(rows, { fileName }) {
@@ -157,13 +321,16 @@ function analyzeRows(rows, { fileName }) {
       readable: false,
       confidence: "none",
       reason: "No rows found in the file.",
-      fileName
+      fileName,
+      headers: [],
+      dataRows: [],
+      sourceRows: []
     };
   }
 
   const headerIndex = findHeaderRow(rows);
   const headers = rows[headerIndex] ?? [];
-  const commissionCol = findCommissionColumn(headers);
+  const commissionCol = findColumn(headers, COMMISSION_HEADER);
   const dataRows = rows.slice(headerIndex + 1).filter((row) => row.some((cell) => String(cell).trim()));
   const commissionValues = [];
   for (const row of dataRows) {
@@ -175,6 +342,7 @@ function analyzeRows(rows, { fileName }) {
     ? Math.round(commissionValues.reduce((sum, value) => sum + value, 0) * 100) / 100
     : null;
 
+  const sourceRows = extractSourceRows(headers, dataRows);
   let confidence = "low";
   if (commissionCol >= 0 && commissionValues.length >= Math.max(1, Math.floor(dataRows.length * 0.5))) {
     confidence = "high";
@@ -192,10 +360,13 @@ function analyzeRows(rows, { fileName }) {
     fileName,
     headerRow: headerIndex + 1,
     headers: headers.filter(Boolean).slice(0, 12),
+    dataRows,
     dataRowCount: dataRows.length,
     commissionColumn: commissionCol >= 0 ? headers[commissionCol] : null,
     commissionValuesFound: commissionValues.length,
     commissionTotal,
+    sourceRows,
+    keyedSourceRowCount: sourceRows.filter((row) => row.key).length,
     sampleRows: dataRows.slice(0, 3).map((row) => row.filter(Boolean).slice(0, 8)),
     reason: commissionCol < 0
       ? "Could not find a commission/amount column in the header row."
@@ -205,7 +376,7 @@ function analyzeRows(rows, { fileName }) {
   };
 }
 
-export function previewSpreadsheet({ fileName, buffer }) {
+export function parseSpreadsheet({ fileName, buffer }) {
   const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   const ext = extensionOf(fileName);
 
@@ -224,6 +395,9 @@ export function previewSpreadsheet({ fileName, buffer }) {
         readable: false,
         confidence: "none",
         fileName,
+        headers: [],
+        dataRows: [],
+        sourceRows: [],
         reason: `Could not parse spreadsheet: ${error.message}`
       };
     }
@@ -233,8 +407,15 @@ export function previewSpreadsheet({ fileName, buffer }) {
     readable: false,
     confidence: "none",
     fileName,
+    headers: [],
+    dataRows: [],
+    sourceRows: [],
     reason: "Preview only supports .xlsx, .xlsm, .csv, and .tsv commission files."
   };
+}
+
+export function previewSpreadsheet({ fileName, buffer }) {
+  return parseSpreadsheet({ fileName, buffer });
 }
 
 export function verifyUploadAgainstPreview(preview, uploadBody, records = []) {
@@ -255,8 +436,7 @@ export function verifyUploadAgainstPreview(preview, uploadBody, records = []) {
   const checks = [];
 
   if (preview?.dataRowCount > 0 && Number.isFinite(imported)) {
-    const delta = Math.abs(preview.dataRowCount - imported);
-    const matched = delta === 0;
+    const matched = preview.dataRowCount === imported;
     checks.push({
       kind: "row_count",
       source: preview.dataRowCount,
@@ -272,8 +452,7 @@ export function verifyUploadAgainstPreview(preview, uploadBody, records = []) {
 
   if (preview?.commissionTotal != null && Number.isFinite(olicommTotal) && olicommTotal !== 0) {
     const roundedOlicomm = Math.round(olicommTotal * 100) / 100;
-    const delta = Math.abs(preview.commissionTotal - roundedOlicomm);
-    const matched = delta <= 0.02;
+    const matched = Math.abs(preview.commissionTotal - roundedOlicomm) <= 0.02;
     checks.push({
       kind: "commission_total",
       source: preview.commissionTotal,
@@ -285,6 +464,31 @@ export function verifyUploadAgainstPreview(preview, uploadBody, records = []) {
     }
   } else {
     checks.push({ kind: "commission_total", matched: null, note: "Could not compare commission totals." });
+  }
+
+  const rowReconciliation = reconcileSourceRows(preview?.sourceRows ?? [], records);
+  if (rowReconciliation.comparable) {
+    checks.push({
+      kind: "row_reconciliation",
+      matched: rowReconciliation.status === "match",
+      matchedCount: rowReconciliation.matchedCount,
+      missingCount: rowReconciliation.missingCount,
+      extraCount: rowReconciliation.extraCount,
+      amountMismatchCount: rowReconciliation.amountMismatchCount
+    });
+    if (rowReconciliation.status === "mismatch") {
+      if (rowReconciliation.missingCount) {
+        issues.push(`${rowReconciliation.missingCount} source row(s) missing in OliComm.`);
+      }
+      if (rowReconciliation.extraCount) {
+        issues.push(`${rowReconciliation.extraCount} OliComm row(s) not found in the source file.`);
+      }
+      if (rowReconciliation.amountMismatchCount) {
+        issues.push(`${rowReconciliation.amountMismatchCount} row(s) matched by policy but commission amount differs.`);
+      }
+    }
+  } else {
+    checks.push({ kind: "row_reconciliation", matched: null, note: "Could not compare row-by-row." });
   }
 
   const comparable = checks.filter((check) => check.matched !== null);
@@ -299,6 +503,7 @@ export function verifyUploadAgainstPreview(preview, uploadBody, records = []) {
     checks,
     imported,
     olicommCommissionTotal: Number.isFinite(olicommTotal) ? Math.round(olicommTotal * 100) / 100 : null,
+    rowReconciliation,
     recommendation: status === "match"
       ? "Safe to treat this upload as verified against the source file."
       : status === "mismatch"

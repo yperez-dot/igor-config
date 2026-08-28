@@ -25,35 +25,36 @@ test("OliComm is connected via the known production URL without OLICOMM_BASE_URL
   assert.equal(names.includes("olicomm_preview_upload"), true);
 });
 
-test("olicomm_preview_upload analyzes the pending Telegram attachment", async () => {
+test("olicomm_preview_upload returns bucket resolution", async () => {
   const result = await executeTool("olicomm_preview_upload", {}, {
     pendingAttachment: {
       fileName: "Commission-Statement-2026-08-28.csv",
-      buffer: Buffer.from("Client,Commission\nMaria,$10.00\n")
+      buffer: Buffer.from("Client,Policy,Commission\nMaria,P1,$10.00\n")
     }
   });
+  assert.equal(result.uploadType, "commission_statement");
+  assert.equal(result.bucketResolution.id, "commission_statement");
   assert.equal(result.sourcePreview.dataRowCount, 1);
-  assert.equal(result.canVerify, true);
 });
 
 test("olicomm_upload requires confirmed=true", async () => {
   const result = await executeTool("olicomm_upload", {}, {
     environment: { OLICOMM_JWT: "jwt" },
     pendingAttachment: {
-      fileName: "Commission-Statement-2026-08-28.xlsx",
-      buffer: Buffer.from("x")
+      fileName: "Commission-Statement-2026-08-28.csv",
+      buffer: Buffer.from("Client,Policy,Commission\nMaria,P1,$10.00\n")
     }
   });
   assert.equal(result.needsConfirmation, true);
   assert.equal(result.proposed.uploadType, "commission_statement");
 });
 
-test("olicomm_upload sends the pending Telegram attachment and verifies match", async () => {
+test("olicomm_upload sends the pending Telegram attachment and verifies row-by-row match", async () => {
   const result = await executeTool("olicomm_upload", { confirmed: true }, {
     environment: { OLICOMM_JWT: "jwt" },
     pendingAttachment: {
       fileName: "Commission-Statement-2026-08-28.csv",
-      buffer: Buffer.from("Client,Commission\nMaria,$10.00\nAlan,$5.00\n")
+      buffer: Buffer.from("Client,Policy,Commission\nMaria,P1,$10.00\nAlan,P2,$5.00\n")
     },
     fetchImpl: async (url) => {
       if (String(url).includes("/api/files/upload")) {
@@ -66,12 +67,18 @@ test("olicomm_upload sends the pending Telegram attachment and verifies match", 
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({ records: [{ commission_amount: 10 }, { commission_amount: 5 }] })
+        text: async () => JSON.stringify({
+          records: [
+            { policy_number: "P1", client_name: "Maria", commission_amount: 10 },
+            { policy_number: "P2", client_name: "Alan", commission_amount: 5 }
+          ]
+        })
       };
     }
   });
   assert.equal(result.uploaded, true);
   assert.equal(result.verification.status, "match");
+  assert.equal(result.verification.rowReconciliation.status, "match");
   assert.equal(result.verified, true);
 });
 
