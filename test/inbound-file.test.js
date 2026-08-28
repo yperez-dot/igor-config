@@ -24,6 +24,14 @@ function xlsxBuffer(text) {
   ]);
 }
 
+function xlsxRichTextBuffer(parts) {
+  const shared = `<si>${parts.map((part) => `<r><t>${part}</t></r>`).join("")}</si>`;
+  return writeStoredZip([
+    { name: "xl/sharedStrings.xml", data: `<?xml version="1.0"?><sst count="1">${shared}</sst>` },
+    { name: "xl/worksheets/sheet1.xml", data: `<?xml version="1.0"?><worksheet><c r="A1" t="s"><v>0</v></c></worksheet>` }
+  ]);
+}
+
 test("extracts PPTX slide text from Office XML", () => {
   const extracted = extractInboundDocument({
     fileName: "medicare-supplement-101.pptx",
@@ -45,6 +53,36 @@ test("extracts Word and Excel office text", () => {
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     buffer: xlsxBuffer("Stale leads")
   }), /A1: Stale leads/);
+});
+
+test("extracts rich-text shared strings in Excel", () => {
+  assert.match(extractInboundDocument({
+    fileName: "Commission-Statement-2026-08-28.xlsx",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    buffer: xlsxRichTextBuffer(["Commission", " Statement"])
+  }), /A1: CommissionStatement/);
+});
+
+test("commission statement filenames hint OliComm upload in the prompt", async () => {
+  const inbound = await resolveInboundUserText({
+    message: {
+      text: "upload this",
+      document: {
+        fileId: "file-1",
+        fileName: "Commission-Statement-2026-08-28.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        fileSize: 3200
+      }
+    },
+    botToken: "token",
+    downloadTelegramFile: async () => ({
+      buffer: xlsxBuffer("row"),
+      fileSize: 3200
+    })
+  });
+  assert.match(inbound.text, /Commission Statements/);
+  assert.match(inbound.text, /olicomm_upload/);
+  assert.equal(inbound.attachment.fileName, "Commission-Statement-2026-08-28.xlsx");
 });
 
 test("extracts CSV as utf8 text", () => {

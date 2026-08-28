@@ -19,7 +19,43 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
 test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {
   const olicomm = connectedSystems({}).find((system) => system.id === "olicomm");
   assert.equal(olicomm.connected, true);
-  assert.equal(grokTools({}).map((tool) => tool.function.name).includes("olicomm_get"), true);
+  const names = grokTools({}).map((tool) => tool.function.name);
+  assert.equal(names.includes("olicomm_get"), true);
+  assert.equal(names.includes("olicomm_upload"), true);
+});
+
+test("olicomm_upload requires confirmed=true", async () => {
+  const result = await executeTool("olicomm_upload", {}, {
+    environment: { OLICOMM_JWT: "jwt" },
+    pendingAttachment: {
+      fileName: "Commission-Statement-2026-08-28.xlsx",
+      buffer: Buffer.from("x")
+    }
+  });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.uploadType, "commission_statement");
+});
+
+test("olicomm_upload sends the pending Telegram attachment", async () => {
+  const result = await executeTool("olicomm_upload", { confirmed: true }, {
+    environment: { OLICOMM_JWT: "jwt" },
+    pendingAttachment: {
+      fileName: "Commission-Statement-2026-08-28.xlsx",
+      buffer: Buffer.from("fake-xlsx")
+    },
+    fetchImpl: async (url, options) => {
+      assert.match(String(url), /\/api\/files\/upload$/);
+      assert.equal(options.headers.Authorization, "Bearer jwt");
+      assert.ok(options.body instanceof FormData);
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ uploadId: 9, recordCount: 4 })
+      };
+    }
+  });
+  assert.equal(result.uploaded, true);
+  assert.equal(result.recordCount, 4);
 });
 
 test("connectedSystems reports missing Railway secrets without values", () => {

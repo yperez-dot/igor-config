@@ -12,7 +12,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker if 
 | Netlify | `NETLIFY_AUTH_TOKEN` | `netlify_list_sites`, `netlify_deploy` (confirm required) |
 | Facebook Ads | `FACEBOOK_ACCESS_TOKEN`, optional `FACEBOOK_AD_ACCOUNT_ID` / `FACEBOOK_CAMPAIGN_ID` | `facebook_ads_insights` |
 | Tavily | `TAVILY_API_KEY` | `web_search` |
-| OliComm | Optional `OLICOMM_BASE_URL` (defaults to the live commission-tracker Railway URL). Optional `OLICOMM_API_KEY` for `/api/records` | `olicomm_get` (`/health`, `/api/`, `/v1/` only). Use `/api/health`. Paid records need the API key. |
+| OliComm | Optional `OLICOMM_BASE_URL` (defaults to the live commission-tracker Railway URL). For reads: optional `OLICOMM_API_KEY`. For uploads: set `OLICOMM_JWT`, or `OLICOMM_API_KEY` if it is a user/service JWT, or `OLICOMM_EMAIL` + `OLICOMM_PASSWORD`. Optional `OLICOMM_AGENCY_OVERRIDE` (`THEI` or `BSI`, default `THEI`). | `olicomm_get` (`/health`, `/api/`, `/v1/` only). `olicomm_upload` (multipart ingest into Commission Statements, BSI Statements, Agent Payout Uploads, MedicarePro, or Agency Production — confirm required). |
 | MedicarePro | `MEDICAREPRO_API_KEY`, `MEDICAREPRO_BASE_URL` | `medicarepro_get` |
 | Email | `SENDGRID_API_KEY` (required for outbound mail). `FROM_EMAIL` is optional and defaults to `info@healthexps.com`. SMTP (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`) is an alternative. Optional `EMAIL_ALLOWED_RECIPIENTS` | `send_internal_email` (Yahoska standing-approved). `ghl_stale_leads` auto-emails a PHI-light CSV. |
 | Sales sheet | `SALES_SHEET_CSV_URL` | `sales_sheet_summary` |
