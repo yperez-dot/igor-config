@@ -19,7 +19,67 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
 test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {
   const olicomm = connectedSystems({}).find((system) => system.id === "olicomm");
   assert.equal(olicomm.connected, true);
-  assert.equal(grokTools({}).map((tool) => tool.function.name).includes("olicomm_get"), true);
+  const names = grokTools({}).map((tool) => tool.function.name);
+  assert.equal(names.includes("olicomm_get"), true);
+  assert.equal(names.includes("olicomm_upload"), true);
+  assert.equal(names.includes("olicomm_preview_upload"), true);
+});
+
+test("olicomm_preview_upload returns bucket resolution", async () => {
+  const result = await executeTool("olicomm_preview_upload", {}, {
+    pendingAttachment: {
+      fileName: "Commission-Statement-2026-08-28.csv",
+      buffer: Buffer.from("Client,Policy,Commission\nMaria,P1,$10.00\n")
+    }
+  });
+  assert.equal(result.uploadType, "commission_statement");
+  assert.equal(result.bucketResolution.id, "commission_statement");
+  assert.equal(result.sourcePreview.dataRowCount, 1);
+});
+
+test("olicomm_upload requires confirmed=true", async () => {
+  const result = await executeTool("olicomm_upload", {}, {
+    environment: { OLICOMM_JWT: "jwt" },
+    pendingAttachment: {
+      fileName: "Commission-Statement-2026-08-28.csv",
+      buffer: Buffer.from("Client,Policy,Commission\nMaria,P1,$10.00\n")
+    }
+  });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.uploadType, "commission_statement");
+});
+
+test("olicomm_upload sends the pending Telegram attachment and verifies row-by-row match", async () => {
+  const result = await executeTool("olicomm_upload", { confirmed: true }, {
+    environment: { OLICOMM_JWT: "jwt" },
+    pendingAttachment: {
+      fileName: "Commission-Statement-2026-08-28.csv",
+      buffer: Buffer.from("Client,Policy,Commission\nMaria,P1,$10.00\nAlan,P2,$5.00\n")
+    },
+    fetchImpl: async (url) => {
+      if (String(url).includes("/api/files/upload")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ uploadId: 9, rowCount: 2, commissionSum: 15 })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          records: [
+            { policy_number: "P1", client_name: "Maria", commission_amount: 10 },
+            { policy_number: "P2", client_name: "Alan", commission_amount: 5 }
+          ]
+        })
+      };
+    }
+  });
+  assert.equal(result.uploaded, true);
+  assert.equal(result.verification.status, "match");
+  assert.equal(result.verification.rowReconciliation.status, "match");
+  assert.equal(result.verified, true);
 });
 
 test("connectedSystems reports missing Railway secrets without values", () => {

@@ -68,6 +68,14 @@ export async function handleTelegramChat({
   });
   const hasMedia = Array.isArray(inbound.media) && inbound.media.length > 0;
   const userText = withReplyContext(inbound.text, message.replyTo, { hasMedia });
+  const toolRunner = (name, args) => executeTool(name, args, {
+    environment,
+    chatId: message.chatId,
+    botToken,
+    senderId: message.senderId,
+    store,
+    pendingAttachment: inbound.attachment
+  });
   const reply = isPlanRecommendationRequest(message.text)
     ? recommendationRefusal(message.text)
     : apiKey
@@ -79,7 +87,7 @@ export async function handleTelegramChat({
         history,
         systemPrompt: prompt,
         tools,
-        executeTool,
+        executeTool: toolRunner,
         conversationId: message.chatId
       })
       : unavailableMessage(userText);

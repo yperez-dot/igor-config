@@ -15,6 +15,13 @@ import { telegramSpeaker } from "./identity.js";
 import { rememberMemory, searchMemory } from "./memory.js";
 import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
+import {
+  olicommBearerToken,
+  olicommUploadWithVerification,
+  olicommUploadConfigured,
+  resolveUploadBucket,
+  UPLOAD_TYPES
+} from "./olicomm.js";
 import { connectedSystems, DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
 import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 import { legacySchedules } from "./legacy-schedules.js";
@@ -26,7 +33,8 @@ const WRITE_TOOLS = new Set([
   "github_write",
   "calendar_create_event",
   "calendar_update_event",
-  "calendar_delete_event"
+  "calendar_delete_event",
+  "olicomm_upload"
 ]);
 const DEFAULT_EMAIL_ALLOWLIST = ["yperez@healthexps.com", "info@healthexps.com"];
 const DEFAULT_GITHUB_OWNERS = ["yperez-dot"];
@@ -182,12 +190,48 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("olicomm")) {
-    tools.push(functionTool("olicomm_get", "GET an allowlisted OliComm path. Use /api/health first. Paid/reconciled records are under /api/ (needs OLICOMM_API_KEY). This is not the FMO AEP schedule — if the user wants a UHC AEP agent rate and records do not contain it, ask for the carrier/FMO grid PDF.", {
-      type: "object",
-      properties: { path: { type: "string" } },
-      required: ["path"],
-      additionalProperties: false
-    }));
+    tools.push(
+      functionTool("olicomm_get", "GET an allowlisted OliComm path. Use /api/health first. Paid/reconciled records are under /api/ (needs OLICOMM_API_KEY). This is not the FMO AEP schedule — if the user wants a UHC AEP agent rate and records do not contain it, ask for the carrier/FMO grid PDF.", {
+        type: "object",
+        properties: { path: { type: "string" } },
+        required: ["path"],
+        additionalProperties: false
+      }),
+      functionTool("olicomm_preview_upload", "Preview the Telegram file from THIS turn before OliComm ingest. Auto-detects the upload bucket from filename + headers when the user did not say which tab/bucket. Returns source row count, commission total, row-level match keys, and bucket recommendation. Call this before proposing olicomm_upload.", {
+        type: "object",
+        properties: {
+          uploadType: {
+            type: "string",
+            enum: UPLOAD_TYPES,
+            description: "Optional. Defaults from filename classification."
+          }
+        },
+        additionalProperties: false
+      }),
+      functionTool("olicomm_upload", "Upload the Telegram file from THIS turn into OliComm after preview + user confirm. Auto-detects the upload bucket unless uploadType is set or the user named the bucket. Always returns sourcePreview, bucketResolution, and post-upload verification including row-by-row reconciliation. Do not call the upload successful unless verification.status is match; on mismatch, flag a parser/data issue. Requires confirmed=true after the user approves the bucket. On HTTP 409 duplicateWarning, explain and retry with skipDuplicates=true after approval.", {
+        type: "object",
+        properties: {
+          uploadType: {
+            type: "string",
+            enum: UPLOAD_TYPES,
+            description: "Optional. Defaults from filename classification."
+          },
+          agencyOverride: {
+            type: "string",
+            enum: ["THEI", "BSI"],
+            description: "Optional agency view header. Default THEI."
+          },
+          skipDuplicates: { type: "boolean", description: "Pass true after duplicateWarning and user approval." },
+          selectedDuplicates: {
+            type: "array",
+            items: { type: "string" },
+            description: "Optional duplicate keys to force when OliComm returns duplicateWarning."
+          },
+          confirmed: { type: "boolean" }
+        },
+        additionalProperties: false
+      })
+    );
   }
 
   if (connected.has("medicarepro")) {
@@ -387,11 +431,12 @@ export async function executeTool(name, rawArgs, {
   chatId,
   botToken,
   senderId,
-  store
+  store,
+  pendingAttachment
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_")) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload") return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -657,8 +702,106 @@ export async function executeTool(name, rawArgs, {
       }
       const base = String(environment.OLICOMM_BASE_URL || DEFAULT_OLICOMM_BASE_URL).replace(/\/+$/, "");
       const headers = {};
-      if (environment.OLICOMM_API_KEY) headers.Authorization = `Bearer ${environment.OLICOMM_API_KEY}`;
+      const token = await olicommBearerToken(environment, fetchImpl);
+      if (token) headers.Authorization = `Bearer ${token}`;
       return jsonFetch(`${base}${`/${String(args.path).replace(/^\/+/, "")}`}`, { headers, fetchImpl });
+    }
+
+    if (name === "olicomm_preview_upload") {
+      const attachment = pendingAttachment;
+      if (!attachment?.buffer) {
+        return {
+          error: "No Telegram file is attached to this turn.",
+          hint: "Ask the user to resend the file in this chat turn."
+        };
+      }
+      const bucket = resolveUploadBucket({
+        fileName: attachment.fileName,
+        buffer: attachment.buffer
+      });
+      const uploadType = args.uploadType || bucket.id;
+      const sourcePreview = bucket.sourcePreview;
+      return {
+        fileName: attachment.fileName,
+        bytes: attachment.buffer.length,
+        uploadType,
+        bucketResolution: bucket,
+        sourcePreview,
+        canVerify: (sourcePreview.confidence === "high" || sourcePreview.confidence === "medium")
+          && sourcePreview.keyedSourceRowCount > 0,
+        recommendation: bucket.needsUserBucket
+          ? `Bucket is ambiguous — filename says ${bucket.byFilename?.label ?? "unknown"}, headers say ${bucket.byContent?.label ?? "unknown"}. Ask which OliComm tab matches before upload.`
+          : sourcePreview.confidence === "none" || !sourcePreview.readable
+            ? "Local preview is weak — recommend manual UI upload with spot-check, or fix the file format first."
+            : `Recommend ${bucket.label}. After upload, require verification.status=match (including row-by-row reconciliation) before calling it clean.`
+      };
+    }
+
+    if (name === "olicomm_upload") {
+      if (!olicommUploadConfigured(environment)) {
+        return {
+          error: "OliComm upload credentials are not configured.",
+          hint: "Set OLICOMM_JWT, OLICOMM_API_KEY, or OLICOMM_EMAIL + OLICOMM_PASSWORD on Igor V2."
+        };
+      }
+      const attachment = pendingAttachment;
+      if (!attachment?.buffer) {
+        return {
+          error: "No Telegram file is attached to this turn.",
+          hint: "Ask the user to resend the file, then call olicomm_upload in that same turn after they confirm."
+        };
+      }
+      const bucket = resolveUploadBucket({
+        fileName: attachment.fileName,
+        buffer: attachment.buffer
+      });
+      const uploadType = args.uploadType || bucket.id;
+      if (uploadType === "unknown") {
+        return {
+          error: "Could not determine the OliComm upload bucket.",
+          fileName: attachment.fileName,
+          bucketResolution: bucket,
+          hint: `Ask which bucket matches: ${UPLOAD_TYPES.join(", ")}.`
+        };
+      }
+      if (!args.uploadType && bucket.needsUserBucket) {
+        return {
+          error: "upload_bucket_ambiguous",
+          fileName: attachment.fileName,
+          bucketResolution: bucket,
+          hint: "Tell the user which buckets filename vs headers suggest, ask them to pick the correct OliComm tab, then retry with uploadType set or after they confirm."
+        };
+      }
+      if (blocked) {
+        return {
+          ...blocked,
+          proposed: {
+            fileName: attachment.fileName,
+            bytes: attachment.buffer.length,
+            uploadType,
+            label: bucket.label,
+            confidence: bucket.confidence,
+            reason: bucket.reason,
+            bucketResolution: bucket,
+            sourcePreview: bucket.sourcePreview,
+            canVerify: (bucket.sourcePreview?.confidence === "high" || bucket.sourcePreview?.confidence === "medium")
+              && bucket.sourcePreview?.keyedSourceRowCount > 0
+          },
+          hint: bucket.sourcePreview?.confidence === "none" || !bucket.sourcePreview?.readable
+            ? "Preview is inconclusive — warn the user that Igor cannot verify a match and recommend manual UI upload unless they accept the risk."
+            : "Show bucket choice, preview numbers, and sample rows. Get confirm, then call again with confirmed=true. After upload, only call it clean if verification.status is match."
+        };
+      }
+      return olicommUploadWithVerification({
+        environment,
+        fileName: attachment.fileName,
+        buffer: attachment.buffer,
+        uploadType,
+        agencyOverride: args.agencyOverride,
+        skipDuplicates: args.skipDuplicates === true,
+        selectedDuplicates: args.selectedDuplicates,
+        fetchImpl
+      });
     }
 
     if (name === "medicarepro_get") {

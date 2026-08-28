@@ -127,13 +127,8 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       recommendationRefusal,
       unavailableMessage,
       tools: TOOLS,
-      executeTool: (name, args) => executeTool(name, args, {
-        environment: process.env,
-        chatId: message.chatId,
-        botToken: TELEGRAM.botToken,
-        senderId: message.senderId,
-        store
-      })
+      executeTool,
+      environment: process.env
     });
   } catch (error) {
     await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });

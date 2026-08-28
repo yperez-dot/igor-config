@@ -67,9 +67,9 @@ export const migrationCapabilities = [
     id: "commission-tracking",
     area: "Commission tracking",
     legacy: "Existing Railway/Postgres application",
-    v2: "Allowlisted GET against OLICOMM_BASE_URL when configured",
+    v2: "Allowlisted GET plus Telegram multipart upload when upload credentials are set",
     state: "testing",
-    gate: "Set OLICOMM_BASE_URL and OLICOMM_API_KEY; keep writes on the existing OliComm app."
+    gate: "Set OLICOMM upload credentials (JWT/API key or email+password); verify one commission-statement upload from Telegram before broad use."
   },
   {
     id: "carrier-updates",

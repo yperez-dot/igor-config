@@ -4,6 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { resolveUploadBucket } from "./olicomm.js";
 import { readZipEntries } from "./zip.js";
 
 const execFileAsync = promisify(execFile);
@@ -41,6 +42,16 @@ function xmlLocalTagTexts(xml, localName) {
   return texts;
 }
 
+function sharedStringsFromXml(xml) {
+  const shared = [];
+  for (const entry of String(xml).matchAll(/<si\b[^>]*>([\s\S]*?)<\/si>/g)) {
+    const texts = xmlLocalTagTexts(entry[1], "t");
+    shared.push(texts.join("").replace(/\s+/g, " ").trim());
+  }
+  if (shared.length) return shared;
+  return xmlLocalTagTexts(xml, "t");
+}
+
 function slideNumber(name) {
   const match = name.match(/slide(\d+)\.xml$/i);
   return match ? Number(match[1]) : 0;
@@ -57,7 +68,7 @@ function officeKindFromEntries(entries) {
 
 function extractXlsxText(entries) {
   const sharedXml = entries.find((entry) => entry.name === "xl/sharedStrings.xml");
-  const shared = sharedXml ? xmlLocalTagTexts(sharedXml.data.toString("utf8"), "t") : [];
+  const shared = sharedXml ? sharedStringsFromXml(sharedXml.data.toString("utf8")) : [];
   const sheets = entries
     .filter((entry) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(entry.name))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -73,7 +84,7 @@ function extractXlsxText(entries) {
       if (type === "s") {
         const index = Number(inner.match(/<v>(\d+)<\/v>/)?.[1]);
         value = Number.isFinite(index) ? (shared[index] ?? "") : "";
-      } else if (type === "inlineStr") {
+      } else if (type === "inlineStr" || inner.includes("<is")) {
         value = xmlLocalTagTexts(inner, "t").join(" ");
       } else {
         value = inner.match(/<v>([^<]*)<\/v>/)?.[1] ?? "";
@@ -83,7 +94,7 @@ function extractXlsxText(entries) {
     }
     if (lines.length >= 2000) break;
   }
-  return lines.join("\n") || shared.join("\n");
+  return lines.join("\n") || shared.filter(Boolean).join("\n");
 }
 
 function extractOfficeText(buffer, fileName) {
@@ -259,7 +270,9 @@ export function formatInboundUserText({
   kind = "document",
   hasVision = false,
   duration,
-  error = ""
+  error = "",
+  uploadable = false,
+  uploadClassification = null
 }) {
   const parts = [];
   if (caption.trim()) parts.push(caption.trim());
@@ -293,13 +306,21 @@ export function formatInboundUserText({
   }
   const text = String(extracted ?? "").trim();
   if (!text) {
-    parts.push("The file arrived, but no extractable text was found. Ask for a .docx, .xlsx, PDF, screenshots, or pasted text if review is needed.");
+    parts.push("The file arrived, but no extractable text was found locally. OliComm may still parse it on upload — do not refuse ingest just because Telegram extraction was empty.");
+    if (uploadable && uploadClassification) {
+      parts.push(`OliComm bucket guess: ${uploadClassification.label} (${uploadClassification.confidence} confidence — ${uploadClassification.reason}). Igor checks filename and headers — if they disagree, he asks which tab. CALL olicomm_preview_upload first, then propose olicomm_upload only after bucket confirm. Never call an upload clean unless verification.status is match (row-by-row + totals).`);
+    } else {
+      parts.push("Ask for a .docx, .xlsx, PDF, screenshots, or pasted text if review is needed.");
+    }
     return parts.join("\n\n");
   }
   const clipped = text.length > EXTRACTED_TEXT_MAX_CHARS
     ? `${text.slice(0, EXTRACTED_TEXT_MAX_CHARS)}\n\n[truncated]`
     : text;
   parts.push("Extracted text from the file follows. Use it as the source. Do not say the file never arrived.");
+  if (uploadable && uploadClassification) {
+    parts.push(`This file can go to OliComm → ${uploadClassification.label}. Igor auto-detects the bucket from filename + headers when you do not say which tab. CALL olicomm_preview_upload first. After upload, require verification.status=match including row-by-row reconciliation.`);
+  }
   parts.push(clipped);
   return parts.join("\n\n");
 }
@@ -496,16 +517,36 @@ export async function resolveInboundUserText({
       mimeType,
       buffer: downloaded.buffer
     });
+    const bucket = resolveUploadBucket({
+      fileName,
+      buffer: downloaded.buffer
+    });
+    const uploadClassification = {
+      id: bucket.id,
+      label: bucket.label,
+      confidence: bucket.confidence,
+      reason: bucket.reason
+    };
+    const uploadable = bucket.id !== "unknown";
     return {
       text: formatInboundUserText({
         caption: message.text,
         fileName,
         mimeType,
         fileSize: downloaded.fileSize ?? fileSize,
-        extracted
+        extracted,
+        uploadable,
+        uploadClassification
       }),
       storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
-      media: []
+      media: [],
+      attachment: {
+        fileName,
+        mimeType,
+        fileSize: downloaded.fileSize ?? fileSize,
+        buffer: downloaded.buffer,
+        uploadClassification
+      }
     };
   } catch (error) {
     return {
