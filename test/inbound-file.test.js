@@ -81,7 +81,7 @@ test("commission statement filenames hint OliComm upload in the prompt", async (
     })
   });
   assert.match(inbound.text, /Commission Statements/);
-  assert.match(inbound.text, /olicomm_upload/);
+  assert.match(inbound.text, /olicomm_preview_upload/);
   assert.equal(inbound.attachment.fileName, "Commission-Statement-2026-08-28.xlsx");
 });
 

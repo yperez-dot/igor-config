@@ -1,4 +1,5 @@
 import { DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
+import { previewSpreadsheet, verifyUploadAgainstPreview } from "./spreadsheet-preview.js";
 
 export const UPLOAD_TYPES = [
   "commission_statement",
@@ -236,6 +237,90 @@ export async function olicommBearerToken(environment = process.env, fetchImpl = 
   const token = body.token || body.accessToken || body.jwt;
   if (!token) throw new Error("OliComm login succeeded but returned no token.");
   return token;
+}
+
+export async function olicommGet({
+  path,
+  environment = process.env,
+  fetchImpl = fetch
+} = {}) {
+  const token = await olicommBearerToken(environment, fetchImpl);
+  if (!token) {
+    return { error: "OliComm credentials are not configured." };
+  }
+  const agency = String(environment.OLICOMM_AGENCY_OVERRIDE || "THEI").trim().toUpperCase();
+  const response = await fetchImpl(`${olicommBaseUrl(environment)}/${String(path).replace(/^\/+/, "")}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "X-Agency-Override": agency,
+      Accept: "application/json"
+    },
+    signal: AbortSignal.timeout(25_000)
+  });
+  const body = await parseJsonResponse(response);
+  if (!response.ok) {
+    return { error: `HTTP ${response.status}`, detail: body };
+  }
+  return body;
+}
+
+export async function olicommFetchUploadRecords({
+  uploadId,
+  environment = process.env,
+  fetchImpl = fetch,
+  limit = 500
+} = {}) {
+  if (!uploadId) return { records: [] };
+  const body = await olicommGet({
+    path: `/api/records?upload_id=${encodeURIComponent(uploadId)}&limit=${limit}`,
+    environment,
+    fetchImpl
+  });
+  if (body.error) return body;
+  return { records: body.records ?? [], total: body.total ?? body.records?.length ?? 0 };
+}
+
+export async function olicommUploadWithVerification({
+  environment = process.env,
+  fileName,
+  buffer,
+  uploadType,
+  agencyOverride,
+  skipDuplicates = false,
+  selectedDuplicates = [],
+  fetchImpl = fetch
+} = {}) {
+  const sourcePreview = previewSpreadsheet({ fileName, buffer });
+  const upload = await olicommUpload({
+    environment,
+    fileName,
+    buffer,
+    uploadType,
+    agencyOverride,
+    skipDuplicates,
+    selectedDuplicates,
+    fetchImpl
+  });
+
+  if (!upload.uploaded) {
+    return { ...upload, sourcePreview };
+  }
+
+  const uploadId = upload.upload?.id ?? upload.uploadId ?? upload.id;
+  const recordsBody = uploadId
+    ? await olicommFetchUploadRecords({ uploadId, environment, fetchImpl })
+    : { records: [] };
+  const records = recordsBody.records ?? [];
+  const verification = verifyUploadAgainstPreview(sourcePreview, upload, records);
+
+  return {
+    ...upload,
+    sourcePreview,
+    verification,
+    verified: verification.status === "match",
+    recordsFetched: records.length,
+    recordsFetchError: recordsBody.error ?? null
+  };
 }
 
 export async function olicommUpload({

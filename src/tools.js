@@ -18,10 +18,11 @@ import { parseSalesCsv } from "./sales-sync.js";
 import {
   classifyUploadFilename,
   olicommBearerToken,
-  olicommUpload,
+  olicommUploadWithVerification,
   olicommUploadConfigured,
   UPLOAD_TYPES
 } from "./olicomm.js";
+import { previewSpreadsheet } from "./spreadsheet-preview.js";
 import { connectedSystems, DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
 import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 import { legacySchedules } from "./legacy-schedules.js";
@@ -197,7 +198,18 @@ export function grokTools(environment = process.env) {
         required: ["path"],
         additionalProperties: false
       }),
-      functionTool("olicomm_upload", "Upload the Telegram file from THIS turn into OliComm (Commission Statements, BSI Statements, Agent Payout Uploads, MedicarePro sales CSV, or Agency Production Excel). Uses the file the user just sent — do not invent bytes. Requires confirmed=true after the user approves the bucket. If uploadType is omitted, classify from the filename. On HTTP 409 duplicateWarning, explain and retry with skipDuplicates=true after approval.", {
+      functionTool("olicomm_preview_upload", "Preview the Telegram file from THIS turn before OliComm ingest. Returns source row count, commission total (when readable), and whether Igor can verify a match after upload. Call this before proposing olicomm_upload.", {
+        type: "object",
+        properties: {
+          uploadType: {
+            type: "string",
+            enum: UPLOAD_TYPES,
+            description: "Optional. Defaults from filename classification."
+          }
+        },
+        additionalProperties: false
+      }),
+      functionTool("olicomm_upload", "Upload the Telegram file from THIS turn into OliComm after preview + user confirm. Always returns sourcePreview and post-upload verification (row count + commission total). Do not call the upload successful unless verification.status is match; on mismatch, flag a parser/data issue and recommend manual spot-check. Requires confirmed=true after the user approves the bucket. On HTTP 409 duplicateWarning, explain and retry with skipDuplicates=true after approval.", {
         type: "object",
         properties: {
           uploadType: {
@@ -696,6 +708,33 @@ export async function executeTool(name, rawArgs, {
       return jsonFetch(`${base}${`/${String(args.path).replace(/^\/+/, "")}`}`, { headers, fetchImpl });
     }
 
+    if (name === "olicomm_preview_upload") {
+      const attachment = pendingAttachment;
+      if (!attachment?.buffer) {
+        return {
+          error: "No Telegram file is attached to this turn.",
+          hint: "Ask the user to resend the file in this chat turn."
+        };
+      }
+      const classified = classifyUploadFilename(attachment.fileName);
+      const uploadType = args.uploadType || classified.id;
+      const sourcePreview = previewSpreadsheet({
+        fileName: attachment.fileName,
+        buffer: attachment.buffer
+      });
+      return {
+        fileName: attachment.fileName,
+        bytes: attachment.buffer.length,
+        uploadType,
+        classification: classified,
+        sourcePreview,
+        canVerify: sourcePreview.confidence === "high" || sourcePreview.confidence === "medium",
+        recommendation: sourcePreview.confidence === "none" || !sourcePreview.readable
+          ? "Local preview is weak — recommend manual UI upload with spot-check, or fix the file format first."
+          : "Preview looks readable — propose olicomm_upload, then require verification.status=match before calling it clean."
+      };
+    }
+
     if (name === "olicomm_upload") {
       if (!olicommUploadConfigured(environment)) {
         return {
@@ -721,6 +760,10 @@ export async function executeTool(name, rawArgs, {
         };
       }
       if (blocked) {
+        const sourcePreview = previewSpreadsheet({
+          fileName: attachment.fileName,
+          buffer: attachment.buffer
+        });
         return {
           ...blocked,
           proposed: {
@@ -729,11 +772,16 @@ export async function executeTool(name, rawArgs, {
             uploadType,
             label: classified.label,
             confidence: classified.confidence,
-            reason: classified.reason
-          }
+            reason: classified.reason,
+            sourcePreview,
+            canVerify: sourcePreview.confidence === "high" || sourcePreview.confidence === "medium"
+          },
+          hint: sourcePreview.confidence === "none" || !sourcePreview.readable
+            ? "Preview is inconclusive — warn the user that Igor cannot verify a match and recommend manual UI upload unless they accept the risk."
+            : "Show the preview numbers, get confirm, then call again with confirmed=true. After upload, only call it clean if verification.status is match."
         };
       }
-      return olicommUpload({
+      return olicommUploadWithVerification({
         environment,
         fileName: attachment.fileName,
         buffer: attachment.buffer,

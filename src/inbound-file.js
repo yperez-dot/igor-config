@@ -308,7 +308,7 @@ export function formatInboundUserText({
   if (!text) {
     parts.push("The file arrived, but no extractable text was found locally. OliComm may still parse it on upload — do not refuse ingest just because Telegram extraction was empty.");
     if (uploadable && uploadClassification) {
-      parts.push(`OliComm bucket guess: ${uploadClassification.label} (${uploadClassification.confidence} confidence — ${uploadClassification.reason}). If the user wants this ingested, propose olicomm_upload and call it with confirmed=true after they approve the bucket.`);
+      parts.push(`OliComm bucket guess: ${uploadClassification.label} (${uploadClassification.confidence} confidence — ${uploadClassification.reason}). If the user wants ingest, CALL olicomm_preview_upload first, show the numbers, then propose olicomm_upload with confirmed=true only after they approve. Never call an upload clean unless verification.status is match.`);
     } else {
       parts.push("Ask for a .docx, .xlsx, PDF, screenshots, or pasted text if review is needed.");
     }
@@ -319,7 +319,7 @@ export function formatInboundUserText({
     : text;
   parts.push("Extracted text from the file follows. Use it as the source. Do not say the file never arrived.");
   if (uploadable && uploadClassification) {
-    parts.push(`This file can be uploaded to OliComm → ${uploadClassification.label}. If the user wants ingest (not just review), propose olicomm_upload and call it with confirmed=true after they approve.`);
+    parts.push(`This file can go to OliComm → ${uploadClassification.label}. CALL olicomm_preview_upload before proposing upload. After upload, require verification.status=match before calling it clean.`);
   }
   parts.push(clipped);
   return parts.join("\n\n");

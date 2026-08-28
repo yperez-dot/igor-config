@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   classifyUploadFilename,
   olicommUpload,
+  olicommUploadWithVerification,
   uploadPathForType
 } from "../src/olicomm.js";
 
@@ -47,6 +48,38 @@ test("olicomm_upload posts multipart with bearer and agency headers", async () =
   assert.equal(calls[0].headers.Authorization, "Bearer jwt-token");
   assert.equal(calls[0].headers["X-Agency-Override"], "THEI");
   assert.ok(calls[0].body instanceof FormData);
+});
+
+test("olicomm_upload_with_verification compares source and imported totals", async () => {
+  const buffer = Buffer.from("fake");
+  const result = await olicommUploadWithVerification({
+    environment: { OLICOMM_JWT: "jwt-token" },
+    fileName: "Commission-Statement-2026-08-28.csv",
+    buffer: Buffer.from("Client,Commission\nMaria,$10.00\nAlan,$5.00\n"),
+    uploadType: "commission_statement",
+    fetchImpl: async (url) => {
+      if (String(url).includes("/api/files/upload")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ uploadId: 42, rowCount: 2, commissionSum: 15 })
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({
+          records: [
+            { commission_amount: 10 },
+            { commission_amount: 5 }
+          ]
+        })
+      };
+    }
+  });
+  assert.equal(result.uploaded, true);
+  assert.equal(result.verification.status, "match");
+  assert.equal(result.verified, true);
 });
 
 test("olicomm_upload surfaces duplicate warnings", async () => {

@@ -22,6 +22,18 @@ test("OliComm is connected via the known production URL without OLICOMM_BASE_URL
   const names = grokTools({}).map((tool) => tool.function.name);
   assert.equal(names.includes("olicomm_get"), true);
   assert.equal(names.includes("olicomm_upload"), true);
+  assert.equal(names.includes("olicomm_preview_upload"), true);
+});
+
+test("olicomm_preview_upload analyzes the pending Telegram attachment", async () => {
+  const result = await executeTool("olicomm_preview_upload", {}, {
+    pendingAttachment: {
+      fileName: "Commission-Statement-2026-08-28.csv",
+      buffer: Buffer.from("Client,Commission\nMaria,$10.00\n")
+    }
+  });
+  assert.equal(result.sourcePreview.dataRowCount, 1);
+  assert.equal(result.canVerify, true);
 });
 
 test("olicomm_upload requires confirmed=true", async () => {
@@ -36,26 +48,31 @@ test("olicomm_upload requires confirmed=true", async () => {
   assert.equal(result.proposed.uploadType, "commission_statement");
 });
 
-test("olicomm_upload sends the pending Telegram attachment", async () => {
+test("olicomm_upload sends the pending Telegram attachment and verifies match", async () => {
   const result = await executeTool("olicomm_upload", { confirmed: true }, {
     environment: { OLICOMM_JWT: "jwt" },
     pendingAttachment: {
-      fileName: "Commission-Statement-2026-08-28.xlsx",
-      buffer: Buffer.from("fake-xlsx")
+      fileName: "Commission-Statement-2026-08-28.csv",
+      buffer: Buffer.from("Client,Commission\nMaria,$10.00\nAlan,$5.00\n")
     },
-    fetchImpl: async (url, options) => {
-      assert.match(String(url), /\/api\/files\/upload$/);
-      assert.equal(options.headers.Authorization, "Bearer jwt");
-      assert.ok(options.body instanceof FormData);
+    fetchImpl: async (url) => {
+      if (String(url).includes("/api/files/upload")) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ uploadId: 9, rowCount: 2, commissionSum: 15 })
+        };
+      }
       return {
         ok: true,
         status: 200,
-        text: async () => JSON.stringify({ uploadId: 9, recordCount: 4 })
+        text: async () => JSON.stringify({ records: [{ commission_amount: 10 }, { commission_amount: 5 }] })
       };
     }
   });
   assert.equal(result.uploaded, true);
-  assert.equal(result.recordCount, 4);
+  assert.equal(result.verification.status, "match");
+  assert.equal(result.verified, true);
 });
 
 test("connectedSystems reports missing Railway secrets without values", () => {
