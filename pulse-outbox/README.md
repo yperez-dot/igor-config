@@ -1,6 +1,6 @@
 # Pulse outbox — OpenClaw intake + send; Cursor drafts
 
-Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub tickets. OpenClaw keeps **intake + send**. Gmail MCP is blocked.
+Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub tickets. OpenClaw **must keep reading carrier broker mail daily** (`theiagentpulse` + carrier inboxes) and send Pulse email. Gmail MCP is blocked. Daily scan ≠ only the Monday brief.
 
 ## Handshake
 

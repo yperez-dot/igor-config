@@ -59,13 +59,14 @@ Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upl
 
 **Cursor Cloud Agent cannot read THEI inboxes or Agent Hub tickets.** Gmail MCP is blocked. Hub tickets are behind login. Do not pretend otherwise. Do not invent carrier-email items.
 
-### OpenClaw owns (must run before Cursor drafts)
+### OpenClaw owns (daily — not Monday-only)
 
-Write `pulse-outbox/INBOX-BRIEF.md` (status in `BRIEF.json` = `BRIEF_READY`):
+**Must keep reading the carrier broker inboxes** (`theiagentpulse` + carrier mail) for broker news. Daily Carrier Email Scan stays on OpenClaw. Cursor never takes this over.
 
-- `theiagentpulse` / carrier inboxes (Daily Carrier Email Scan)
-- Agent Hub tickets
-- Hub-safe alerts for `pulse-feed.json` / `/events` (still OpenClaw — put it in the Hub first)
+Monday 7:00 AM ET also write `pulse-outbox/INBOX-BRIEF.md` + `BRIEF.json` = `BRIEF_READY`:
+
+- Same inbox scan + Agent Hub tickets (rollup of the week)
+- Hub-safe alerts for `pulse-feed.json` / `/events` (Hub first, then Telegram)
 - Hector / BSI / upline = Yahoska only, never in the brief for agents
 
 ### Cursor Cloud Agent owns (public + the brief)
