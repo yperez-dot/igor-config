@@ -1,10 +1,11 @@
 export const LOOKOUT_LIVE_SCHEDULE_IDS = ["v2-igor-heartbeat", "v2-site-uptime"];
 export const EMAIL_LIVE_SCHEDULE_IDS = [
   "v2-agent-pulse",
-  "v2-industry-pulse",
   "v2-carrier-inbox-digest"
 ];
 export const LIVE_SCHEDULE_IDS = [...LOOKOUT_LIVE_SCHEDULE_IDS, ...EMAIL_LIVE_SCHEDULE_IDS];
+// Same Monday newsletter as Agent Pulse — old OpenClaw name only. Do not run both.
+export const INACTIVE_SCHEDULE_IDS = ["v2-industry-pulse"];
 
 export const legacySchedules = [
   {
@@ -133,7 +134,7 @@ export const legacySchedules = [
     taskType: "content_draft",
     cron: "0 8 * * 1",
     timezone: "America/New_York",
-    payload: { workflow: "industry_pulse_weekly", mode: "live", source: "v2" }
+    payload: { workflow: "industry_pulse_weekly", mode: "shadow", source: "v2" }
   },
   {
     id: "v2-carrier-inbox-digest",

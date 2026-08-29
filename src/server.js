@@ -7,7 +7,7 @@ import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
-import { LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
+import { INACTIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
 
@@ -84,6 +84,10 @@ for (const schedule of legacySchedules) await store.seedSchedule(schedule);
 for (const id of LIVE_SCHEDULE_IDS) {
   const schedule = legacySchedules.find((row) => row.id === id);
   if (schedule) await store.ensureActiveSchedule(schedule);
+}
+for (const id of INACTIVE_SCHEDULE_IDS) {
+  const schedule = legacySchedules.find((row) => row.id === id);
+  if (schedule) await store.ensureInactiveSchedule(schedule);
 }
 for (const schedule of await store.activeSchedules()) scheduleTask(schedule);
 const inlineWorker = String(process.env.IGOR_INLINE_WORKER ?? "true").toLowerCase() !== "false"

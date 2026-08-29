@@ -21,11 +21,12 @@ Issue numbers increment from the Hub baseline: July 13, 2026 Issue #4. Monday Au
 
 Compliance stays: no plan recommendations, no PHI, no Hector / BSI / upline.
 
+**Industry Pulse is the old OpenClaw name for this same Monday email.** It is not a second newsletter. `v2-industry-pulse` stays off so agents do not get two Monday messages.
+
 ## Related live email jobs
 
 | Job | When | Who gets mail |
 | --- | --- | --- |
-| `v2-industry-pulse` | Monday 8:00 AM ET | `INDUSTRY_PULSE_MODE=test` → Yahoska only until she flips it to `send` |
 | `v2-carrier-inbox-digest` | Daily 7:00 AM ET | Yahoska, only if the last 24 hours had carrier/urgent mail |
 | `v2-site-uptime` | Every 5 minutes | Telegram plus email to Yahoska when a site is down or recovers |
 

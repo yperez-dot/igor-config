@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EMAIL_LIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, LOOKOUT_LIVE_SCHEDULE_IDS, legacySchedules } from "../src/legacy-schedules.js";
+import { EMAIL_LIVE_SCHEDULE_IDS, INACTIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, LOOKOUT_LIVE_SCHEDULE_IDS, legacySchedules } from "../src/legacy-schedules.js";
 
 test("legacy schedules are Florida-time shadow definitions", () => {
   assert.ok(legacySchedules.length >= 6);
@@ -18,10 +18,11 @@ test("legacy schedules are Florida-time shadow definitions", () => {
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-carrier-inbox-digest").cron, "0 7 * * *");
   assert.deepEqual(EMAIL_LIVE_SCHEDULE_IDS, [
     "v2-agent-pulse",
-    "v2-industry-pulse",
     "v2-carrier-inbox-digest"
   ]);
+  assert.deepEqual(INACTIVE_SCHEDULE_IDS, ["v2-industry-pulse"]);
   assert.deepEqual(LIVE_SCHEDULE_IDS, [...LOOKOUT_LIVE_SCHEDULE_IDS, ...EMAIL_LIVE_SCHEDULE_IDS]);
+  assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-industry-pulse").payload.mode, "shadow");
   assert.ok(legacySchedules.filter((schedule) => schedule.payload.source === "openclaw").length >= 9);
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-sep-update-pipeline").cron, "0 9 * * 1");
 });

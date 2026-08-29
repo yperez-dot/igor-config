@@ -27,7 +27,7 @@ export const migrationCapabilities = [
     id: "scheduled-alerts",
     area: "Scheduled operations",
     legacy: "OpenClaw/BOSGAME cron jobs",
-    v2: "Heartbeat, site uptime, Agent Pulse, Industry Pulse, and daily carrier-inbox digest are live on Railway Igor V2",
+    v2: "Heartbeat, site uptime, Monday Agent Pulse, and daily carrier-inbox digest are live on Railway Igor V2",
     state: "testing",
     gate: "Keep SEO weekly and other unported jobs shadow until their v2 handlers exist."
   },
