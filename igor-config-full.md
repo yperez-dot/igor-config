@@ -1053,12 +1053,12 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 - Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
 - IMAP **read works** (`info@healthexps.com`).
 
-**Igor mail login (same as old OpenClaw, confirmed 2026-08-29):** `info@healthexps.com` Gmail app password is already on Igor V2 (`SMTP_*` + IMAP). He can **read**. He **cannot send** from Railway Hobby — `smtp.gmail.com:587` times out (Hobby blocks outbound SMTP). Not a missing password. SendGrid key is present but dead (0 credits); do not buy more. To send like OpenClaw: take Igor off Hobby, or use existing Zapier as the no-click workaround.
+**Igor mail (OpenClaw-style, live 2026-08-29):** Workspace is **Railway Pro**. `info@healthexps.com` Gmail app password is on Igor V2. IMAP read works. SMTP send **works** — Yahoska-only test landed (`messageId` from smtp.gmail.com). Dead SendGrid key stays off Igor V2. Do not buy SendGrid credits. Zapier is optional backup, not required.
 
 Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 
 - Igor writes the newsletter into [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) (Kind `Pulse`) and the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e).
-- **Existing Zapier** watches the Outbox and sends Gmail as `info@healthexps.com`. You do not click Send. This is not a new credit app.
+- **Igor SMTP** sends from `info@` (Pro). Notion Outbox / Zapier are optional backup.
 - Notion does not mail the list by itself. Human Gmail is backup only if the Zap is off.
 - This week’s drop: https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1
 - Leave Railway SMTP/SendGrid broken. Inbox **read** on Igor V2 IMAP stays live.

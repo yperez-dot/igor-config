@@ -1,4 +1,4 @@
-# Pulse — Igor writes it, Notion holds it, Zapier emails it
+# Pulse — Igor writes it and emails it (Railway Pro / Gmail)
 
 Yahoska (2026-08-29): **Igor (OpenClaw) owns Pulse.** Cursor is not on this job.
 
@@ -7,7 +7,7 @@ Yahoska (2026-08-29): **Igor (OpenClaw) owns Pulse.** Cursor is not on this job.
 | Who | Does |
 |---|---|
 | **Igor** | Reads carrier mail. Writes the Pulse. Drops Kind `Pulse` / Status `Ready` in the [Notion Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). |
-| **Zapier** | Sends Gmail as `info@`. Marks Sent. |
+| **Igor SMTP** | Emails from `info@`. Notion/Zapier optional backup. |
 | **You** | Nothing unless the Zap is off. |
 
 ## OpenClaw cron (Railway v2 — still shadow until SMTP is proven)
@@ -25,7 +25,7 @@ After Nov 1, 2026: `0 12 * * 1` and `15 13 * * 1` UTC.
 Manual Telegram `@Igor_theibot`:
 - Duplicate ads cron `9843178a` was **dropped 2026-08-29** on Railway (do not recreate it)
 - `Write the Pulse inbox brief`
-- `Send the Pulse outbox` — only after a Yahoska-only test lands (SendGrid is out of credits; Hobby blocks SMTP)
+- `Send the Pulse outbox` — SMTP works on Railway Pro (tested 2026-08-29, Yahoska only)
 
 ## Credentials (Igor V2 Railway vars — never in git)
 

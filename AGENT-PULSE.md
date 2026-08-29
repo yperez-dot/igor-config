@@ -2,7 +2,7 @@
 
 **Standing order (Yahoska, 2026-08-29):** **Igor (OpenClaw) does Pulse. Cursor does not.**
 
-Igor already has his own `info@healthexps.com` Gmail login (app password), same as old OpenClaw. He can read mail. Railway Hobby blocks him from *sending* SMTP. Until that box can reach Gmail SMTP, existing Zapier is the no-click send. You do not click Send. This Cursor agent is not on the Monday job.
+Igor has his own `info@healthexps.com` Gmail login (app password), same as old OpenClaw. Railway is **Pro**. He can read and send. Monday: Igor writes the Pulse and emails it. You do not click Send. This Cursor agent is not on the Monday job. Zapier is optional backup.
 
 ---
 
@@ -45,7 +45,7 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 | Who | Does |
 |---|---|
 | **Igor (OpenClaw)** | Reads carrier mail. Writes the Pulse. Drops it in [Notion Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) (Kind `Pulse`, Status `Ready`). Updates Hub if he can. Telegram when dropped. |
-| **Zapier** (existing THEI plan) | Sees `Ready` / `Test ready` → Gmail from `info@` → marks **Sent**. |
+| **Igor SMTP** | Emails the Pulse from `info@` (Pro / Gmail app password). Zapier is optional backup. |
 | **You / Katy** | Nothing, unless the Zap is off — then Send in Gmail from the Notion row. |
 | **This Cursor agent** | **Not Monday Pulse.** Do not draft. Do not drop Notion. |
 
