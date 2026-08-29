@@ -1053,7 +1053,16 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 - Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
 - IMAP **read works** (`info@healthexps.com`).
 
-To make **send** work: add SendGrid credits (or a paid SendGrid plan) **or** upgrade Railway off Hobby so Gmail SMTP can leave the box. Do not email the agent list until a Yahoska-only test lands.
+**Send path now (Yahoska 2026-08-29): Notion + Zapier**, not Railway SMTP.
+
+- Outbox DB: https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed (under THEI Dashboard)
+- Test row (Draft, you only): https://app.notion.com/p/3cb77cd3be8e8136aed0f01e54be4450
+- Zap: Notion item Status = `Test ready` → Gmail send as `info@healthexps.com` → mark `Sent`
+- Add Status `Ready` to the Zap only after the Yahoska-only test lands
+- Do not put the agent list on a Test ready row
+- SendGrid/Hobby SMTP stay broken; leave them. Zapier Gmail is the live send.
+
+Igor V2 now has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can write outbox rows. Cursor/this agent can also write rows.
 
 ### Jobs that require email (send still blocked)
 

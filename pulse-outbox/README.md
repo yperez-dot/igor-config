@@ -28,13 +28,13 @@ Manual Telegram `@Igor_theibot`:
 - `Write the Pulse inbox brief`
 - `Send the Pulse outbox` — only after a Yahoska-only test lands (SendGrid is out of credits; Hobby blocks SMTP)
 
-## Credentials (OpenClaw box — never in git)
+## Credentials (Igor V2 Railway vars — never in git)
 
-Must exist on **Railway OpenClaw**, not only old BOSGAME:
+Wired on **Igor V2** 2026-08-29 from the old `igor-config` service: `SMTP_*`, `SENDGRID_API_KEY`, `FROM_EMAIL`, `HEARTBEAT_IMAP_*`, Industry Pulse lists (`MODE=test` → Yahoska only).
 
-- `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`
-- Recipient list: existing Agent Pulse / Industry Pulse list (`PULSE_TO` / `PULSE_LIST_FILE`). **Not** in this repo.
-- SMTP proof: `python3 pulse-outbox/test-smtp-openclaw.py` → `yperez@healthexps.com` only. Do not use the agent list for tests.
+- **Read:** IMAP on `info@` works.
+- **Send:** Notion [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) + Zapier Gmail as `info@`. Railway SMTP/SendGrid stay blocked.
+- Test row: Status `Test ready` → `yperez@healthexps.com` only. Agent list only on Status `Ready` after the test lands.
 
 ## READY.json
 

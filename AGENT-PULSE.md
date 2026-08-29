@@ -47,7 +47,7 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 3. **Compliance pass** (see rules).
 4. **Publish to Agent Hub first** — Hub is the source of truth.
 5. **Write the OpenClaw outbox** (`pulse-outbox/READY.json` + `latest.html`) and push it.
-6. **OpenClaw sends the email** (SMTP only). Cursor does not send Gmail.
+6. **Send via Notion Outbox + Zapier Gmail** (Railway SMTP/SendGrid are blocked). Write a row on [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). Test = Status `Test ready` to `yperez@` only. Agent blast = Status `Ready` only after Yahoska confirms the test.
 7. **Telegram Yahoska** when OpenClaw confirms SENT — or fail-open to Yahoska + Katy.
 8. **Log** the run (date, issue #, Hub URL, email status) in `IGOR_MEMORY` / this file's run log if present.
 
@@ -135,7 +135,7 @@ Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
 | Hub pulse-feed / events from those inboxes | **OpenClaw** (Hub first, then Telegram) |
 | Inbox brief (`pulse-outbox/INBOX-BRIEF.md`) | **OpenClaw** — Monday **7:00 AM ET** |
 | Public-source draft + Hub edition page + READY.json | Cursor Cloud Agent — Monday **8:00 AM ET** |
-| SMTP blast from `info@healthexps.com` | **OpenClaw** — Monday **8:15 AM ET** |
+| Email blast from `info@healthexps.com` | **Notion Outbox + Zapier Gmail** — Monday **8:15 AM ET** (Railway SMTP/SendGrid blocked) |
 | Human Send if OpenClaw send fails | Yahoska or Katy from Gmail |
 
 **Outbox contract:** `pulse-outbox/README.md`  
