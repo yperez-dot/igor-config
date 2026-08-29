@@ -1,7 +1,10 @@
 import { runSalesTrackerSync } from "./sales-sync.js";
 import { runIndustryPulseWeekly } from "./industry-pulse.js";
+import { runAgentPulseWeekly } from "./agent-pulse.js";
+import { runCarrierInboxDigest } from "./carrier-digest.js";
 import { runHeartbeat } from "./heartbeat.js";
 import { runSiteLookout } from "./lookout.js";
+import { sendOpsAlert } from "./email.js";
 
 function salesTrackerMessage(result, environment) {
   return result.status === "aborted"
@@ -17,9 +20,31 @@ function industryPulseMessage(result) {
   return `✅ Industry Pulse ${result.status}: ${summaries.join("; ")}.`;
 }
 
+function agentPulseMessage(result) {
+  if (result.status === "dry_run") {
+    return `✅ Agent Pulse dry-run: Issue #${result.issue} (${result.length} chars, ${result.findingCount} inbox items).`;
+  }
+  const hub = result.hub?.status === "published"
+    ? " Hub ticker updated."
+    : result.hub?.status === "failed"
+      ? " Hub ticker failed."
+      : "";
+  return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).${hub}`;
+}
+
+function carrierDigestMessage(result) {
+  if (result.status === "clear") return "✅ Carrier inbox digest: clear (no email).";
+  if (result.status === "dry_run") return `✅ Carrier inbox digest dry-run: ${result.findingCount} item(s).`;
+  if (result.status === "skipped") return `✅ Carrier inbox digest skipped: ${result.reason}.`;
+  const hub = result.hub?.status === "published" ? " Hub ticker updated." : "";
+  return `✅ Carrier inbox digest sent: ${result.findingCount} item(s).${hub}`;
+}
+
 export const WORKER_WORKFLOWS = new Set([
   "sales_tracker_sync",
   "industry_pulse_weekly",
+  "agent_pulse_weekly",
+  "carrier_inbox_digest",
   "igor_heartbeat",
   "site_uptime"
 ]);
@@ -28,13 +53,22 @@ export function isWorkerWorkflow(payload) {
   return WORKER_WORKFLOWS.has(payload?.workflow);
 }
 
+function withModeOverride(environment, task, key) {
+  const mode = task.payload?.mode;
+  if (!mode || mode === "live" || mode === "shadow" || mode === "report-only") return environment;
+  return { ...environment, [key]: mode };
+}
+
 export async function processTask(task, {
   environment = process.env,
   notify = async () => {},
   runSalesSync = runSalesTrackerSync,
   runIndustryPulse = runIndustryPulseWeekly,
+  runAgentPulse = runAgentPulseWeekly,
+  runCarrierDigest = runCarrierInboxDigest,
   runHeartbeatFn = runHeartbeat,
   runSiteLookoutFn = runSiteLookout,
+  emailOps = sendOpsAlert,
   store
 } = {}) {
   const workflow = task.payload?.workflow;
@@ -60,8 +94,26 @@ export async function processTask(task, {
   }
 
   if (workflow === "industry_pulse_weekly") {
-    const result = await runIndustryPulse({ environment });
+    const result = await runIndustryPulse({
+      environment: withModeOverride(environment, task, "INDUSTRY_PULSE_MODE")
+    });
     await notify(industryPulseMessage(result));
+    return result;
+  }
+
+  if (workflow === "agent_pulse_weekly") {
+    const result = await runAgentPulse({
+      environment: withModeOverride(environment, task, "AGENT_PULSE_MODE")
+    });
+    await notify(agentPulseMessage(result));
+    return result;
+  }
+
+  if (workflow === "carrier_inbox_digest") {
+    const result = await runCarrierDigest({
+      environment: withModeOverride(environment, task, "CARRIER_DIGEST_MODE")
+    });
+    await notify(carrierDigestMessage(result));
     return result;
   }
 
@@ -93,6 +145,15 @@ export async function processTask(task, {
     });
     if (result.shouldNotify && result.alert) {
       await notify(result.alert);
+      try {
+        result.email = await emailOps({
+          environment,
+          subject: result.recovered ? "Igor: website recovered" : "Igor: website alert",
+          text: result.alert
+        });
+      } catch (error) {
+        result.email = { status: "failed", reason: error.message };
+      }
       if (store) {
         await store.record("site_uptime.lookout", "igor", {
           fingerprint: result.fingerprint,

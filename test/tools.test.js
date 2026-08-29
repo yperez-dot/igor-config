@@ -10,6 +10,12 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({}).includes("ghl_stale_leads"), false);
   assert.equal(names({ GHL_API_TOKEN: "token" }).includes("ghl_stale_leads"), true);
   assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("github_get"), true);
+  assert.equal(names({
+    HEARTBEAT_IMAP_USER: "info@healthexps.com",
+    HEARTBEAT_IMAP_PASS: "x",
+    GITHUB_TOKEN: "gh"
+  }).includes("update_hub_sneak_peeks"), true);
+  assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("update_hub_sneak_peeks"), false);
   assert.equal(names({}).includes("memory_search"), true);
   assert.equal(names({}).includes("memory_remember"), true);
   assert.equal(names({}).includes("list_schedules"), true);

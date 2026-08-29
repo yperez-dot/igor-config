@@ -26,6 +26,8 @@ import { connectedSystems, DEFAULT_OLICOMM_BASE_URL } from "./systems.js";
 import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 import { legacySchedules } from "./legacy-schedules.js";
 import { runLookout } from "./lookout.js";
+import { runSneakPeekUpdate } from "./hub-sneak-peeks.js";
+import { hasPulseInbox, imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
@@ -338,7 +340,15 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("imap")) {
-    tools.push(functionTool("inbox_status", "Report whether leadership IMAP heartbeat credentials are configured. Does not dump email bodies.", {
+    tools.push(functionTool("inbox_status", "Report whether IMAP is configured for theiagentpulse@gmail.com (forwarded inbox) and info@. Does not dump email bodies.", {
+      type: "object",
+      properties: {},
+      additionalProperties: false
+    }));
+  }
+
+  if (connected.has("imap") && connected.has("github")) {
+    tools.push(functionTool("update_hub_sneak_peeks", "Publish broker sneak peeks to the Agent Hub Carrier Info card. Scans info@ for sneak-peek / B-PAG / benefits-reveal mail. If this turn has a Telegram file (xlsx/pdf/jpg), upload that instead. Does not invent benefits. Does not dump email bodies. Standing-approved when Yahoska asks to update sneak peeks.", {
       type: "object",
       properties: {},
       additionalProperties: false
@@ -470,7 +480,7 @@ export async function executeTool(name, rawArgs, {
     if (name === "list_schedules") {
       const live = store ? await store.allSchedules() : [];
       return {
-        note: "Legacy jobs are seeded inactive (shadow) on v2 until Yahoska turns them on. Live lookout: v2-site-uptime every 5 min (websites) and v2-igor-heartbeat every 30 min (ads token).",
+        note: "Legacy jobs are seeded inactive (shadow) on v2 until turned on. Live: site uptime every 5 min, heartbeat every 30 min, daily carrier inbox digest at 7:00 ET, Agent Pulse (THE Health Experts Insider) Mondays at 8:00 ET. Pulse and same-day carrier notices update the Agent Hub live ticker. Sneak peeks on Carrier Info update when she asks. Industry Pulse is the old name for that same Monday email — it is not a second send.",
         live: live.map((row) => ({
           id: row.id,
           cron: row.cron,
@@ -846,12 +856,20 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "inbox_status") {
+      const accounts = imapAccounts(environment);
       return {
-        configured: true,
+        configured: accounts.length > 0,
         user: environment.HEARTBEAT_IMAP_USER,
+        mailboxes: accounts.map((account) => account.user),
+        pulseInbox: PULSE_INBOX,
+        pulseConfigured: hasPulseInbox(environment),
         host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
-        note: "IMAP bodies are not dumped into Telegram. Use the scheduled heartbeat worker for carrier-mail summaries."
+        note: "Igor reads theiagentpulse@gmail.com (forwards from Yahoska’s other emails). Send-from stays info@. IMAP bodies are not dumped into Telegram."
       };
+    }
+
+    if (name === "update_hub_sneak_peeks") {
+      return runSneakPeekUpdate({ environment, pendingAttachment });
     }
 
     if (name === "calendar_list_events") {

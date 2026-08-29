@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { calendarConfig, listUpcomingEvents } from "./calendar.js";
+import { scanAllAccounts } from "./imap-accounts.js";
 import { formatLookoutAlert, runLookout, shouldNotifyLookout } from "./lookout.js";
 
 const CARRIER_HINTS = [
@@ -32,11 +33,68 @@ export function classifyMessage({ from = "", subject = "" }) {
   return null;
 }
 
+export function extractMailText(source, { maxChars = 1500 } = {}) {
+  const raw = Buffer.isBuffer(source) ? source.toString("utf8") : String(source ?? "");
+  if (!raw.trim()) return "";
+
+  const plainPart = raw.match(/Content-Type:\s*text\/plain\b[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\nContent-Type:|$)/i);
+  const htmlPart = raw.match(/Content-Type:\s*text\/html\b[\s\S]*?\r?\n\r?\n([\s\S]*?)(?=\r?\n--|\r?\nContent-Type:|$)/i);
+  let text = plainPart?.[1] ?? "";
+  if (!text.trim() && htmlPart?.[1]) {
+    text = htmlPart[1].replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
+  }
+  if (!text.trim()) {
+    const [, ...rest] = raw.split(/\r?\n\r?\n/);
+    text = rest.join("\n\n").replace(/<[^>]+>/g, " ");
+  }
+
+  return text
+    .replace(/=\r?\n/g, "")
+    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxChars);
+}
+
+async function readMessageSource(client, uid) {
+  if (typeof client.download === "function") {
+    const downloaded = await client.download(uid, undefined, { uid: true });
+    const stream = downloaded?.content ?? downloaded;
+    if (stream && typeof stream[Symbol.asyncIterator] === "function") {
+      const chunks = [];
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      return Buffer.concat(chunks);
+    }
+    if (Buffer.isBuffer(stream) || typeof stream === "string") return stream;
+  }
+
+  if (typeof client.fetch === "function") {
+    for await (const message of client.fetch({ uid: String(uid) }, { uid: true, source: true })) {
+      if (message.source) return message.source;
+    }
+  }
+  return "";
+}
+
+export function mailboxSearchQuery({
+  lookbackMinutes = 35,
+  now = new Date(),
+  unseenOnly = true
+} = {}) {
+  const since = new Date(now.getTime() - Number(lookbackMinutes) * 60 * 1000);
+  return unseenOnly ? { seen: false, since } : { since };
+}
+
 export async function scanMailbox({
   user,
   pass,
   host = "imap.gmail.com",
   lookbackMinutes = 35,
+  unseenOnly = true,
+  includeBodies = false,
+  now = new Date(),
   imapFactory = (options) => new ImapFlow(options)
 }) {
   const client = imapFactory({
@@ -47,18 +105,34 @@ export async function scanMailbox({
   });
 
   await client.connect();
-  const since = new Date(Date.now() - lookbackMinutes * 60 * 1000);
   const findings = [];
 
   try {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      for await (const message of client.fetch({ seen: false, since }, { envelope: true })) {
+      for await (const message of client.fetch(mailboxSearchQuery({ lookbackMinutes, now, unseenOnly }), { envelope: true, uid: true })) {
         const from = message.envelope.from?.map((entry) => entry.address).join(", ") ?? "";
         const subject = message.envelope.subject ?? "";
         const kind = classifyMessage({ from, subject });
         if (kind) {
-          findings.push({ kind, from, subject, date: message.envelope.date?.toISOString?.() ?? null });
+          findings.push({
+            uid: message.uid,
+            kind,
+            from,
+            subject,
+            date: message.envelope.date?.toISOString?.() ?? null
+          });
+        }
+      }
+
+      if (includeBodies) {
+        for (const finding of findings.slice(0, 40)) {
+          if (finding.uid == null) continue;
+          try {
+            finding.snippet = extractMailText(await readMessageSource(client, finding.uid));
+          } catch {
+            // Subject-only is still useful if the body cannot be read.
+          }
         }
       }
     } finally {
@@ -109,19 +183,16 @@ export async function runHeartbeat({
     };
   }
 
-  const user = environment.HEARTBEAT_IMAP_USER;
-  const pass = environment.HEARTBEAT_IMAP_PASS;
   const calendarAlerts = String(environment.HEARTBEAT_CALENDAR_ALERTS ?? "").toLowerCase() === "true";
   const calendarReady = calendarAlerts && calendarConfig(environment).connected;
 
-  const findings = user && pass
-    ? await scanInbox({
-      user,
-      pass,
-      host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
+  const findings = (await scanAllAccounts({
+    environment,
+    scanOne: scanInbox,
+    options: {
       lookbackMinutes: Number(environment.HEARTBEAT_LOOKBACK_MINUTES ?? 35)
-    })
-    : [];
+    }
+  })).findings;
 
   let upcomingCalendar = [];
   let calendarError = null;

@@ -106,3 +106,65 @@ test("site uptime lookout pings Telegram when healthexps.com is down", async () 
   assert.match(notifications[0], /healthexps.com looks down/);
   assert.equal(events[0].type, "site_uptime.lookout");
 });
+
+test("processes agent pulse weekly tasks", async () => {
+  const notifications = [];
+  const result = await processTask(
+    { payload: { workflow: "agent_pulse_weekly" } },
+    {
+      runAgentPulse: async () => ({
+        status: "sent",
+        issue: 11,
+        recipientCount: 1,
+        findingCount: 2
+      }),
+      notify: async (message) => notifications.push(message)
+    }
+  );
+  assert.equal(result.status, "sent");
+  assert.match(notifications[0], /Issue #11/);
+});
+
+test("processes carrier inbox digest tasks", async () => {
+  const notifications = [];
+  const result = await processTask(
+    { payload: { workflow: "carrier_inbox_digest" } },
+    {
+      runCarrierDigest: async () => ({
+        status: "clear",
+        emailed: false,
+        findingCount: 0
+      }),
+      notify: async (message) => notifications.push(message)
+    }
+  );
+  assert.equal(result.status, "clear");
+  assert.match(notifications[0], /clear/);
+});
+
+test("emails Yahoska when a site-uptime alert fires", async () => {
+  const emails = [];
+  const result = await processTask(
+    { payload: { workflow: "site_uptime" } },
+    {
+      runSiteLookoutFn: async () => ({
+        status: "actionable",
+        shouldNotify: true,
+        recovered: false,
+        fingerprint: "healthexps:down",
+        alert: "Heads up. healthexps.com looks down from here (HTTP 502). I'm watching it."
+      }),
+      store: {
+        async latestEvent() { return null; },
+        async record() {}
+      },
+      emailOps: async (payload) => {
+        emails.push(payload);
+        return { status: "sent", recipientCount: 1 };
+      },
+      notify: async () => {}
+    }
+  );
+  assert.equal(result.email.status, "sent");
+  assert.equal(emails[0].subject, "Igor: website alert");
+});

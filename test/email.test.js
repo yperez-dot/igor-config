@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseRecipientList, smtpConfig, validateSmtpConfig } from "../src/email.js";
+import { opsAlertRecipients, parseRecipientList, smtpConfig, validateSmtpConfig } from "../src/email.js";
 
 test("parses comma-separated recipient lists", () => {
   assert.deepEqual(parseRecipientList("a@example.com, b@example.com"), [
@@ -18,6 +18,13 @@ test("requires core smtp settings", () => {
     fromEmail: "info@example.com",
     sendgridApiKey: "sg.test"
   }));
+});
+
+test("ops alerts go to the test mailbox when configured", () => {
+  assert.deepEqual(
+    opsAlertRecipients({ INDUSTRY_PULSE_TEST_TO: "yperez@healthexps.com" }),
+    ["yperez@healthexps.com"]
+  );
 });
 
 test("SendGrid defaults FROM_EMAIL to info@healthexps.com", () => {
