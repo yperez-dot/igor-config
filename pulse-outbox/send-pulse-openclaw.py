@@ -60,7 +60,7 @@ def smtp_settings() -> tuple[str, int, str, str]:
     port = int(os.environ.get("SMTP_PORT") or merged.get("SMTP_PORT") or 587)
     if not password:
         raise SystemExit(
-            "No SMTP password. Expected industry-pulse-email.env or smtp.env on BOSGAME."
+            "No SMTP password. Expected industry-pulse-email.env or smtp.env on Railway OpenClaw."
         )
     return host, port, user, password
 
@@ -81,7 +81,7 @@ def recipients(ready: dict) -> list[str]:
     if isinstance(to, str) and to not in ("", "USE_BOSGAME_PULSE_LIST"):
         return [a.strip() for a in to.split(",") if a.strip()]
     raise SystemExit(
-        "No recipient list. Set PULSE_TO or PULSE_LIST_FILE on BOSGAME "
+        "No recipient list. Set PULSE_TO or PULSE_LIST_FILE on Railway OpenClaw "
         "(same list as last week's Agent Pulse)."
     )
 

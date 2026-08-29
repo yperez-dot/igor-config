@@ -140,8 +140,9 @@ Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
 
 **Outbox contract:** `pulse-outbox/README.md`  
 **Script OpenClaw runs:** `pulse-outbox/send-pulse-openclaw.py`  
-**Credentials (BOSGAME only):** `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`  
-**List:** same Agent Pulse / Industry Pulse list OpenClaw used last week (`PULSE_TO` or `PULSE_LIST_FILE` on BOSGAME — not in git)
+**Credentials (Railway OpenClaw — not only old BOSGAME):** `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`  
+**List:** same Agent Pulse / Industry Pulse list OpenClaw used last week (`PULSE_TO` or `PULSE_LIST_FILE` — not in git)  
+**SMTP proof before enabling the send cron:** `python3 pulse-outbox/test-smtp-openclaw.py` → `yperez@healthexps.com` only
 
 **OpenClaw crons (ET):** 7:00 inbox/ticket brief · 8:15 SMTP send.
 

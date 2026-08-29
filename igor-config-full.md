@@ -1021,8 +1021,8 @@ AvMed Medicare **ended December 31, 2025** (NOT 2026). Use past tense. CMS TPMO 
 
 ## � (Added 2026-07-27)
 healthexps.com AND agentmedicarehub.com cannot go down without immediate alert.
-- **Uptime monitor:** `/opt/igor/site-health/uptime-monitor.py` — runs every 5 min via cron
-- **Alert:** Telegram to Yahoska (8882265752) instantly on down + recovery
+- **Uptime monitor (LIVE on Railway v2):** every 5 min — healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. (Old BOSGAME path `/opt/igor/site-health/uptime-monitor.py` is catalog only.)
+- **Alert:** page/Telegram — not email
 - **Agent Hub deploy root:** always zip `hub-migration/pages/` as root + `hub-migration/files/` as `/files/` — NOT the full `hub-migration/` dir (caused 404 outage Jul 27)
 - **If either site goes down:** check Netlify deploy state first, redeploy immediately, then investigate root cause
 
@@ -1044,17 +1044,42 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 |---|---|---|---|
 | **Site uptime** | every 5 min | **No** | healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. |
 | **Ads heartbeat** | every 30 min | **No** | Pages Yahoska if the Facebook token dies. |
-| **Ads heartbeat DUPLICATE** | every 30 min | **No** | Same job, duplicate id `9843178a`. Noise, not extra coverage. **Delete one copy.** |
+| **Ads heartbeat DUPLICATE** | — | **No** | Id `9843178a`. **DROP CONFIRMED Yahoska 2026-08-29.** Noise, not extra coverage. OpenClaw must run `openclaw cron rm 9843178a` (or `openclaw cron disable 9843178a`). This Cursor agent cannot mutate Railway crons until Railway CLI is signed in. |
 
-**None of the live Railway jobs send or read email.**
+**None of the live Railway jobs send or read email.** They page/Telegram only.
 
-### Shadow (seeded off — not running on v2)
+### Jobs that require email (must work — currently shadow)
 
-Includes the old catalog: Daily Carrier Email Scan, Agent Pulse brief/send, SEO Weekly, Site Health email, Industry Pulse, weekly agent sales reports (**Fri 10 AM**), sales-tracker sync (**Mon 7 AM**), Lead Digest, blog crons, Weekly Update Monitor, etc.
+These are the ones Yahoska said must have working mail. They are **seeded off on Railway v2**. Last week's Pulse still went out because regular Gmail / old OpenClaw SMTP still works — not because these v2 jobs are live.
+
+| Job | Needs | Proof it works |
+|---|---|---|
+| **Daily Carrier Email Scan** | **Read** `theiagentpulse` + carrier broker inboxes | OpenClaw can list today's broker mail (no invented items) |
+| **Agent Pulse inbox brief** (Mon 7:00 ET) | **Read** same inboxes + Hub tickets | Writes `pulse-outbox/INBOX-BRIEF.md` |
+| **Agent Pulse send** (Mon 8:15 ET) | **Send** SMTP from `info@healthexps.com` | One-line test to `yperez@healthexps.com` only, then Monday blast |
+| **SEO Weekly** fail/alert mail | **Send** SMTP to `yperez@healthexps.com` | Fail-mail path uses same `smtp.env` |
+| **Site Health** fail mail | **Send** SMTP or SendGrid (`sendgrid-thei.env`) | Fail-mail path; clean runs stay Notion-only |
+
+Other catalog jobs (Industry Pulse, weekly sales reports, Lead Digest, etc.) stay shadow until Yahoska turns them on. Do **not** enable the duplicate ads heartbeat.
+
+### Make email work on Railway (OpenClaw — do this in order)
+
+Cursor Cloud Agent **cannot** read or send healthexps.com mail (Gmail MCP blocked). OpenClaw owns SMTP + inbox.
+
+1. **Drop the duplicate:** `openclaw cron rm 9843178a`
+2. **Confirm creds on the Railway OpenClaw box** (not only old BOSGAME):
+   - `~/.openclaw/credentials/industry-pulse-email.env` **or** `~/.openclaw/secrets/smtp.env`
+   - SMTP `smtp.gmail.com:587` · From `info@healthexps.com`
+   - Recipient list: `PULSE_TO` or `PULSE_LIST_FILE` (same list as week of Aug 24 — not in git)
+3. **Test send (Yahoska only, never the agent list):** run `pulse-outbox/test-smtp-openclaw.py` — one line to `yperez@healthexps.com`.
+4. **Test read:** OpenClaw opens `theiagentpulse` + one carrier inbox and writes a 5-line proof (date, from, subject). No Hub post from the test.
+5. **Then turn on** Daily Carrier Email Scan + Pulse brief/send on v2. Leave SEO/Site-Health fail-mail off until the test send lands.
+
+Telegram `@Igor_theibot` if the gateway is easier than SSH:
+
+`Delete cron 9843178a. Then confirm smtp.env on Railway, send one-line test to yperez@healthexps.com only, then enable Daily Carrier Email Scan and Monday Pulse send.`
 
 A Friday sales ping did **not** come from this Railway crontab.
-
-**Still required, but not a live Railway job yet:** OpenClaw (or a new Railway job) must **read carrier broker inboxes** and **send Agent Pulse**. Until those are turned on in v2, they only happen if someone runs them by hand or on old OpenClaw.
 
 ## 📬 OpenClaw owns carrier-inbox read (locked 2026-08-29 — Yahoska)
 
@@ -1904,7 +1929,7 @@ crontab -l | grep seo-weekly
 - Cron UTC while EDT: `0 12 * * 1`
 - Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
 
-**Split (Yahoska 2026-08-29):** Cursor **cannot** read carrier inboxes or Agent Hub tickets (Gmail MCP blocked). **OpenClaw reads carrier broker mail daily** (`theiagentpulse` + carrier inboxes) and sends Pulse email. Monday: inbox/ticket brief 7:00 → Cursor drafts 8:00 → OpenClaw SMTP 8:15. Gmail MCP stays unused.
+**Split (Yahoska 2026-08-29):** Cursor **cannot** read carrier inboxes or Agent Hub tickets (Gmail MCP blocked). Carrier-inbox read + Pulse send are **required** but **not live on Railway v2** (shadow). Until a v2 job is turned on, they only run if OpenClaw does them by hand. Gmail MCP stays unused.
 
 **Send order:** OpenClaw inbox/ticket brief 7:00 → Cursor draft/Hub/outbox 8:00 (no invented inbox news) → OpenClaw SMTP 8:15. If OpenClaw fails, ping Yahoska + Katy (never silent).
 
@@ -1912,7 +1937,8 @@ crontab -l | grep seo-weekly
 
 **Email:**
 - OpenClaw script: `pulse-outbox/send-pulse-openclaw.py`
-- Creds on BOSGAME: `industry-pulse-email.env` / `smtp.env`
+- Creds on Railway OpenClaw (not only old BOSGAME): `industry-pulse-email.env` / `smtp.env`
+- SMTP proof: `pulse-outbox/test-smtp-openclaw.py` → `yperez@healthexps.com` only — do this before enabling the Monday send cron
 - Crons: Mon 7:00 AM inbox brief (`0 11 * * 1` UTC EDT) · Mon 8:15 AM send (`15 12 * * 1` UTC EDT)
 - Manual: Telegram `@Igor_theibot` — `Write the Pulse inbox brief` / `Send the Pulse outbox`
 - Fail-open: https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e

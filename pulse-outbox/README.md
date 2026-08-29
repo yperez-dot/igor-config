@@ -11,7 +11,7 @@ Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub ticket
 | **OpenClaw** | Mon 8:15 AM | SMTP-send `latest.html` from `info@healthexps.com` if `READY.json` is `READY`. Write `SENT.json`. Telegram Yahoska. |
 | Yahoska / Katy | If send fails | Hit Send in Gmail from the Notion Send Desk |
 
-## OpenClaw cron (BOSGAME)
+## OpenClaw cron (Railway v2 — still shadow until SMTP is proven)
 
 ```bash
 # 7:00 AM ET — inbox + Hub tickets brief (0 11 * * 1 UTC while EDT)
@@ -24,13 +24,18 @@ Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub ticket
 After Nov 1, 2026: `0 12 * * 1` and `15 13 * * 1` UTC.
 
 Manual Telegram `@Igor_theibot`:
+- `Delete cron 9843178a` (duplicate ads heartbeat — Yahoska drop 2026-08-29)
+- `Confirm smtp.env on Railway, then run pulse-outbox/test-smtp-openclaw.py` (Yahoska only)
 - `Write the Pulse inbox brief`
 - `Send the Pulse outbox`
 
-## Credentials (BOSGAME only — never in git)
+## Credentials (OpenClaw box — never in git)
+
+Must exist on **Railway OpenClaw**, not only old BOSGAME:
 
 - `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`
-- Recipient list: existing Agent Pulse / Industry Pulse list on BOSGAME (`PULSE_TO` / whatever file last week’s send used). **Not** in this repo.
+- Recipient list: existing Agent Pulse / Industry Pulse list (`PULSE_TO` / `PULSE_LIST_FILE`). **Not** in this repo.
+- SMTP proof: `python3 pulse-outbox/test-smtp-openclaw.py` → `yperez@healthexps.com` only. Do not use the agent list for tests.
 
 ## READY.json
 
