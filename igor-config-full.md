@@ -1860,17 +1860,19 @@ crontab -l | grep seo-weekly
 - Cron UTC while EDT: `0 12 * * 1`
 - Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
 
-**Send order:** research → draft → compliance pass → **Hub first** → Notion Send Desk → attempt email → if email fails, ping Yahoska + Katy immediately (never silent).
+**Split (Yahoska 2026-08-29):** Cursor Cloud Agent = research / draft / Hub / outbox. **OpenClaw = emails only** (SMTP `info@healthexps.com`). Gmail MCP is blocked — do not use it.
 
-**Hub:** https://agentmedicarehub.com/agent-pulse · repo `yperez-dot/agent-medicare-hub` · `pages/pulse-YYYY-MM-DD.html` + `files/pulse-feed.json` `weekly_pulses`
+**Send order:** research → draft → compliance → Hub → Notion Send Desk → write `pulse-outbox/` → OpenClaw sends at 8:15 AM ET. If OpenClaw fails, ping Yahoska + Katy (never silent).
 
-**Email (Tier 0 — do not depend on OpenClaw SMTP alone):**
-- From: `info@healthexps.com`
-- Gmail MCP: **blocked 2026-08-29** (Google “not authorized” + Cursor Cloud OAuth bug). Do not wait on it.
-- Optional later: connect from https://cursor.com/agents → MCP Servers → Gmail → Login; if still blocked, Workspace admin must allow Cursor.
-- Fallback attempt: OpenClaw SMTP (`industry-pulse-email.env`) — known unreliable; try once
-- Fail-open: Notion Send Desk https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e + Telegram Yahoska and Katy
-- Sunday 6:00 PM ET preflight (`0 22 * * 0` UTC while EDT) — test to yperez@ only. If the test fails, she knows before Monday.
+**Hub:** https://agentmedicarehub.com/agent-pulse · repo `yperez-dot/agent-medicare-hub`
+
+**Email:**
+- OpenClaw script: `pulse-outbox/send-pulse-openclaw.py`
+- Creds on BOSGAME: `industry-pulse-email.env` / `smtp.env`
+- Cron: Monday 8:15 AM ET (`15 12 * * 1` UTC while EDT)
+- Manual: Telegram `@Igor_theibot` — `Send the Pulse outbox`
+- Fail-open: https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
+- Sunday 6:00 PM ET: tell OpenClaw `Send Pulse preflight to yperez@ only`
 
 **Last send:** week of August 24, 2026 (email — Yahoska confirmed). Hub archive is stale (still lists July 13 as Latest). Next send: Monday August 31. Increment issue # from the last **email**, not from Hub. If a Monday is missed, send the same-week digest ASAP — do not skip the week.
 

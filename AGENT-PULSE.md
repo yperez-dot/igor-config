@@ -46,8 +46,9 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 2. **Draft** the edition in the established format.
 3. **Compliance pass** (see rules).
 4. **Publish to Agent Hub first** — Hub is the source of truth.
-5. **Email** the digest to the Agent Pulse list.
-6. **Telegram Yahoska** with the Hub link + confirmation it went out.
+5. **Write the OpenClaw outbox** (`pulse-outbox/READY.json` + `latest.html`) and push it.
+6. **OpenClaw sends the email** (SMTP only). Cursor does not send Gmail.
+7. **Telegram Yahoska** when OpenClaw confirms SENT — or fail-open to Yahoska + Katy.
 7. **Log** the run (date, issue #, Hub URL, email status) in `IGOR_MEMORY` / this file's run log if present.
 
 Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upline private items to the Hub or the Pulse.
@@ -114,40 +115,50 @@ Repo: `yperez-dot/agent-medicare-hub`
 
 ---
 
-## Email send — reliability ladder (Pulse is Tier 0)
+## Email send — OpenClaw only (Yahoska 2026-08-29)
 
-OpenClaw SMTP (`industry-pulse-email.env` / `smtp.env` → info@healthexps.com) has been **unreliable**. The Pulse must not depend on that one path.
+**Yes: keep OpenClaw for the emails.** Cursor Cloud Agent does not send the blast. Gmail MCP is blocked (`not authorized`) — ignore it.
 
-**From:** `info@healthexps.com`  
-**To:** existing Agent Pulse / Industry Pulse contracted-agent list (do not invent a new list)  
-**Subject:** `THEI Agent Pulse · Week of [Month D] · Issue #N`  
-**Body:** full talking points in the email (Hey Team + ACTION items), not a link-only teaser. Hub link at the top.
+| Role | Who |
+|---|---|
+| Research, draft, Hub, Notion Send Desk, outbox | Cursor Cloud Agent |
+| SMTP from `info@healthexps.com` to the agent list | **OpenClaw on BOSGAME** |
+| Human Send if OpenClaw fails | Yahoska or Katy from Gmail |
 
-**Notion Send Desk:** keep the live failsafe copy here so Yahoska or Katy can hit send from Gmail in two minutes:  
-https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
+**Outbox contract:** `pulse-outbox/README.md`  
+**Script OpenClaw runs:** `pulse-outbox/send-pulse-openclaw.py`  
+**Credentials (BOSGAME only):** `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`  
+**List:** same Agent Pulse / Industry Pulse list OpenClaw used last week (`PULSE_TO` or `PULSE_LIST_FILE` on BOSGAME — not in git)
 
-### Attempt order (stop when agents have the email)
+**OpenClaw cron:** Monday **8:15 AM Eastern** (15 minutes after Cursor writes the outbox).
 
-1. **Hub first** — publish the edition. Agents can read it even if inbox fails. Not a substitute for email.
-2. **Write the full send-ready copy to the Notion Send Desk** before attempting SMTP.
-3. **Gmail MCP — BLOCKED as of 2026-08-29.** Google returns “not authorized” for healthexps.com. Cursor Cloud Google OAuth is also a known broken redirect. Do **not** block the Pulse on this. Optional later: connect from https://cursor.com/agents → MCP Servers → Gmail → Login (not the desktop Authenticate button). If Google still says not authorized, Workspace admin must allow Cursor under admin.google.com → Security → Access and data control → API controls.
-4. **OpenClaw SMTP** — `smtp.gmail.com:587` / `industry-pulse-email.env`. Try once. If it errors, do not retry in a loop.
-5. **Fail-open to humans, never silent:**
-   - Post in the Igor Cloud Agent chat (Yahoska gets the notification).
-   - Telegram Yahoska **and** Katy: Hub URL + Notion Send Desk + exact subject line + “email path failed — please hit Send.”
-   - Do **not** mark the week done until someone replies `Pulse sent` or the sent-mail copy is visible.
+```bash
+15 12 * * 1  # UTC while EDT — pull igor-config and run send-pulse-openclaw.py
+```
 
-### Sunday 6:00 PM ET preflight (mandatory)
+Manual: Telegram `@Igor_theibot` — `Send the Pulse outbox`.
+
+**Notion Send Desk (human fail-open):** https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
+
+### Attempt order
+
+1. **Hub first**
+2. **Notion Send Desk** — full send-ready copy
+3. **Write `pulse-outbox/READY.json` + `latest.html`** and push
+4. **OpenClaw SMTP** — one send via the script. If it errors, do not retry in a loop.
+5. **If OpenClaw is silent or fails:** ping Yahoska **and** Katy with Hub + Send Desk + subject. Do not mark the week done until `SENT.json` exists or someone replies `Pulse sent`.
+
+### Sunday 6:00 PM ET preflight
 
 Cron (UTC, EDT): `0 22 * * 0`
 
-1. Confirm the Monday timer still exists; recreate if missing.
-2. Probe every email path (Gmail MCP connected? SMTP reachable?).
-3. If **any** path works: send a one-line test to `yperez@healthexps.com` only — subject `THEI Pulse preflight OK · [date]`. Do not email the agent list on Sunday.
-4. If **no** path works: update the Notion Send Desk to `PREFLIGHT FAIL` and ping Yahoska immediately so Monday morning is not the first time we find out.
+1. Confirm the Monday Cursor timer still exists.
+2. Remind Yahoska (this chat): tell Telegram `@Igor_theibot` — `Send Pulse preflight to yperez@ only`.
+3. OpenClaw sends a one-line test to `yperez@healthexps.com` only. Do not email the agent list on Sunday.
+4. If no test arrives: Send Desk → `PREFLIGHT FAIL`. Monday still publishes; humans hit Send if OpenClaw is down.
 5. Re-subscribe the Sunday timer if it expired.
 
-After Nov 1, 2026 (DST end): Sunday cron becomes `0 23 * * 0` (still 6:00 PM ET).
+After Nov 1, 2026: Sunday cron `0 23 * * 0`; OpenClaw Monday cron `15 13 * * 1` UTC.
 
 ---
 
