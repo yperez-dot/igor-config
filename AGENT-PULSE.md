@@ -66,8 +66,8 @@ Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upl
 Monday 7:00 AM ET also write `pulse-outbox/INBOX-BRIEF.md` + `BRIEF.json` = `BRIEF_READY`:
 
 - Same inbox scan + Agent Hub tickets (rollup of the week)
-- Hub-safe alerts for `pulse-feed.json` / `/events` (Hub first, then Telegram)
-- Hector / BSI / upline = Yahoska only, never in the brief for agents
+- **If applicable, update the Agent Hub the same day** (`pulse-feed.json`, `/events`, certs/blackout pages). Do not wait for Monday. Then Telegram.
+- Hector / BSI / upline = Yahoska only, never the portal, never the brief for agents
 
 ### Cursor Cloud Agent owns (public + the brief)
 

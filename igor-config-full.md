@@ -1040,10 +1040,21 @@ This includes compliance requests, RRS requests, commission issues, contracting 
 
 OpenClaw **must** keep reading the carrier broker inboxes (`theiagentpulse` + carrier mail) for broker news — trainings, certs, network changes, SOA/compliance, AEP, events. This is daily, not only Monday Pulse.
 
+**If applicable → update the Agent Hub / portal. Do not just flag it in Telegram.**
+
+Applicable (post, then redeploy, then Telegram):
+- Carrier trainings, AEP events, certs opening, SOA/compliance dates
+- Network / benefit / product changes agents need
+- Deadlines, blackouts, SEP changes
+- Goes to `pulse-feed.json` and/or `/events` (and the matching Hub page). Entry types: `event`, `urgent`, `update`
+
+Not applicable (do **not** post to the portal):
+- Hector Marmol / AgentConnection / BSI / upline-private — Yahoska only
+- Anything you’re unsure about — ASK first
+- Duplicates already on the Hub
+
 - Daily Carrier Email Scan stays on OpenClaw (do not move it to Cursor)
-- Hub-safe items → pulse-feed / `/events` **first**, then Telegram Yahoska
-- Hector / BSI / upline → Yahoska only, never the Hub
-- Monday Pulse brief is a rollup of that same inbox work, not a replacement for the daily scan
+- Monday Pulse brief is a rollup of that same inbox + Hub work, not a replacement for the daily scan
 
 ## 📅 Agent Hub — Carrier Events Auto-Update Rule (Added 2026-07-22)
 When the Daily Carrier Email Scan finds **ANY** AEP prep, carrier training, agent event, or compliance deadline:
