@@ -1034,31 +1034,27 @@ Anything from Hector Marmol (AgentConnection.Net / BSI / upline) is **PRIVATE**.
 - ✅ Notify Yahoska directly only
 This includes compliance requests, RRS requests, commission issues, contracting alerts — anything from the upline.
 
-## 📬 Cron jobs that require email (audit 2026-08-29)
+## 📬 Scheduled jobs — Railway v2 (source of truth 2026-08-29)
 
-Live BOSGAME `crontab -l` was **not** readable from Cursor. This is every **documented** scheduled job and whether it needs OpenClaw mail (send or read). Anything in the OpenClaw column stays on BOSGAME.
+This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs are **seeded off (shadow)** until someone turns them on in v2.
 
-| Job | When | Email? | Who |
+### Live on Railway (only these)
+
+| Job | When | Email? | What it does |
 |---|---|---|---|
-| **Daily Carrier Email Scan** | Daily (inbox) | **READ** `theiagentpulse` + carrier broker mail. Hub-first if applicable. | **OpenClaw** |
-| **OpenClaw heartbeat** | ~hourly | **READ** inbox for urgent unread | **OpenClaw** |
-| **Agent Pulse inbox brief** | Mon 7:00 AM ET | **READ** inbox + Hub tickets → brief | **OpenClaw** |
-| **Agent Pulse send** | Mon 8:15 AM ET | **SEND** list from `info@` | **OpenClaw** |
-| **Pulse Sunday preflight** | Sun 6:00 PM ET | **SEND** test to yperez@ only | **OpenClaw** |
-| **SEO Weekly** | Mon 7:00 AM ET + mid-week alerts | **SEND** failures/alerts to yperez@ (`seo-weekly.js`) | **OpenClaw** |
-| **Site Health** | Daily 7:00 AM ET | **SEND** on failure to yperez@ (SendGrid and/or SMTP). Docs also say Telegram. Treat failure email as OpenClaw. | **OpenClaw** |
-| **Industry Pulse newsletter** | (same SMTP as Pulse) | **SEND** if still a separate blast from Agent Pulse | **OpenClaw** |
-| **Data sync / sales sync** (if cron’d) | per job | **SEND** report / abort-approval emails (Commandment 4) | **OpenClaw** |
-| **7 AM Lead Digest / Mon 8 AM Weekly Performance** (KPI page) | Daily / Mon | Likely **SEND** to yperez@ — confirm with OpenClaw | **OpenClaw** if it emails |
-| Uptime monitor | every 5 min | No — Telegram only | OpenClaw Telegram |
-| Blog auto-publish | Mon research / Wed 9 AM deploy | No email | OpenClaw or Cursor |
-| ES blog Wednesday cron | `0 13 * * 3` | No email | OpenClaw |
-| Weekly Update Monitor | Mon 9:00 AM ET | No list email — version report / approval | OpenClaw |
-| Gateway restart | Sun 3:00 AM ET | No | OpenClaw |
-| Hourly dashboard/pipeline | every 3h 6AM–10PM ET | No email (Notion/Sheets) | OpenClaw |
-| Lead Ping | 8 AM / 2 PM SMS | No — GHL SMS | OpenClaw + GHL |
+| **Site uptime** | every 5 min | **No** | healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. |
+| **Ads heartbeat** | every 30 min | **No** | Pages Yahoska if the Facebook token dies. |
+| **Ads heartbeat DUPLICATE** | every 30 min | **No** | Same job, duplicate id `9843178a`. Noise, not extra coverage. **Delete one copy.** |
 
-**Rule:** If the cron reads or sends healthexps.com mail → OpenClaw. Cursor does not take those over until Gmail MCP works.
+**None of the live Railway jobs send or read email.**
+
+### Shadow (seeded off — not running on v2)
+
+Includes the old catalog: Daily Carrier Email Scan, Agent Pulse brief/send, SEO Weekly, Site Health email, Industry Pulse, weekly agent sales reports (**Fri 10 AM**), sales-tracker sync (**Mon 7 AM**), Lead Digest, blog crons, Weekly Update Monitor, etc.
+
+A Friday sales ping did **not** come from this Railway crontab.
+
+**Still required, but not a live Railway job yet:** OpenClaw (or a new Railway job) must **read carrier broker inboxes** and **send Agent Pulse**. Until those are turned on in v2, they only happen if someone runs them by hand or on old OpenClaw.
 
 ## 📬 OpenClaw owns carrier-inbox read (locked 2026-08-29 — Yahoska)
 
