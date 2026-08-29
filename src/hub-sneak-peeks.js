@@ -1,7 +1,8 @@
-import { scanMailbox } from "./heartbeat.js";
+import { ImapFlow } from "imapflow";
 import {
   HUB_NETLIFY_SITE_ID,
   HUB_REPO,
+  githubGetFile,
   githubGetJsonFile,
   githubPutFile,
   isHubSafe,
@@ -184,33 +185,181 @@ export async function publishHubSneakPeeks({
   };
 }
 
+const PEEK_SEARCH = {
+  since: null,
+  or: [
+    { subject: "sneak peek" },
+    { subject: "B-PAG" },
+    { subject: "BPAG" },
+    { subject: "benefits reveal" },
+    { subject: "plans at a glance" },
+    { subject: "plan preview" },
+    { subject: "broker preview" },
+    { subject: "PY27" },
+    { subject: "PY 2027" }
+  ]
+};
+
+const ATTACH_EXTENSIONS = new Set(["xlsx", "xls", "pdf", "jpg", "jpeg", "png", "webp"]);
+
+export function sneakPeekHint() {
+  return "Igor only reads info@. Forward the sneak-peek emails there, or drop the B-PAG / reveal files in Telegram.";
+}
+
+export async function scanSneakPeekMailbox({
+  user,
+  pass,
+  host = "imap.gmail.com",
+  lookbackMinutes = 60 * 24 * 60,
+  now = new Date(),
+  imapFactory = (options) => new ImapFlow({ ...options, logger: false })
+} = {}) {
+  const since = new Date(now.getTime() - Number(lookbackMinutes) * 60 * 1000);
+  const client = imapFactory({
+    host,
+    port: 993,
+    secure: true,
+    auth: { user, pass }
+  });
+  await client.connect();
+  const findings = [];
+  let raw = 0;
+  try {
+    for (const path of ["[Gmail]/All Mail", "INBOX"]) {
+      try {
+        const lock = await client.getMailboxLock(path);
+        try {
+          const all = await client.search({ since }, { uid: true }) || [];
+          raw = Math.max(raw, all.length);
+          const query = { ...PEEK_SEARCH, since };
+          const uids = await client.search(query, { uid: true }) || [];
+          if (!uids.length) continue;
+          for await (const message of client.fetch(uids.slice(-40), { envelope: true, uid: true }, { uid: true })) {
+            findings.push({
+              uid: message.uid,
+              from: message.envelope.from?.map((entry) => entry.address).join(", ") ?? "",
+              subject: message.envelope.subject ?? "",
+              date: message.envelope.date?.toISOString?.() ?? null,
+              snippet: ""
+            });
+          }
+        } finally {
+          lock.release();
+        }
+      } catch {
+        // Folder missing on non-Gmail hosts.
+      }
+      if (findings.length) break;
+    }
+  } finally {
+    await client.logout();
+  }
+  return { mailbox: user, raw, findings };
+}
+
+export function peekFromAttachment(fileName = "", { now = new Date() } = {}) {
+  const clean = String(fileName).split(/[/\\]/).pop() || "sneak-peek";
+  const title = clean.replace(/\.[a-z0-9]+$/i, "").replace(/[_-]+/g, " ").slice(0, 140);
+  const ext = (clean.match(/\.([a-z0-9]+)$/i)?.[1] ?? "").toLowerCase();
+  const iso = now.toISOString().slice(0, 10);
+  const path = `/files/${clean.replace(/[^A-Za-z0-9._-]/g, "-")}`;
+  const image = ["jpg", "jpeg", "png", "webp"].includes(ext) ? path : undefined;
+  const download = ["xlsx", "xls", "pdf"].includes(ext) ? path : undefined;
+  return {
+    id: `${iso}-${slug(title)}`,
+    carrier: carrierLabel({ subject: title }),
+    title,
+    detail: `Uploaded ${now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "America/New_York" })} · Broker-only`,
+    image,
+    download,
+    downloadLabel: download ? "Download" : undefined,
+    badge: image ? undefined : "2027",
+    date: iso,
+    fileName: path.slice("/files/".length)
+  };
+}
+
+export async function publishSneakPeekAttachment({
+  environment = process.env,
+  fileName,
+  buffer,
+  fetchImpl = fetch
+} = {}) {
+  const ext = String(fileName ?? "").toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+  if (!ATTACH_EXTENSIONS.has(ext)) {
+    return { status: "skipped", reason: "unsupported_file", hint: sneakPeekHint() };
+  }
+  if (!isHubSafe({ subject: fileName })) {
+    return { status: "skipped", reason: "blocked" };
+  }
+  const token = environment.GITHUB_TOKEN;
+  if (!token) return { status: "skipped", reason: "github_not_configured" };
+
+  const peek = peekFromAttachment(fileName);
+  const repo = environment.HUB_REPO ?? HUB_REPO;
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer ?? "");
+  for (const path of [`files/${peek.fileName}`, `pages/files/${peek.fileName}`]) {
+    const existing = await githubGetFile({ token, repo, path, fetchImpl });
+    await githubPutFile({
+      token,
+      repo,
+      path,
+      content: bytes,
+      message: `Hub sneak peek file — ${peek.fileName}`,
+      sha: existing.sha,
+      fetchImpl
+    });
+  }
+  return publishHubSneakPeeks({ environment, peeks: [peek], fetchImpl });
+}
+
 export async function runSneakPeekUpdate({
   environment = process.env,
   now = new Date(),
-  scanInbox = scanMailbox,
-  publish = publishHubSneakPeeks
+  scanInbox = scanSneakPeekMailbox,
+  publish = publishHubSneakPeeks,
+  pendingAttachment
 } = {}) {
+  if (pendingAttachment?.fileName && pendingAttachment?.buffer) {
+    const published = await publishSneakPeekAttachment({
+      environment,
+      fileName: pendingAttachment.fileName,
+      buffer: pendingAttachment.buffer
+    });
+    return { ...published, source: "telegram_file", mailbox: environment.HEARTBEAT_IMAP_USER ?? null };
+  }
+
   const user = environment.HEARTBEAT_IMAP_USER;
   const pass = environment.HEARTBEAT_IMAP_PASS;
   if (!user || !pass) {
-    return { status: "skipped", reason: "imap_not_configured" };
+    return { status: "skipped", reason: "imap_not_configured", hint: sneakPeekHint() };
   }
 
-  const findings = await scanInbox({
+  const scanned = await scanInbox({
     user,
     pass,
     host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
     lookbackMinutes: Number(environment.SNEAK_PEEK_LOOKBACK_MINUTES ?? 60 * 24 * 60),
-    unseenOnly: false,
-    includeBodies: true,
     now
   });
 
-  const peeks = findings.filter(isSneakPeek).map((finding) => peekFromFinding(finding, { now }));
+  const peeks = (scanned.findings ?? [])
+    .filter(isSneakPeek)
+    .map((finding) => peekFromFinding(finding, { now }));
+  if (!peeks.length) {
+    return {
+      status: "unchanged",
+      mailbox: scanned.mailbox,
+      scanned: scanned.raw ?? 0,
+      matched: 0,
+      hint: sneakPeekHint()
+    };
+  }
   const published = await publish({ environment, peeks });
   return {
     ...published,
-    scanned: findings.length,
+    mailbox: scanned.mailbox,
+    scanned: scanned.raw ?? scanned.findings?.length ?? 0,
     matched: peeks.length
   };
 }

@@ -347,7 +347,7 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("imap") && connected.has("github")) {
-    tools.push(functionTool("update_hub_sneak_peeks", "Scan the leadership inbox for broker sneak peeks / B-PAG / benefits reveals and publish them to the Agent Hub Carrier Info card. Does not invent benefits. Does not dump email bodies. Standing-approved when Yahoska asks to update sneak peeks.", {
+    tools.push(functionTool("update_hub_sneak_peeks", "Publish broker sneak peeks to the Agent Hub Carrier Info card. Scans info@ for sneak-peek / B-PAG / benefits-reveal mail. If this turn has a Telegram file (xlsx/pdf/jpg), upload that instead. Does not invent benefits. Does not dump email bodies. Standing-approved when Yahoska asks to update sneak peeks.", {
       type: "object",
       properties: {},
       additionalProperties: false
@@ -864,7 +864,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "update_hub_sneak_peeks") {
-      return runSneakPeekUpdate({ environment });
+      return runSneakPeekUpdate({ environment, pendingAttachment });
     }
 
     if (name === "calendar_list_events") {

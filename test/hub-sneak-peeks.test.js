@@ -3,9 +3,12 @@ import test from "node:test";
 import {
   isSneakPeek,
   mergeSneakPeeks,
+  peekFromAttachment,
   peekFromFinding,
   publishHubSneakPeeks,
-  SEED_PEEKS
+  runSneakPeekUpdate,
+  SEED_PEEKS,
+  sneakPeekHint
 } from "../src/hub-sneak-peeks.js";
 
 test("only broker sneak-peek mail becomes a Hub card", () => {
@@ -72,4 +75,25 @@ test("publishes sneak-peeks.json copies and triggers Hub deploy", async () => {
   assert.equal(result.status, "published");
   assert.equal(result.added >= 1, true);
   assert.equal(calls.some((call) => call.url.includes("sneak-peeks.json") && call.method === "PUT"), true);
+});
+
+test("empty info@ scan tells her to forward or drop files", async () => {
+  const result = await runSneakPeekUpdate({
+    environment: {
+      HEARTBEAT_IMAP_USER: "info@healthexps.com",
+      HEARTBEAT_IMAP_PASS: "x"
+    },
+    scanInbox: async () => ({ mailbox: "info@healthexps.com", raw: 631, findings: [] })
+  });
+  assert.equal(result.status, "unchanged");
+  assert.equal(result.scanned, 631);
+  assert.equal(result.matched, 0);
+  assert.match(result.hint, /info@/);
+  assert.match(sneakPeekHint(), /Telegram/);
+});
+
+test("builds a Hub card from a Telegram B-PAG file name", () => {
+  const peek = peekFromAttachment("Devoted-2027-BPAG-FL.xlsx", { now: new Date("2026-08-29T16:00:00.000Z") });
+  assert.equal(peek.download, "/files/Devoted-2027-BPAG-FL.xlsx");
+  assert.match(peek.carrier, /Devoted/);
 });
