@@ -49,7 +49,7 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 5. **Write the OpenClaw outbox** (`pulse-outbox/READY.json` + `latest.html`) and push it.
 6. **OpenClaw sends the email** (SMTP only). Cursor does not send Gmail.
 7. **Telegram Yahoska** when OpenClaw confirms SENT — or fail-open to Yahoska + Katy.
-7. **Log** the run (date, issue #, Hub URL, email status) in `IGOR_MEMORY` / this file's run log if present.
+8. **Log** the run (date, issue #, Hub URL, email status) in `IGOR_MEMORY` / this file's run log if present.
 
 Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upline private items to the Hub or the Pulse.
 
