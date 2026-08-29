@@ -1848,6 +1848,30 @@ crontab -l | grep seo-weekly
 
 ---
 
+### THEI Agent Pulse — Monday send (locked 2026-08-29)
+
+**Yahoska standing order:** Igor sends the Agent Pulse every Monday. Do not wait to be asked.
+
+**What:** `THE Health Experts Insider` — weekly digest for contracted THEI Medicare agents (not SEO weekly, not a client newsletter).
+
+**Playbook:** `AGENT-PULSE.md` (this repo) — follow it end-to-end every Monday.
+
+**Schedule:** Monday 8:00 AM Eastern (after SEO weekly at 7:00 AM ET)
+- Cron UTC while EDT: `0 12 * * 1`
+- Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
+
+**Send order:** research → draft → compliance pass → **publish to Agent Hub first** → email the Agent Pulse list from info@healthexps.com → Telegram Yahoska with the Hub link.
+
+**Hub:** https://agentmedicarehub.com/agent-pulse · repo `yperez-dot/agent-medicare-hub` · `pages/pulse-YYYY-MM-DD.html` + `files/pulse-feed.json` `weekly_pulses`
+
+**Email:** info@healthexps.com via `~/.openclaw/credentials/industry-pulse-email.env`
+
+**Last edition before this lock:** Issue #4 — Week of July 13, 2026. Next Monday increments the issue number. Do not backfill skipped weeks unless Yahoska asks. If a Monday is missed, send the same-week digest ASAP — do not skip the week.
+
+**Hard rules:** No plan recommendations. No PHI. No Hector Marmol / BSI / upline-private items. $1M rule on every item (Stat + Insight + Action).
+
+---
+
 ### Site Health Monitor — LIVE (June 24, 2026)
 - Script: `/opt/igor/site-health/run_site_health.py`
 - Cron: daily 7am, BOSGAME
@@ -1918,6 +1942,7 @@ crontab -l | grep seo-weekly
 7. `manychat-flow` — Phase 2
 8. `seo-weekly` ✅ Live June 24, 2026 (v2.0: GA4 + Search Console only, Wix + Diib removed)
 9. `site-health` ✅ Live June 24, 2026
+10. `agent-pulse` ✅ Monday 8:00 AM ET (locked 2026-08-29) — see `AGENT-PULSE.md`
 
 ---
 
