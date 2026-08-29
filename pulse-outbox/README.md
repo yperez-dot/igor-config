@@ -1,24 +1,31 @@
-# Pulse outbox — OpenClaw sends email, Cursor does not
+# Pulse outbox — OpenClaw intake + send; Cursor drafts
 
-Yahoska (2026-08-29): keep **OpenClaw** for Pulse emails only. Cursor Cloud Agent does research, draft, Hub, and this folder. Gmail MCP is blocked. Do not wait on it.
+Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub tickets. OpenClaw keeps **intake + send**. Gmail MCP is blocked.
 
 ## Handshake
 
-| Who | Does |
-|---|---|
-| Cursor Cloud Agent (Monday 8:00 AM ET) | Writes `READY.json` + `latest.html` in this folder, pushes to `main` / this branch, updates Notion Send Desk |
-| OpenClaw on BOSGAME (Monday 8:15 AM ET) | `git pull`, if `READY.json` status is `READY`, SMTP-sends `latest.html` from `info@healthexps.com`, writes `SENT.json`, Telegram Yahoska |
-| Yahoska / Katy | Only if OpenClaw fails — send from Gmail using the Notion Send Desk |
+| Who | When (ET) | Does |
+|---|---|---|
+| **OpenClaw** | Mon 7:00 AM | Scan `theiagentpulse` / carrier inboxes + Agent Hub tickets. Write `INBOX-BRIEF.md` + `BRIEF.json` (`BRIEF_READY`). Hub-safe items go on the Hub first (pulse-feed / events). Upline/Hector = Yahoska only. |
+| Cursor Cloud Agent | Mon 8:00 AM | Read the brief + public sources. Draft Pulse. Publish Hub edition page. Write `READY.json` + `latest.html`. **If the brief is missing, do not invent inbox news.** |
+| **OpenClaw** | Mon 8:15 AM | SMTP-send `latest.html` from `info@healthexps.com` if `READY.json` is `READY`. Write `SENT.json`. Telegram Yahoska. |
+| Yahoska / Katy | If send fails | Hit Send in Gmail from the Notion Send Desk |
 
 ## OpenClaw cron (BOSGAME)
 
 ```bash
-15 8 * * 1 cd /home/medicare-ai-agent/.openclaw/workspace && git -C /path/to/igor-config pull --ff-only && python3 /path/to/igor-config/pulse-outbox/send-pulse-openclaw.py >> /var/log/igor/agent-pulse.log 2>&1
+# 7:00 AM ET — inbox + Hub tickets brief (0 11 * * 1 UTC while EDT)
+0 11 * * 1  # scan theiagentpulse + Hub tickets; write INBOX-BRIEF.md + BRIEF.json; Hub-first for events
+
+# 8:15 AM ET — send (15 12 * * 1 UTC while EDT)
+15 12 * * 1 cd /path/to/igor-config && git pull --ff-only && python3 pulse-outbox/send-pulse-openclaw.py >> /var/log/igor/agent-pulse.log 2>&1
 ```
 
-Adjust the igor-config path to wherever this repo lives on BOSGAME. 8:15 AM ET = `15 12 * * 1` UTC while EDT is in effect (`15 13 * * 1` after Nov 1, 2026).
+After Nov 1, 2026: `0 12 * * 1` and `15 13 * * 1` UTC.
 
-Manual: Telegram `@Igor_theibot` — `Send the Pulse outbox`.
+Manual Telegram `@Igor_theibot`:
+- `Write the Pulse inbox brief`
+- `Send the Pulse outbox`
 
 ## Credentials (BOSGAME only — never in git)
 

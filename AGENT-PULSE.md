@@ -42,8 +42,8 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 
 ## Send order (do not skip steps)
 
-1. **Research** the last 7 days (see sources below).
-2. **Draft** the edition in the established format.
+1. **Wait for OpenClaw’s inbox brief** (`pulse-outbox/INBOX-BRIEF.md`). If it is missing, draft public sources only and say the inbox brief is missing — do not invent carrier-email or ticket items.
+2. **Draft** the edition from the brief + public sources.
 3. **Compliance pass** (see rules).
 4. **Publish to Agent Hub first** — Hub is the source of truth.
 5. **Write the OpenClaw outbox** (`pulse-outbox/READY.json` + `latest.html`) and push it.
@@ -55,20 +55,28 @@ Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upl
 
 ---
 
-## Research sources (review every Monday)
+## Research sources
 
-Required:
+**Cursor Cloud Agent cannot read THEI inboxes or Agent Hub tickets.** Gmail MCP is blocked. Hub tickets are behind login. Do not pretend otherwise. Do not invent carrier-email items.
 
-- CMS Newsroom / Medicare.gov
-- Florida DFS / SHINE (note if unreachable)
-- THEI carrier inboxes and Hub `pulse-feed.json` alerts from the last 7 days
-- Carrier agent portals / broker bulletins: UHC, Humana, Aetna, Wellcare, Devoted, Elevance/HealthSun/Simply/Freedom/Optimum, Solis, Doctors, AvMed (past tense only)
-- KFF, Healthcare Dive, Fierce Healthcare, STAT
+### OpenClaw owns (must run before Cursor drafts)
+
+Write `pulse-outbox/INBOX-BRIEF.md` (status in `BRIEF.json` = `BRIEF_READY`):
+
+- `theiagentpulse` / carrier inboxes (Daily Carrier Email Scan)
+- Agent Hub tickets
+- Hub-safe alerts for `pulse-feed.json` / `/events` (still OpenClaw — put it in the Hub first)
+- Hector / BSI / upline = Yahoska only, never in the brief for agents
+
+### Cursor Cloud Agent owns (public + the brief)
+
+- The OpenClaw `INBOX-BRIEF.md` — if missing, say so in the Hey Team and do **not** fabricate inbox news
+- Live Hub `pulse-feed.json` (public file only)
+- CMS / Medicare.gov, KFF, Healthcare Dive, Fierce, STAT
 - Ritter / Agent Link cert calendars
-- Florida disaster SEP status (SEP Tracker)
-- AEP countdown (Oct 15 – Dec 7)
+- Florida SEP Tracker, AEP countdown (Oct 15 – Dec 7)
 
-Pull only items that change what a THEI agent does this week: certs, networks, SOA/compliance, SEPs, trainings, client talking points.
+Pull only items that change what a THEI agent does this week.
 
 ---
 
@@ -115,28 +123,33 @@ Repo: `yperez-dot/agent-medicare-hub`
 
 ---
 
-## Email send — OpenClaw only (Yahoska 2026-08-29)
+## Split — OpenClaw keeps inboxes, tickets, and send
 
-**Yes: keep OpenClaw for the emails.** Cursor Cloud Agent does not send the blast. Gmail MCP is blocked (`not authorized`) — ignore it.
+Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
 
 | Role | Who |
 |---|---|
-| Research, draft, Hub, Notion Send Desk, outbox | Cursor Cloud Agent |
-| SMTP from `info@healthexps.com` to the agent list | **OpenClaw on BOSGAME** |
-| Human Send if OpenClaw fails | Yahoska or Katy from Gmail |
+| Carrier inboxes (`theiagentpulse`) + Daily Carrier Email Scan | **OpenClaw** |
+| Agent Hub tickets | **OpenClaw** |
+| Hub pulse-feed / events from those inboxes | **OpenClaw** (Hub first, then Telegram) |
+| Inbox brief (`pulse-outbox/INBOX-BRIEF.md`) | **OpenClaw** — Monday **7:00 AM ET** |
+| Public-source draft + Hub edition page + READY.json | Cursor Cloud Agent — Monday **8:00 AM ET** |
+| SMTP blast from `info@healthexps.com` | **OpenClaw** — Monday **8:15 AM ET** |
+| Human Send if OpenClaw send fails | Yahoska or Katy from Gmail |
 
 **Outbox contract:** `pulse-outbox/README.md`  
 **Script OpenClaw runs:** `pulse-outbox/send-pulse-openclaw.py`  
 **Credentials (BOSGAME only):** `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`  
 **List:** same Agent Pulse / Industry Pulse list OpenClaw used last week (`PULSE_TO` or `PULSE_LIST_FILE` on BOSGAME — not in git)
 
-**OpenClaw cron:** Monday **8:15 AM Eastern** (15 minutes after Cursor writes the outbox).
+**OpenClaw crons (ET):** 7:00 inbox/ticket brief · 8:15 SMTP send.
 
 ```bash
-15 12 * * 1  # UTC while EDT — pull igor-config and run send-pulse-openclaw.py
+0 11 * * 1   # UTC while EDT — write INBOX-BRIEF.md
+15 12 * * 1  # UTC while EDT — send-pulse-openclaw.py
 ```
 
-Manual: Telegram `@Igor_theibot` — `Send the Pulse outbox`.
+Manual Telegram `@Igor_theibot`: `Write the Pulse inbox brief` · `Send the Pulse outbox`.
 
 **Notion Send Desk (human fail-open):** https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
 
@@ -153,8 +166,8 @@ Manual: Telegram `@Igor_theibot` — `Send the Pulse outbox`.
 Cron (UTC, EDT): `0 22 * * 0`
 
 1. Confirm the Monday Cursor timer still exists.
-2. Remind Yahoska (this chat): tell Telegram `@Igor_theibot` — `Send Pulse preflight to yperez@ only`.
-3. OpenClaw sends a one-line test to `yperez@healthexps.com` only. Do not email the agent list on Sunday.
+2. Remind Yahoska (this chat): tell Telegram `@Igor_theibot` — `Confirm Pulse inbox + tickets access, then send preflight to yperez@ only`.
+3. OpenClaw confirms it can read `theiagentpulse` + Hub tickets, then sends a one-line test to `yperez@healthexps.com` only. Do not email the agent list on Sunday.
 4. If no test arrives: Send Desk → `PREFLIGHT FAIL`. Monday still publishes; humans hit Send if OpenClaw is down.
 5. Re-subscribe the Sunday timer if it expired.
 

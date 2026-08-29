@@ -1860,17 +1860,17 @@ crontab -l | grep seo-weekly
 - Cron UTC while EDT: `0 12 * * 1`
 - Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
 
-**Split (Yahoska 2026-08-29):** Cursor Cloud Agent = research / draft / Hub / outbox. **OpenClaw = emails only** (SMTP `info@healthexps.com`). Gmail MCP is blocked — do not use it.
+**Split (Yahoska 2026-08-29):** Cursor **cannot** read carrier inboxes or Agent Hub tickets (Gmail MCP blocked). **OpenClaw keeps intake + send:** 7:00 AM inbox/ticket brief → Cursor drafts at 8:00 → OpenClaw SMTP at 8:15. Gmail MCP stays unused.
 
-**Send order:** research → draft → compliance → Hub → Notion Send Desk → write `pulse-outbox/` → OpenClaw sends at 8:15 AM ET. If OpenClaw fails, ping Yahoska + Katy (never silent).
+**Send order:** OpenClaw inbox/ticket brief 7:00 → Cursor draft/Hub/outbox 8:00 (no invented inbox news) → OpenClaw SMTP 8:15. If OpenClaw fails, ping Yahoska + Katy (never silent).
 
 **Hub:** https://agentmedicarehub.com/agent-pulse · repo `yperez-dot/agent-medicare-hub`
 
 **Email:**
 - OpenClaw script: `pulse-outbox/send-pulse-openclaw.py`
 - Creds on BOSGAME: `industry-pulse-email.env` / `smtp.env`
-- Cron: Monday 8:15 AM ET (`15 12 * * 1` UTC while EDT)
-- Manual: Telegram `@Igor_theibot` — `Send the Pulse outbox`
+- Crons: Mon 7:00 AM inbox brief (`0 11 * * 1` UTC EDT) · Mon 8:15 AM send (`15 12 * * 1` UTC EDT)
+- Manual: Telegram `@Igor_theibot` — `Write the Pulse inbox brief` / `Send the Pulse outbox`
 - Fail-open: https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
 - Sunday 6:00 PM ET: tell OpenClaw `Send Pulse preflight to yperez@ only`
 
