@@ -1866,7 +1866,8 @@ crontab -l | grep seo-weekly
 
 **Email (Tier 0 — do not depend on OpenClaw SMTP alone):**
 - From: `info@healthexps.com`
-- Preferred: Gmail MCP connected in Cursor desktop
+- Gmail MCP: **blocked 2026-08-29** (Google “not authorized” + Cursor Cloud OAuth bug). Do not wait on it.
+- Optional later: connect from https://cursor.com/agents → MCP Servers → Gmail → Login; if still blocked, Workspace admin must allow Cursor.
 - Fallback attempt: OpenClaw SMTP (`industry-pulse-email.env`) — known unreliable; try once
 - Fail-open: Notion Send Desk https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e + Telegram Yahoska and Katy
 - Sunday 6:00 PM ET preflight (`0 22 * * 0` UTC while EDT) — test to yperez@ only. If the test fails, she knows before Monday.
