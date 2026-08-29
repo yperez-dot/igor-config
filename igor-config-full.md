@@ -1053,13 +1053,13 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 - Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
 - IMAP **read works** (`info@healthexps.com`).
 
-**Send path (Yahoska 2026-08-29): existing Gmail + Notion. No new credit-based app.**
+**Send path (Yahoska 2026-08-29): Agent Pulse is dropped into Notion; Gmail sends.**
 
 Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 
-- **Monday send:** Hub first, then [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e) / [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). Yahoska or Katy hit **Send** in Gmail as `info@healthexps.com` — same Workspace mail that sent the week of Aug 24.
-- Outbox is a clipboard for that Gmail send, not a new vendor.
-- Zapier is **optional** only on the Zapier plan THEI already has. Not required. Not a new account.
+- Igor writes the newsletter into [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) (Kind `Pulse`) and the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e).
+- **Gmail** (`info@healthexps.com`) is what actually delivers — Yahoska or Katy hit Send, BCC the same list as week of Aug 24. Notion does not mail the list by itself.
+- This week’s drop: https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1
 - Leave Railway SMTP/SendGrid broken. Inbox **read** on Igor V2 IMAP stays live.
 
 Igor V2 has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can drop send-ready rows. Cursor can too.
@@ -1070,7 +1070,7 @@ Igor V2 has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can drop send-rea
 |---|---|---|
 | **Heartbeat inbox scan** | **Read** `info@` IMAP | **Live** — creds on Igor V2; IMAP login succeeded |
 | **Daily Carrier Email Scan / Pulse brief** | **Read** `theiagentpulse` + carrier inboxes | Inbox path is IMAP on `info@`; Pulse brief job still shadow |
-| **Agent Pulse / Industry Pulse send** | **Send** from `info@healthexps.com` | Creds on V2; **send failed** (SendGrid 0 credits + Hobby SMTP block). Pulse stays `INDUSTRY_PULSE_MODE=test` → `yperez@` only |
+| **Agent Pulse / Industry Pulse send** | **Send** from `info@healthexps.com` | Railway send blocked. **Live path = existing Gmail** from Send Desk/Outbox (Yahoska or Katy). No new credit app. |
 | **SEO Weekly / Site Health fail mail** | **Send** to `yperez@healthexps.com` | Shadow; same send block |
 
 A Friday sales ping did **not** come from this Railway crontab.

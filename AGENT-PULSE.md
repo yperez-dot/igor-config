@@ -46,9 +46,9 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 2. **Draft** the edition from the brief + public sources.
 3. **Compliance pass** (see rules).
 4. **Publish to Agent Hub first** — Hub is the source of truth.
-5. **Write the OpenClaw outbox** (`pulse-outbox/READY.json` + `latest.html`) and push it.
-6. **Send via Notion Outbox + Zapier Gmail** (Railway SMTP/SendGrid are blocked). Write a row on [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). Test = Status `Test ready` to `yperez@` only. Agent blast = Status `Ready` only after Yahoska confirms the test.
-7. **Telegram Yahoska** when OpenClaw confirms SENT — or fail-open to Yahoska + Katy.
+5. **Drop the newsletter into Notion** — [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) row, Kind `Pulse` (this week: [Week of August 31](https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1)). Also fill the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e).
+6. **Gmail sends** — Yahoska or Katy, as `info@healthexps.com`, BCC the same Agent Pulse list as week of Aug 24. Paste the Notion Body. Mark the row **Sent**. No new credit app. Railway SMTP/SendGrid unused.
+7. **Telegram Yahoska** `Pulse dropped in Notion` when the row is filled; `Pulse sent` after Gmail.
 8. **Log** the run (date, issue #, Hub URL, email status) in `IGOR_MEMORY` / this file's run log if present.
 
 Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upline private items to the Hub or the Pulse.
@@ -135,7 +135,8 @@ Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
 | Hub pulse-feed / events from those inboxes | **OpenClaw** (Hub first, then Telegram) |
 | Inbox brief (`pulse-outbox/INBOX-BRIEF.md`) | **OpenClaw** — Monday **7:00 AM ET** |
 | Public-source draft + Hub edition page + READY.json | Cursor Cloud Agent — Monday **8:00 AM ET** |
-| Email blast from `info@healthexps.com` | **Yahoska or Katy in Gmail** from Send Desk / Outbox — Monday **8:15 AM ET**. No new credit app. Railway SMTP/SendGrid stay unused. |
+| Drop Pulse into Notion Outbox + Send Desk | **Igor / Cursor** — Monday **8:00 AM ET** |
+| Gmail send from that Notion copy | **Yahoska or Katy** as `info@` — Monday **8:15 AM ET**. No new credit app. |
 | Optional Zapier | Only if THEI already has Zapier tasks. Do not sign up for a new Zapier. |
 
 **Outbox contract:** `pulse-outbox/README.md`  

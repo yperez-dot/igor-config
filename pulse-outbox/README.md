@@ -9,7 +9,8 @@ Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub ticket
 | **OpenClaw** | Daily + Mon 7:00 AM | Scan `theiagentpulse` / carrier inboxes + Hub tickets. **If applicable, update the Agent Hub the same day** (pulse-feed / `/events` / certs). Write `INBOX-BRIEF.md` + `BRIEF.json` (`BRIEF_READY`). Upline/Hector = Yahoska only. |
 | Cursor Cloud Agent | Mon 8:00 AM | Read the brief + public sources. Draft Pulse. Publish Hub edition page. Write `READY.json` + `latest.html`. **If the brief is missing, do not invent inbox news.** |
 | **OpenClaw** | Mon 8:15 AM | SMTP-send `latest.html` from `info@healthexps.com` if `READY.json` is `READY`. Write `SENT.json`. Telegram Yahoska. |
-| Yahoska / Katy | If send fails | Hit Send in Gmail from the Notion Send Desk |
+| **Notion** | Mon 8:00 AM | Receive the send-ready Pulse (Outbox row Kind `Pulse` + Send Desk). |
+| Yahoska / Katy | Mon 8:15 AM | **Gmail sends** as `info@healthexps.com` from that Notion copy. Mark row Sent. |
 
 ## OpenClaw cron (Railway v2 — still shadow until SMTP is proven)
 
