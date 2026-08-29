@@ -1048,12 +1048,7 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 
 **Email on Igor V2 (wired 2026-08-29):** SMTP/SendGrid/IMAP vars were copied from the old `igor-config` service onto **Igor V2**. Health: `email=connected`, `imap=connected`.
 
-**Send is still blocked:**
-- SendGrid account is **free**, **0 credits** (`Maximum credits exceeded`). Igor prefers SendGrid when the key is set.
-- Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
-- IMAP **read works** (`info@healthexps.com`).
-
-**Igor mail (OpenClaw-style, live 2026-08-29):** Workspace is **Railway Pro**. `info@healthexps.com` Gmail app password is on Igor V2. IMAP read works. SMTP send **works** — Yahoska-only test landed (`messageId` from smtp.gmail.com). Dead SendGrid key stays off Igor V2. Do not buy SendGrid credits. Zapier is optional backup, not required.
+**Igor mail (OpenClaw-style, live 2026-08-29):** Workspace is **Railway Pro**. `info@healthexps.com` Gmail app password is on Igor V2. IMAP read works. SMTP send **works** — Yahoska confirmed she got the test email. Dead SendGrid key stays off Igor V2. Do not buy SendGrid credits. Zapier is optional backup, not required.
 
 Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 
@@ -1061,11 +1056,11 @@ Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / an
 - **Igor SMTP** sends from `info@` (Pro). Notion Outbox / Zapier are optional backup.
 - Notion does not mail the list by itself. Human Gmail is backup only if the Zap is off.
 - This week’s drop: https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1
-- Leave Railway SMTP/SendGrid broken. Inbox **read** on Igor V2 IMAP stays live.
+- Inbox **read** on Igor V2 IMAP stays live.
 
 Igor V2 has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can drop send-ready rows. Cursor can too.
 
-### Jobs that require email (send still blocked)
+### Jobs that require email
 
 | Job | Needs | Status 2026-08-29 |
 |---|---|---|
