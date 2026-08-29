@@ -1034,6 +1034,28 @@ Anything from Hector Marmol (AgentConnection.Net / BSI / upline) is **PRIVATE**.
 - ✅ Notify Yahoska directly only
 This includes compliance requests, RRS requests, commission issues, contracting alerts — anything from the upline.
 
+## 📬 OpenClaw owns carrier-inbox read (locked 2026-08-29 — Yahoska)
+
+**Cursor Cloud Agent cannot read healthexps.com mail.** Gmail MCP is blocked. Anything that needs the inbox stays on **OpenClaw / BOSGAME**.
+
+OpenClaw **must** keep reading the carrier broker inboxes (`theiagentpulse` + carrier mail) for broker news — trainings, certs, network changes, SOA/compliance, AEP, events. This is daily, not only Monday Pulse.
+
+**If applicable → update the Agent Hub / portal. Do not just flag it in Telegram.**
+
+Applicable (post, then redeploy, then Telegram):
+- Carrier trainings, AEP events, certs opening, SOA/compliance dates
+- Network / benefit / product changes agents need
+- Deadlines, blackouts, SEP changes
+- Goes to `pulse-feed.json` and/or `/events` (and the matching Hub page). Entry types: `event`, `urgent`, `update`
+
+Not applicable (do **not** post to the portal):
+- Hector Marmol / AgentConnection / BSI / upline-private — Yahoska only
+- Anything you’re unsure about — ASK first
+- Duplicates already on the Hub
+
+- Daily Carrier Email Scan stays on OpenClaw (do not move it to Cursor)
+- Monday Pulse brief is a rollup of that same inbox + Hub work, not a replacement for the daily scan
+
 ## 📅 Agent Hub — Carrier Events Auto-Update Rule (Added 2026-07-22)
 When the Daily Carrier Email Scan finds **ANY** AEP prep, carrier training, agent event, or compliance deadline:
 1. Add a new entry to `hub-migration/files/pulse-feed.json` (prepend to alerts array)
@@ -1848,6 +1870,38 @@ crontab -l | grep seo-weekly
 
 ---
 
+### THEI Agent Pulse — Monday send (locked 2026-08-29)
+
+**Yahoska standing order:** Igor sends the Agent Pulse every Monday. Do not wait to be asked.
+
+**What:** `THE Health Experts Insider` — weekly digest for contracted THEI Medicare agents (not SEO weekly, not a client newsletter).
+
+**Playbook:** `AGENT-PULSE.md` (this repo) — follow it end-to-end every Monday.
+
+**Schedule:** Monday 8:00 AM Eastern (after SEO weekly at 7:00 AM ET)
+- Cron UTC while EDT: `0 12 * * 1`
+- Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
+
+**Split (Yahoska 2026-08-29):** Cursor **cannot** read carrier inboxes or Agent Hub tickets (Gmail MCP blocked). **OpenClaw reads carrier broker mail daily** (`theiagentpulse` + carrier inboxes) and sends Pulse email. Monday: inbox/ticket brief 7:00 → Cursor drafts 8:00 → OpenClaw SMTP 8:15. Gmail MCP stays unused.
+
+**Send order:** OpenClaw inbox/ticket brief 7:00 → Cursor draft/Hub/outbox 8:00 (no invented inbox news) → OpenClaw SMTP 8:15. If OpenClaw fails, ping Yahoska + Katy (never silent).
+
+**Hub:** https://agentmedicarehub.com/agent-pulse · repo `yperez-dot/agent-medicare-hub`
+
+**Email:**
+- OpenClaw script: `pulse-outbox/send-pulse-openclaw.py`
+- Creds on BOSGAME: `industry-pulse-email.env` / `smtp.env`
+- Crons: Mon 7:00 AM inbox brief (`0 11 * * 1` UTC EDT) · Mon 8:15 AM send (`15 12 * * 1` UTC EDT)
+- Manual: Telegram `@Igor_theibot` — `Write the Pulse inbox brief` / `Send the Pulse outbox`
+- Fail-open: https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
+- Sunday 6:00 PM ET: tell OpenClaw `Send Pulse preflight to yperez@ only`
+
+**Last send:** week of August 24, 2026 (email — Yahoska confirmed). Hub archive is stale (still lists July 13 as Latest). Next send: Monday August 31. Increment issue # from the last **email**, not from Hub. If a Monday is missed, send the same-week digest ASAP — do not skip the week.
+
+**Hard rules:** No plan recommendations. No PHI. No Hector Marmol / BSI / upline-private items. $1M rule on every item (Stat + Insight + Action).
+
+---
+
 ### Site Health Monitor — LIVE (June 24, 2026)
 - Script: `/opt/igor/site-health/run_site_health.py`
 - Cron: daily 7am, BOSGAME
@@ -1918,6 +1972,7 @@ crontab -l | grep seo-weekly
 7. `manychat-flow` — Phase 2
 8. `seo-weekly` ✅ Live June 24, 2026 (v2.0: GA4 + Search Console only, Wix + Diib removed)
 9. `site-health` ✅ Live June 24, 2026
+10. `agent-pulse` ✅ Monday 8:00 AM ET (locked 2026-08-29) — see `AGENT-PULSE.md`
 
 ---
 
