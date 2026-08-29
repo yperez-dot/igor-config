@@ -1860,11 +1860,16 @@ crontab -l | grep seo-weekly
 - Cron UTC while EDT: `0 12 * * 1`
 - Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
 
-**Send order:** research → draft → compliance pass → **publish to Agent Hub first** → email the Agent Pulse list from info@healthexps.com → Telegram Yahoska with the Hub link.
+**Send order:** research → draft → compliance pass → **Hub first** → Notion Send Desk → attempt email → if email fails, ping Yahoska + Katy immediately (never silent).
 
 **Hub:** https://agentmedicarehub.com/agent-pulse · repo `yperez-dot/agent-medicare-hub` · `pages/pulse-YYYY-MM-DD.html` + `files/pulse-feed.json` `weekly_pulses`
 
-**Email:** info@healthexps.com via `~/.openclaw/credentials/industry-pulse-email.env`
+**Email (Tier 0 — do not depend on OpenClaw SMTP alone):**
+- From: `info@healthexps.com`
+- Preferred: Gmail MCP connected in Cursor desktop
+- Fallback attempt: OpenClaw SMTP (`industry-pulse-email.env`) — known unreliable; try once
+- Fail-open: Notion Send Desk https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e + Telegram Yahoska and Katy
+- Sunday 6:00 PM ET preflight (`0 22 * * 0` UTC while EDT) — test to yperez@ only. If the test fails, she knows before Monday.
 
 **Last send:** week of August 24, 2026 (email — Yahoska confirmed). Hub archive is stale (still lists July 13 as Latest). Next send: Monday August 31. Increment issue # from the last **email**, not from Hub. If a Monday is missed, send the same-week digest ASAP — do not skip the week.
 

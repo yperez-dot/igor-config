@@ -114,21 +114,40 @@ Repo: `yperez-dot/agent-medicare-hub`
 
 ---
 
-## Email send
+## Email send — reliability ladder (Pulse is Tier 0)
 
-- **From:** info@healthexps.com
-- **Credentials:** `~/.openclaw/credentials/industry-pulse-email.env` (and/or `~/.openclaw/secrets/smtp.env`)
-- **SMTP:** smtp.gmail.com:587
-- **To:** the existing Agent Pulse / Industry Pulse contracted-agent list (do not invent a new list)
-- **Subject:** `THEI Agent Pulse · Week of [Month D] · Issue #N`
-- **Body:** HTML matching the Hub edition (or a short email with the Hub link + the Hey Team + ACTION items). Agents on mobile should get the full talking points in the email, not only a link.
+OpenClaw SMTP (`industry-pulse-email.env` / `smtp.env` → info@healthexps.com) has been **unreliable**. The Pulse must not depend on that one path.
 
-If SMTP / the list is not available in the current runtime:
+**From:** `info@healthexps.com`  
+**To:** existing Agent Pulse / Industry Pulse contracted-agent list (do not invent a new list)  
+**Subject:** `THEI Agent Pulse · Week of [Month D] · Issue #N`  
+**Body:** full talking points in the email (Hey Team + ACTION items), not a link-only teaser. Hub link at the top.
 
-1. Still publish the Hub edition.
-2. Email the HTML file to yperez@healthexps.com (never leave it as a workspace-only file).
-3. Telegram Yahoska: Hub is live; email blast needs her send or SMTP access.
-4. Do **not** mark the Monday job done until the agents have the digest (Hub + email, or Yahoska confirmed she hit send).
+**Notion Send Desk:** keep the live failsafe copy here so Yahoska or Katy can hit send from Gmail in two minutes:  
+https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
+
+### Attempt order (stop when agents have the email)
+
+1. **Hub first** — publish the edition. Agents can read it even if inbox fails. Not a substitute for email.
+2. **Write the full send-ready copy to the Notion Send Desk** before attempting SMTP.
+3. **Gmail MCP** (Cursor desktop, connected as `info@healthexps.com` or an account that can send as info@). Preferred. Cloud Agents cannot interactively auth Gmail — desktop must be connected first.
+4. **OpenClaw SMTP** — `smtp.gmail.com:587` / `industry-pulse-email.env`. Try once. If it errors, do not retry in a loop.
+5. **Fail-open to humans, never silent:**
+   - Post in the Igor Cloud Agent chat (Yahoska gets the notification).
+   - Telegram Yahoska **and** Katy: Hub URL + Notion Send Desk + exact subject line + “email path failed — please hit Send.”
+   - Do **not** mark the week done until someone replies `Pulse sent` or the sent-mail copy is visible.
+
+### Sunday 6:00 PM ET preflight (mandatory)
+
+Cron (UTC, EDT): `0 22 * * 0`
+
+1. Confirm the Monday timer still exists; recreate if missing.
+2. Probe every email path (Gmail MCP connected? SMTP reachable?).
+3. If **any** path works: send a one-line test to `yperez@healthexps.com` only — subject `THEI Pulse preflight OK · [date]`. Do not email the agent list on Sunday.
+4. If **no** path works: update the Notion Send Desk to `PREFLIGHT FAIL` and ping Yahoska immediately so Monday morning is not the first time we find out.
+5. Re-subscribe the Sunday timer if it expired.
+
+After Nov 1, 2026 (DST end): Sunday cron becomes `0 23 * * 0` (still 6:00 PM ET).
 
 ---
 
