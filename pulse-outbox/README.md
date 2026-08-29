@@ -1,17 +1,16 @@
-# Pulse outbox — OpenClaw intake + send; Cursor drafts
+# Pulse — Igor writes it and emails it (Railway Pro / Gmail)
 
-Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub tickets. OpenClaw **must keep reading carrier broker mail daily** (`theiagentpulse` + carrier inboxes) and send Pulse email. Gmail MCP is blocked. Daily scan ≠ only the Monday brief.
+Yahoska (2026-08-29): **Igor (OpenClaw) owns Pulse.** Cursor is not on this job.
 
 ## Handshake
 
-| Who | When (ET) | Does |
-|---|---|---|
-| **OpenClaw** | Daily + Mon 7:00 AM | Scan `theiagentpulse` / carrier inboxes + Hub tickets. **If applicable, update the Agent Hub the same day** (pulse-feed / `/events` / certs). Write `INBOX-BRIEF.md` + `BRIEF.json` (`BRIEF_READY`). Upline/Hector = Yahoska only. |
-| Cursor Cloud Agent | Mon 8:00 AM | Read the brief + public sources. Draft Pulse. Publish Hub edition page. Write `READY.json` + `latest.html`. **If the brief is missing, do not invent inbox news.** |
-| **OpenClaw** | Mon 8:15 AM | SMTP-send `latest.html` from `info@healthexps.com` if `READY.json` is `READY`. Write `SENT.json`. Telegram Yahoska. |
-| Yahoska / Katy | If send fails | Hit Send in Gmail from the Notion Send Desk |
+| Who | Does |
+|---|---|
+| **Igor** | Reads carrier mail. Writes the Pulse. Drops Kind `Pulse` / Status `Ready` in the [Notion Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). |
+| **Igor SMTP** | Emails from `info@`. Notion/Zapier optional backup. |
+| **You** | Nothing unless the Zap is off. |
 
-## OpenClaw cron (BOSGAME)
+## OpenClaw cron (Railway v2 — still shadow until SMTP is proven)
 
 ```bash
 # 7:00 AM ET — inbox + Hub tickets brief (0 11 * * 1 UTC while EDT)
@@ -24,13 +23,17 @@ Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub ticket
 After Nov 1, 2026: `0 12 * * 1` and `15 13 * * 1` UTC.
 
 Manual Telegram `@Igor_theibot`:
+- Duplicate ads cron `9843178a` was **dropped 2026-08-29** on Railway (do not recreate it)
 - `Write the Pulse inbox brief`
-- `Send the Pulse outbox`
+- `Send the Pulse outbox` — SMTP works on Railway Pro (tested 2026-08-29, Yahoska only)
 
-## Credentials (BOSGAME only — never in git)
+## Credentials (Igor V2 Railway vars — never in git)
 
-- `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`
-- Recipient list: existing Agent Pulse / Industry Pulse list on BOSGAME (`PULSE_TO` / whatever file last week’s send used). **Not** in this repo.
+Wired on **Igor V2** 2026-08-29 from the old `igor-config` service: `SMTP_*`, `SENDGRID_API_KEY`, `FROM_EMAIL`, `HEARTBEAT_IMAP_*`, Industry Pulse lists (`MODE=test` → Yahoska only).
+
+- **Read:** IMAP on `info@` works.
+- **Send:** existing Gmail (`info@`) from the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e) / [Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). No SendGrid credits, no new mail API, no new Zapier account.
+- Zapier is optional on the current THEI Zapier plan only. Monday does not depend on it.
 
 ## READY.json
 

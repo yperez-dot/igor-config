@@ -1021,8 +1021,8 @@ AvMed Medicare **ended December 31, 2025** (NOT 2026). Use past tense. CMS TPMO 
 
 ## � (Added 2026-07-27)
 healthexps.com AND agentmedicarehub.com cannot go down without immediate alert.
-- **Uptime monitor:** `/opt/igor/site-health/uptime-monitor.py` — runs every 5 min via cron
-- **Alert:** Telegram to Yahoska (8882265752) instantly on down + recovery
+- **Uptime monitor (LIVE on Railway v2):** every 5 min — healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. (Old BOSGAME path `/opt/igor/site-health/uptime-monitor.py` is catalog only.)
+- **Alert:** page/Telegram — not email
 - **Agent Hub deploy root:** always zip `hub-migration/pages/` as root + `hub-migration/files/` as `/files/` — NOT the full `hub-migration/` dir (caused 404 outage Jul 27)
 - **If either site goes down:** check Netlify deploy state first, redeploy immediately, then investigate root cause
 
@@ -1034,9 +1034,46 @@ Anything from Hector Marmol (AgentConnection.Net / BSI / upline) is **PRIVATE**.
 - ✅ Notify Yahoska directly only
 This includes compliance requests, RRS requests, commission issues, contracting alerts — anything from the upline.
 
+## 📬 Scheduled jobs — Railway v2 (source of truth 2026-08-29)
+
+This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs are **seeded off (shadow)** until someone turns them on in v2.
+
+### Live on Railway (only these)
+
+| Job | When | Email? | What it does |
+|---|---|---|---|
+| **Site uptime** | every 5 min | **No** | `v2-site-uptime`. healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. |
+| **Ads / ops heartbeat** | every 30 min | **Read** (IMAP) | `v2-igor-heartbeat`. Pages if Facebook token dies; also scans `info@` for carrier/urgent mail now that IMAP is wired. |
+| **Ads heartbeat DUPLICATE** | — | **No** | Id `9843178a-3642-443c-b5a8-0068c394e864`. **DROPPED 2026-08-29** (`active=false`). Health now shows 2 scheduled jobs. |
+
+**Email on Igor V2 (wired 2026-08-29):** SMTP/SendGrid/IMAP vars were copied from the old `igor-config` service onto **Igor V2**. Health: `email=connected`, `imap=connected`.
+
+**Igor mail (OpenClaw-style, live 2026-08-29):** Workspace is **Railway Pro**. `info@healthexps.com` Gmail app password is on Igor V2. IMAP read works. SMTP send **works** — Yahoska confirmed she got the test email. Dead SendGrid key stays off Igor V2. Do not buy SendGrid credits. Zapier is optional backup, not required.
+
+Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
+
+- Igor writes the newsletter into [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) (Kind `Pulse`) and the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e).
+- **Igor SMTP** sends from `info@` (Pro). Notion Outbox / Zapier are optional backup.
+- Notion does not mail the list by itself. Human Gmail is backup only if the Zap is off.
+- This week’s drop: https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1
+- Inbox **read** on Igor V2 IMAP stays live.
+
+Igor V2 has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can drop send-ready rows. Cursor can too.
+
+### Jobs that require email
+
+| Job | Needs | Status 2026-08-29 |
+|---|---|---|
+| **Heartbeat inbox scan** | **Read** `info@` IMAP | **Live** — creds on Igor V2; IMAP login succeeded |
+| **Daily Carrier Email Scan / Pulse brief** | **Read** `theiagentpulse` + carrier inboxes | Inbox path is IMAP on `info@`; Pulse brief job still shadow |
+| **Agent Pulse / Industry Pulse send** | **Send** from `info@healthexps.com` | Railway send blocked. **Live path = existing Gmail** from Send Desk/Outbox (Yahoska or Katy). No new credit app. |
+| **SEO Weekly / Site Health fail mail** | **Send** to `yperez@healthexps.com` | Shadow; same send block |
+
+A Friday sales ping did **not** come from this Railway crontab.
+
 ## 📬 OpenClaw owns carrier-inbox read (locked 2026-08-29 — Yahoska)
 
-**Cursor Cloud Agent cannot read healthexps.com mail.** Gmail MCP is blocked. Anything that needs the inbox stays on **OpenClaw / BOSGAME**.
+**Cursor Cloud Agent cannot read healthexps.com mail.** Gmail MCP is blocked. Inbox **read** on Railway is Igor V2 IMAP (`info@`). **Send** is still blocked (SendGrid 0 credits + Hobby SMTP). Old BOSGAME OpenClaw is not the live runtime.
 
 OpenClaw **must** keep reading the carrier broker inboxes (`theiagentpulse` + carrier mail) for broker news — trainings, certs, network changes, SOA/compliance, AEP, events. This is daily, not only Monday Pulse.
 
@@ -1882,7 +1919,7 @@ crontab -l | grep seo-weekly
 - Cron UTC while EDT: `0 12 * * 1`
 - Cron UTC while EST: `0 13 * * 1` (switch the week DST ends — Nov 1, 2026)
 
-**Split (Yahoska 2026-08-29):** Cursor **cannot** read carrier inboxes or Agent Hub tickets (Gmail MCP blocked). **OpenClaw reads carrier broker mail daily** (`theiagentpulse` + carrier inboxes) and sends Pulse email. Monday: inbox/ticket brief 7:00 → Cursor drafts 8:00 → OpenClaw SMTP 8:15. Gmail MCP stays unused.
+**Split (Yahoska 2026-08-29):** Cursor **cannot** read carrier inboxes or Agent Hub tickets (Gmail MCP blocked). Carrier-inbox read + Pulse send are **required** but **not live on Railway v2** (shadow). Until a v2 job is turned on, they only run if OpenClaw does them by hand. Gmail MCP stays unused.
 
 **Send order:** OpenClaw inbox/ticket brief 7:00 → Cursor draft/Hub/outbox 8:00 (no invented inbox news) → OpenClaw SMTP 8:15. If OpenClaw fails, ping Yahoska + Katy (never silent).
 
@@ -1890,7 +1927,8 @@ crontab -l | grep seo-weekly
 
 **Email:**
 - OpenClaw script: `pulse-outbox/send-pulse-openclaw.py`
-- Creds on BOSGAME: `industry-pulse-email.env` / `smtp.env`
+- Creds on Railway OpenClaw (not only old BOSGAME): `industry-pulse-email.env` / `smtp.env`
+- SMTP proof: `pulse-outbox/test-smtp-openclaw.py` → `yperez@healthexps.com` only — do this before enabling the Monday send cron
 - Crons: Mon 7:00 AM inbox brief (`0 11 * * 1` UTC EDT) · Mon 8:15 AM send (`15 12 * * 1` UTC EDT)
 - Manual: Telegram `@Igor_theibot` — `Write the Pulse inbox brief` / `Send the Pulse outbox`
 - Fail-open: https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
