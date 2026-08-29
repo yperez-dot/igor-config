@@ -33,8 +33,8 @@ Manual Telegram `@Igor_theibot`:
 Wired on **Igor V2** 2026-08-29 from the old `igor-config` service: `SMTP_*`, `SENDGRID_API_KEY`, `FROM_EMAIL`, `HEARTBEAT_IMAP_*`, Industry Pulse lists (`MODE=test` → Yahoska only).
 
 - **Read:** IMAP on `info@` works.
-- **Send:** Notion [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) + Zapier Gmail as `info@`. Railway SMTP/SendGrid stay blocked.
-- Test row: Status `Test ready` → `yperez@healthexps.com` only. Agent list only on Status `Ready` after the test lands.
+- **Send:** existing Gmail (`info@`) from the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e) / [Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). No SendGrid credits, no new mail API, no new Zapier account.
+- Zapier is optional on the current THEI Zapier plan only. Monday does not depend on it.
 
 ## READY.json
 

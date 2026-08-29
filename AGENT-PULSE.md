@@ -135,8 +135,8 @@ Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
 | Hub pulse-feed / events from those inboxes | **OpenClaw** (Hub first, then Telegram) |
 | Inbox brief (`pulse-outbox/INBOX-BRIEF.md`) | **OpenClaw** — Monday **7:00 AM ET** |
 | Public-source draft + Hub edition page + READY.json | Cursor Cloud Agent — Monday **8:00 AM ET** |
-| Email blast from `info@healthexps.com` | **Notion Outbox + Zapier Gmail** — Monday **8:15 AM ET** (Railway SMTP/SendGrid blocked) |
-| Human Send if OpenClaw send fails | Yahoska or Katy from Gmail |
+| Email blast from `info@healthexps.com` | **Yahoska or Katy in Gmail** from Send Desk / Outbox — Monday **8:15 AM ET**. No new credit app. Railway SMTP/SendGrid stay unused. |
+| Optional Zapier | Only if THEI already has Zapier tasks. Do not sign up for a new Zapier. |
 
 **Outbox contract:** `pulse-outbox/README.md`  
 **Script OpenClaw runs:** `pulse-outbox/send-pulse-openclaw.py`  

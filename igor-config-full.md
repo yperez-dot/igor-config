@@ -1053,16 +1053,16 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 - Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
 - IMAP **read works** (`info@healthexps.com`).
 
-**Send path now (Yahoska 2026-08-29): Notion + Zapier**, not Railway SMTP.
+**Send path (Yahoska 2026-08-29): existing Gmail + Notion. No new credit-based app.**
 
-- Outbox DB: https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed (under THEI Dashboard)
-- Test row (Draft, you only): https://app.notion.com/p/3cb77cd3be8e8136aed0f01e54be4450
-- Zap: Notion item Status = `Test ready` → Gmail send as `info@healthexps.com` → mark `Sent`
-- Add Status `Ready` to the Zap only after the Yahoska-only test lands
-- Do not put the agent list on a Test ready row
-- SendGrid/Hobby SMTP stay broken; leave them. Zapier Gmail is the live send.
+Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 
-Igor V2 now has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can write outbox rows. Cursor/this agent can also write rows.
+- **Monday send:** Hub first, then [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e) / [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). Yahoska or Katy hit **Send** in Gmail as `info@healthexps.com` — same Workspace mail that sent the week of Aug 24.
+- Outbox is a clipboard for that Gmail send, not a new vendor.
+- Zapier is **optional** only on the Zapier plan THEI already has. Not required. Not a new account.
+- Leave Railway SMTP/SendGrid broken. Inbox **read** on Igor V2 IMAP stays live.
+
+Igor V2 has `NOTION_TOKEN` + `NOTION_EMAIL_OUTBOX_DB_ID` so it can drop send-ready rows. Cursor can too.
 
 ### Jobs that require email (send still blocked)
 
