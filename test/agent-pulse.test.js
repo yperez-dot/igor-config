@@ -21,6 +21,38 @@ test("refuses to invent carrier items when the inbox scan is empty", () => {
   assert.match(formatInboxBrief([]), /no carrier or urgent items/);
 });
 
+test("passes private carrier notice text into the Pulse brief", () => {
+  const brief = formatInboxBrief([
+    {
+      kind: "carrier",
+      from: "alerts@uhc.com",
+      subject: "Network update",
+      date: "2026-08-28T12:00:00.000Z",
+      snippet: "Private: new TIN for Florida PPO claims. Do not post publicly."
+    }
+  ]);
+  assert.match(brief, /new TIN for Florida PPO claims/);
+});
+
+test("opens carrier email bodies when writing Pulse", async () => {
+  let scanOptions;
+  await runAgentPulseWeekly({
+    environment: {
+      XAI_API_KEY: "token",
+      AGENT_PULSE_MODE: "dry-run",
+      HEARTBEAT_IMAP_USER: "info@example.com",
+      HEARTBEAT_IMAP_PASS: "secret"
+    },
+    scanInbox: async (options) => {
+      scanOptions = options;
+      return [];
+    },
+    askModel: async () => "THE Health Experts Insider Issue #11\n\n📋 operational: The info@ inbox had no carrier or urgent items this week.\n\nSources: info@ inbox scan, last 7 days."
+  });
+  assert.equal(scanOptions.includeBodies, true);
+  assert.equal(scanOptions.unseenOnly, false);
+});
+
 test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
   const delivered = [];
   const result = await runAgentPulseWeekly({

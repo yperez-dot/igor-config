@@ -7,8 +7,8 @@ Write plain text only. Do not use markdown, asterisks, or pound signs except in 
 Never recommend plans or carriers. Never quote CMS-prohibited marketing terms verbatim. Never invent facts or include PHI.
 Do not mention Hector, BSI, or any upline. Do not invent carrier operational news.
 Use emoji section tags when helpful: 🚨 urgent, 📋 operational, 📰 general, 🌴 Florida-specific.
-The only carrier/ops items you may include are those listed in the inbox scan. If the scan is empty, say the info@ inbox had no carrier or urgent items this week. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices.
-Keep the issue concise but useful. End with a short "Sources" line that names the inbox scan and, if you used general public context, labels it as general industry context only.`;
+The only carrier/ops items you may include are those in the inbox scan. Those emails are broker notices — often not public. Summarize what the carrier actually wrote in the body. If the scan is empty, say the info@ inbox had no carrier or urgent items this week. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices from general knowledge.
+Keep the issue concise but useful. End with a short "Sources" line that names the info@ inbox scan. Do not add public web items as if they came from a carrier email.`;
 
 function zonedYmd(now, timeZone = "America/New_York") {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -66,7 +66,8 @@ export function formatInboxBrief(findings = []) {
     `INBOX SCAN (last 7 days): ${findings.length} carrier/urgent item(s). Use only these:`,
     ...findings.slice(0, 40).map((item, index) => {
       const when = item.date ? ` (${item.date})` : "";
-      return `${index + 1}. [${item.kind}] ${item.subject} — from ${item.from}${when}`;
+      const body = item.snippet ? `\n   Notice: ${item.snippet}` : "";
+      return `${index + 1}. [${item.kind}] ${item.subject} — from ${item.from}${when}${body}`;
     })
   ].join("\n");
 }
@@ -114,6 +115,7 @@ export async function runAgentPulseWeekly({
       host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
       lookbackMinutes: Number(environment.AGENT_PULSE_LOOKBACK_MINUTES ?? 7 * 24 * 60),
       unseenOnly: false,
+      includeBodies: true,
       now
     })
     : [];

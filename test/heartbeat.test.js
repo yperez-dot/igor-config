@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyMessage, isQuietHours, mailboxSearchQuery, runHeartbeat } from "../src/heartbeat.js";
+import { classifyMessage, extractMailText, isQuietHours, mailboxSearchQuery, runHeartbeat, scanMailbox } from "../src/heartbeat.js";
 
 function okFetch() {
   return async () => ({
@@ -18,6 +18,52 @@ test("searches recent seen mail when unseenOnly is false", () => {
   });
   assert.equal(query.seen, undefined);
   assert.equal(query.since.toISOString(), "2026-08-22T16:00:00.000Z");
+});
+
+test("extracts plain text from a carrier notice body", () => {
+  const source = [
+    "From: alerts@uhc.com",
+    "Subject: Network update",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    "Effective Tuesday, Florida PPO claims must use the new TIN.",
+    "Do not share this outside contracted agencies."
+  ].join("\r\n");
+  assert.match(extractMailText(source), /new TIN/);
+});
+
+test("reads carrier notice bodies after classifying the envelope", async () => {
+  const findings = await scanMailbox({
+    user: "info@example.com",
+    pass: "secret",
+    includeBodies: true,
+    imapFactory: () => ({
+      async connect() {},
+      async logout() {},
+      async getMailboxLock() {
+        return { release() {} };
+      },
+      async *fetch() {
+        yield {
+          uid: 17,
+          envelope: {
+            from: [{ address: "alerts@uhc.com" }],
+            subject: "Network update",
+            date: new Date("2026-08-28T12:00:00.000Z")
+          }
+        };
+      },
+      async download() {
+        return {
+          content: (async function* () {
+            yield Buffer.from("Content-Type: text/plain\r\n\r\nPrivate: new TIN for Florida PPO claims.");
+          })()
+        };
+      }
+    })
+  });
+  assert.equal(findings[0].kind, "carrier");
+  assert.match(findings[0].snippet, /new TIN/);
 });
 
 test("classifies carrier and urgent messages", () => {

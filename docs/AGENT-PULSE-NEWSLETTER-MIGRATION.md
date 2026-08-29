@@ -15,8 +15,8 @@ Issue numbers increment from the Hub baseline: July 13, 2026 Issue #4. Monday Au
 
 ## What Igor uses
 
-1. IMAP scan of `info@` for the last 7 days (carrier and urgent subjects only).
-2. Grok writes the issue. If the scan is empty, the issue must say so. Igor does not invent carrier operational news.
+1. IMAP scan of `info@` for the last 7 days. Carrier and urgent mail is opened (subject + body), because broker notices are often not public.
+2. Grok writes the issue from those notices. If the scan is empty, the issue must say so. Igor does not invent carrier operational news from the public web.
 3. SMTP send. Failures Telegram-alert Yahoska.
 
 Compliance stays: no plan recommendations, no PHI, no Hector / BSI / upline.
