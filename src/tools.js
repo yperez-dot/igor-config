@@ -470,7 +470,7 @@ export async function executeTool(name, rawArgs, {
     if (name === "list_schedules") {
       const live = store ? await store.allSchedules() : [];
       return {
-        note: "Legacy jobs are seeded inactive (shadow) on v2 until turned on. Live: site uptime every 5 min, heartbeat every 30 min, daily carrier inbox digest at 7:00 ET, Agent Pulse (THE Health Experts Insider) Mondays at 8:00 ET. Industry Pulse is the old name for that same Monday email — it is not a second send.",
+        note: "Legacy jobs are seeded inactive (shadow) on v2 until turned on. Live: site uptime every 5 min, heartbeat every 30 min, daily carrier inbox digest at 7:00 ET, Agent Pulse (THE Health Experts Insider) Mondays at 8:00 ET. Pulse and same-day carrier notices update the Agent Hub live ticker. Industry Pulse is the old name for that same Monday email — it is not a second send.",
         live: live.map((row) => ({
           id: row.id,
           cron: row.cron,
