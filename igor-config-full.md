@@ -1053,7 +1053,7 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 - Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
 - IMAP **read works** (`info@healthexps.com`).
 
-**Send path (Yahoska 2026-08-29): Agent Pulse is dropped into Notion; Gmail sends.**
+**Send path (Yahoska 2026-08-29, simplified):** Igor writes the Pulse and drops it in Notion. Existing Zapier emails it. Cursor is not on Monday Pulse.
 
 Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 

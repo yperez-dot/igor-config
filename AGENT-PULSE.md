@@ -1,8 +1,8 @@
 # THEI Agent Pulse — Monday Send Playbook
 
-**Standing order (Yahoska, 2026-08-29):** Igor sends the Agent Pulse every Monday.
+**Standing order (Yahoska, 2026-08-29):** **Igor (OpenClaw) does Pulse. Cursor does not.**
 
-Do not wait to be asked. Monday = produce, publish, send.
+Igor writes the newsletter, drops it in Notion, existing Zapier emails it from `info@`. You do not click Send. This Cursor agent is not on the Monday job.
 
 ---
 
@@ -40,18 +40,18 @@ SEO weekly already runs Monday 7:00 AM ET. Pulse is 8:00 AM so the two jobs do n
 
 ---
 
-## Send order (do not skip steps)
+## Who does what (keep it this simple)
 
-1. **Wait for OpenClaw’s inbox brief** (`pulse-outbox/INBOX-BRIEF.md`). If it is missing, draft public sources only and say the inbox brief is missing — do not invent carrier-email or ticket items.
-2. **Draft** the edition from the brief + public sources.
-3. **Compliance pass** (see rules).
-4. **Publish to Agent Hub first** — Hub is the source of truth.
-5. **Drop the newsletter into Notion** — [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) row, Kind `Pulse` (this week: [Week of August 31](https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1)). Also fill the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e).
-6. **Zapier sends Gmail** — existing THEI Zapier, not a new app. When the Outbox row Status is `Ready` (or `Test ready` for Yahoska-only), Zapier sends as `info@healthexps.com` and marks **Sent**. You do not click Send. Human Gmail is backup only if the Zap is off.
-7. **Telegram Yahoska** `Pulse dropped in Notion` when the row is filled; `Pulse sent` when the row shows Sent.
-8. **Log** the run (date, issue #, Hub URL, email status) in `IGOR_MEMORY` / this file's run log if present.
+| Who | Does |
+|---|---|
+| **Igor (OpenClaw)** | Reads carrier mail. Writes the Pulse. Drops it in [Notion Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) (Kind `Pulse`, Status `Ready`). Updates Hub if he can. Telegram when dropped. |
+| **Zapier** (existing THEI plan) | Sees `Ready` / `Test ready` → Gmail from `info@` → marks **Sent**. |
+| **You / Katy** | Nothing, unless the Zap is off — then Send in Gmail from the Notion row. |
+| **This Cursor agent** | **Not Monday Pulse.** Do not draft. Do not drop Notion. |
 
 Never email a pulse that is not on the Hub. Never post Hector Marmol / BSI / upline private items to the Hub or the Pulse.
+
+Telegram `@Igor_theibot`: `Write this week's Agent Pulse and drop it in the Notion Outbox.`
 
 ---
 
@@ -124,33 +124,9 @@ Repo: `yperez-dot/agent-medicare-hub`
 
 ---
 
-## Split — OpenClaw keeps inboxes, tickets, and send
+## Cursor stays out
 
-Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
-
-| Role | Who |
-|---|---|
-| Carrier inboxes (`theiagentpulse`) + Daily Carrier Email Scan | **OpenClaw** |
-| Agent Hub tickets | **OpenClaw** |
-| Hub pulse-feed / events from those inboxes | **OpenClaw** (Hub first, then Telegram) |
-| Inbox brief (`pulse-outbox/INBOX-BRIEF.md`) | **OpenClaw** — Monday **7:00 AM ET** |
-| Public-source draft + Hub edition page + READY.json | Cursor Cloud Agent — Monday **8:00 AM ET** |
-| Drop Pulse into Notion Outbox + Send Desk | **Igor / Cursor** — Monday **8:00 AM ET** |
-| Gmail send from that Notion copy | **Existing Zapier** as `info@` — fires when Status is `Ready` / `Test ready`. You do not click Send. |
-| Optional Zapier | Only if THEI already has Zapier tasks. Do not sign up for a new Zapier. |
-
-**Outbox contract:** `pulse-outbox/README.md`  
-**Script OpenClaw runs:** `pulse-outbox/send-pulse-openclaw.py`  
-**Credentials (Railway OpenClaw — not only old BOSGAME):** `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`  
-**List:** same Agent Pulse / Industry Pulse list OpenClaw used last week (`PULSE_TO` or `PULSE_LIST_FILE` — not in git)  
-**SMTP proof (2026-08-29):** creds are on Igor V2. SendGrid free account has **0 credits**. Gmail SMTP times out on Railway Hobby. Do not enable the Monday blast until a Yahoska-only test lands.
-
-**OpenClaw crons (ET):** 7:00 inbox/ticket brief · 8:15 SMTP send.
-
-```bash
-0 11 * * 1   # UTC while EDT — write INBOX-BRIEF.md
-15 12 * * 1  # UTC while EDT — send-pulse-openclaw.py
-```
+This Cloud Agent does not draft Pulse, does not drop Notion, and does not send mail. Gmail MCP stays unused. Tell `@Igor_theibot` if Monday is quiet.
 
 Manual Telegram `@Igor_theibot`: `Write the Pulse inbox brief` · `Send the Pulse outbox`.
 

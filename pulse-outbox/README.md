@@ -1,15 +1,14 @@
-# Pulse outbox — OpenClaw intake + send; Cursor drafts
+# Pulse — Igor writes it, Notion holds it, Zapier emails it
 
-Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub tickets. OpenClaw **must keep reading carrier broker mail daily** (`theiagentpulse` + carrier inboxes) and send Pulse email. Gmail MCP is blocked. Daily scan ≠ only the Monday brief.
+Yahoska (2026-08-29): **Igor (OpenClaw) owns Pulse.** Cursor is not on this job.
 
 ## Handshake
 
-| Who | When (ET) | Does |
-|---|---|---|
-| **OpenClaw** | Daily + Mon 7:00 AM | Scan `theiagentpulse` / carrier inboxes + Hub tickets. **If applicable, update the Agent Hub the same day** (pulse-feed / `/events` / certs). Write `INBOX-BRIEF.md` + `BRIEF.json` (`BRIEF_READY`). Upline/Hector = Yahoska only. |
-| Cursor Cloud Agent | Mon 8:00 AM | Read the brief + public sources. Draft Pulse. Publish Hub. **Drop send-ready copy into Notion** (Outbox Kind `Pulse` + Send Desk). Do not invent inbox news if the brief is missing. |
-| **Notion** | Mon 8:00 AM | Holds the newsletter. Does not mail the list by itself. |
-| **Existing Zapier** | when Status is `Test ready` or `Ready` | **Gmail sends** as `info@healthexps.com`. Marks row Sent. You do not click Send. |
+| Who | Does |
+|---|---|
+| **Igor** | Reads carrier mail. Writes the Pulse. Drops Kind `Pulse` / Status `Ready` in the [Notion Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed). |
+| **Zapier** | Sends Gmail as `info@`. Marks Sent. |
+| **You** | Nothing unless the Zap is off. |
 
 ## OpenClaw cron (Railway v2 — still shadow until SMTP is proven)
 
