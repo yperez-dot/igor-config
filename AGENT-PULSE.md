@@ -18,7 +18,11 @@ It is **not** the SEO weekly report and **not** a client newsletter.
 - **Repo:** `yperez-dot/agent-medicare-hub`
 - **Edition pages:** `pages/pulse-YYYY-MM-DD.html` (Monday date of that week)
 
-Last published edition before this schedule was locked: **Issue #4 — Week of July 13, 2026**. Next send increments the issue number. Do not backfill skipped weeks unless Yahoska asks.
+**Last send (source of truth = email, not Hub):** week of **August 24, 2026**. Yahoska confirmed the digest went out last week. Next send is **Monday, August 31, 2026**.
+
+The Hub `weekly_pulses` archive is **stale** — it still shows Issue #4 / Week of July 13 as `Latest`, and later email editions were never added as Hub pages. Do **not** treat Hub as last-run. Before drafting, check the last Agent Pulse email (subject + issue #) from `info@healthexps.com`. Increment from that email, not from the Hub archive.
+
+Monday job must also **catch the Hub up**: publish the new edition to `pulse-feed.json` + a `pulse-YYYY-MM-DD.html` page so the archive matches what agents already received.
 
 ---
 

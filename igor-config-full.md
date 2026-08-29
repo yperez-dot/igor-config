@@ -1866,7 +1866,7 @@ crontab -l | grep seo-weekly
 
 **Email:** info@healthexps.com via `~/.openclaw/credentials/industry-pulse-email.env`
 
-**Last edition before this lock:** Issue #4 — Week of July 13, 2026. Next Monday increments the issue number. Do not backfill skipped weeks unless Yahoska asks. If a Monday is missed, send the same-week digest ASAP — do not skip the week.
+**Last send:** week of August 24, 2026 (email — Yahoska confirmed). Hub archive is stale (still lists July 13 as Latest). Next send: Monday August 31. Increment issue # from the last **email**, not from Hub. If a Monday is missed, send the same-week digest ASAP — do not skip the week.
 
 **Hard rules:** No plan recommendations. No PHI. No Hector Marmol / BSI / upline-private items. $1M rule on every item (Stat + Insight + Action).
 
