@@ -32,11 +32,22 @@ export function classifyMessage({ from = "", subject = "" }) {
   return null;
 }
 
+export function mailboxSearchQuery({
+  lookbackMinutes = 35,
+  now = new Date(),
+  unseenOnly = true
+} = {}) {
+  const since = new Date(now.getTime() - Number(lookbackMinutes) * 60 * 1000);
+  return unseenOnly ? { seen: false, since } : { since };
+}
+
 export async function scanMailbox({
   user,
   pass,
   host = "imap.gmail.com",
   lookbackMinutes = 35,
+  unseenOnly = true,
+  now = new Date(),
   imapFactory = (options) => new ImapFlow(options)
 }) {
   const client = imapFactory({
@@ -47,13 +58,12 @@ export async function scanMailbox({
   });
 
   await client.connect();
-  const since = new Date(Date.now() - lookbackMinutes * 60 * 1000);
   const findings = [];
 
   try {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      for await (const message of client.fetch({ seen: false, since }, { envelope: true })) {
+      for await (const message of client.fetch(mailboxSearchQuery({ lookbackMinutes, now, unseenOnly }), { envelope: true })) {
         const from = message.envelope.from?.map((entry) => entry.address).join(", ") ?? "";
         const subject = message.envelope.subject ?? "";
         const kind = classifyMessage({ from, subject });

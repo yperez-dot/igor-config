@@ -470,7 +470,7 @@ export async function executeTool(name, rawArgs, {
     if (name === "list_schedules") {
       const live = store ? await store.allSchedules() : [];
       return {
-        note: "Legacy jobs are seeded inactive (shadow) on v2 until Yahoska turns them on. Live lookout: v2-site-uptime every 5 min (websites) and v2-igor-heartbeat every 30 min (ads token).",
+        note: "Legacy jobs are seeded inactive (shadow) on v2 until turned on. Live: site uptime every 5 min, heartbeat every 30 min, daily carrier inbox digest at 7:00 ET, Agent Pulse and Industry Pulse Mondays at 8:00 ET.",
         live: live.map((row) => ({
           id: row.id,
           cron: row.cron,

@@ -1,4 +1,10 @@
 export const LOOKOUT_LIVE_SCHEDULE_IDS = ["v2-igor-heartbeat", "v2-site-uptime"];
+export const EMAIL_LIVE_SCHEDULE_IDS = [
+  "v2-agent-pulse",
+  "v2-industry-pulse",
+  "v2-carrier-inbox-digest"
+];
+export const LIVE_SCHEDULE_IDS = [...LOOKOUT_LIVE_SCHEDULE_IDS, ...EMAIL_LIVE_SCHEDULE_IDS];
 
 export const legacySchedules = [
   {
@@ -112,6 +118,30 @@ export const legacySchedules = [
     cron: "*/5 * * * *",
     timezone: "America/New_York",
     payload: { workflow: "site_uptime", mode: "report-only", source: "v2" }
+  },
+  {
+    id: "v2-agent-pulse",
+    title: "Agent Pulse weekly email",
+    taskType: "content_draft",
+    cron: "0 8 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "agent_pulse_weekly", mode: "live", source: "v2" }
+  },
+  {
+    id: "v2-industry-pulse",
+    title: "Industry Pulse weekly email",
+    taskType: "content_draft",
+    cron: "0 8 * * 1",
+    timezone: "America/New_York",
+    payload: { workflow: "industry_pulse_weekly", mode: "live", source: "v2" }
+  },
+  {
+    id: "v2-carrier-inbox-digest",
+    title: "Daily carrier inbox digest",
+    taskType: "daily_operations",
+    cron: "0 7 * * *",
+    timezone: "America/New_York",
+    payload: { workflow: "carrier_inbox_digest", mode: "live", source: "v2" }
   },
   {
     id: "legacy-openclaw-netlify-credit-check",

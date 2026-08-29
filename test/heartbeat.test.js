@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyMessage, isQuietHours, runHeartbeat } from "../src/heartbeat.js";
+import { classifyMessage, isQuietHours, mailboxSearchQuery, runHeartbeat } from "../src/heartbeat.js";
 
 function okFetch() {
   return async () => ({
@@ -9,6 +9,16 @@ function okFetch() {
     json: async () => ({ status: "ok", db: "ok", id: "1", name: "C1" })
   });
 }
+
+test("searches recent seen mail when unseenOnly is false", () => {
+  const query = mailboxSearchQuery({
+    lookbackMinutes: 7 * 24 * 60,
+    now: new Date("2026-08-29T16:00:00.000Z"),
+    unseenOnly: false
+  });
+  assert.equal(query.seen, undefined);
+  assert.equal(query.since.toISOString(), "2026-08-22T16:00:00.000Z");
+});
 
 test("classifies carrier and urgent messages", () => {
   assert.equal(classifyMessage({ from: "alerts@uhc.com", subject: "Network update" }), "carrier");

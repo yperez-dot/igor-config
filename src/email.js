@@ -19,6 +19,40 @@ export function parseRecipientList(value) {
     .filter(Boolean);
 }
 
+export function opsAlertRecipients(environment = process.env) {
+  return parseRecipientList(
+    environment.OPS_ALERT_EMAIL
+    ?? environment.INDUSTRY_PULSE_TEST_TO
+    ?? environment.FROM_EMAIL
+  );
+}
+
+export async function sendOpsAlert({
+  environment = process.env,
+  subject,
+  text,
+  deliver = sendEmail
+}) {
+  const recipients = opsAlertRecipients(environment);
+  if (!recipients.length) {
+    return { status: "skipped", reason: "no_recipients" };
+  }
+  const config = smtpConfig(environment);
+  try {
+    validateSmtpConfig(config);
+  } catch {
+    return { status: "skipped", reason: "smtp_not_configured" };
+  }
+  const result = await deliver({
+    config,
+    to: recipients[0],
+    bcc: recipients.slice(1),
+    subject,
+    text
+  });
+  return { status: "sent", messageId: result.messageId, recipientCount: recipients.length };
+}
+
 export function validateSmtpConfig(config) {
   if (!config.fromEmail) {
     throw new Error("FROM_EMAIL is required for email delivery.");

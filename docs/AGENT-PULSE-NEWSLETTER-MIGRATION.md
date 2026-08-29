@@ -1,29 +1,32 @@
-# Agent Pulse newsletter migration
+# Agent Pulse newsletter
 
-Agent Pulse is the email newsletter sent to agents. It is an outbound communication workflow, not an OpenClaw heartbeat or a v2 background pulse.
+Agent Pulse is **THE Health Experts Insider**, the Monday email to contracted Florida Medicare agents. Igor V2 writes it and sends it from `info@healthexps.com` via Gmail SMTP. Cursor does not author the issue.
 
-## What is known
+## Live schedule
 
-- The legacy system uses the `info@healthexps.com` mailbox for Industry Pulse and ad-hoc email.
-- The exported configuration does not include the newsletter schedule, recipient list, template, content source, unsubscribe workflow, or send script.
+- Job: `v2-agent-pulse`
+- Workflow: `agent_pulse_weekly`
+- When: Monday 8:00 AM America/New_York
+- From: `info@healthexps.com`
+- Recipients: `AGENT_PULSE_RECIPIENTS` if set, otherwise `INDUSTRY_PULSE_RECIPIENTS_EN` (Railway secret, not in git)
+- Mode: `AGENT_PULSE_MODE=send` for the contracted list; `test` sends only to `AGENT_PULSE_TEST_TO` / `INDUSTRY_PULSE_TEST_TO`
 
-## What must be collected before migration
+Issue numbers increment from the Hub baseline: July 13, 2026 Issue #4. Monday August 31, 2026 is Issue #11.
 
-1. Newsletter frequency and time zone.
-2. Approved recipient source and list-management owner.
-3. Current template, subject-line pattern, and content inputs.
-4. Required CMS/carrier disclosures and internal compliance reviewer.
-5. Whether recipients can unsubscribe or update preferences.
-6. Existing send script and delivery/error reports.
+## What Igor uses
 
-## v2 implementation rules
+1. IMAP scan of `info@` for the last 7 days (carrier and urgent subjects only).
+2. Grok writes the issue. If the scan is empty, the issue must say so. Igor does not invent carrier operational news.
+3. SMTP send. Failures Telegram-alert Yahoska.
 
-1. Generate an email **draft** only; never send automatically.
-2. Require an explicit approval tied to the exact subject, recipient count, and final body.
-3. Send only to an approved, versioned recipient list.
-4. Store send metadata, approval identity, recipient count, and provider message ID—never recipient email addresses or full body text in the audit log.
-5. Use least-privilege mail credentials stored as Railway secrets.
-6. Run a test send to a single internal mailbox before any group delivery.
-7. Keep the legacy newsletter active until the v2 test delivery and reconciliation succeed.
+Compliance stays: no plan recommendations, no PHI, no Hector / BSI / upline.
 
-No Agent Pulse newsletter schedule is seeded in v2 because its actual timing and recipient workflow are not present in the exported configuration.
+## Related live email jobs
+
+| Job | When | Who gets mail |
+| --- | --- | --- |
+| `v2-industry-pulse` | Monday 8:00 AM ET | `INDUSTRY_PULSE_MODE=test` → Yahoska only until she flips it to `send` |
+| `v2-carrier-inbox-digest` | Daily 7:00 AM ET | Yahoska, only if the last 24 hours had carrier/urgent mail |
+| `v2-site-uptime` | Every 5 minutes | Telegram plus email to Yahoska when a site is down or recovers |
+
+SEO weekly is still shadow. There is no v2 SEO handler, so it does not email.

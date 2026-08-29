@@ -6,7 +6,8 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | --- | --- | --- |
 | Netlify credit check | Keep temporarily | Leave active on OpenClaw until its v2 replacement is active and verified; then retire it. |
 | Sales tracker sync | Keep weekly | Monday 7:00 AM ET; auto-sync up to 20 sales from Google Sheets to Notion, refresh Executive Dashboard blocks, and send Telegram-only summaries/abort alerts. Above 20 sales, do not write; alert Telegram. |
-| Industry Pulse weekly email | Keep and auto-send | Monday 8:00 AM ET bilingual sends to separate BCC lists. Fail closed and alert Telegram if either language, source validation, or recipient-list validation fails. |
+| Agent Pulse weekly email | Live on Igor V2 | Monday 8:00 AM ET from info@ via SMTP. Recipients from Railway `AGENT_PULSE_RECIPIENTS` or `INDUSTRY_PULSE_RECIPIENTS_EN`. |
+| Industry Pulse weekly email | Live on Igor V2 in test mode | Monday 8:00 AM ET bilingual drafts. `INDUSTRY_PULSE_MODE=test` emails Yahoska only until she sets `send`. |
 | SEP tracker health/process jobs | Consolidate and auto-publish | Replace the overlapping 9:00/9:15 legacy jobs with one Monday 9:00 AM pipeline: scan, validate, snapshot, deploy, health check, Telegram result, mark processed. |
 | Weekly SEO report | Keep | Monday 8:15 AM ET in v2; sourced performance report with a reviewable action list and Telegram failure alert. |
 | Medicare cost audit | Keep and auto-run | Jan/Apr/Jul/Oct/Nov 1 at 9:00 AM ET; email + Telegram only when site values need correction, quiet Telegram success summary otherwise. |
