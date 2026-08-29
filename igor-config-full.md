@@ -1042,48 +1042,33 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 
 | Job | When | Email? | What it does |
 |---|---|---|---|
-| **Site uptime** | every 5 min | **No** | healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. |
-| **Ads heartbeat** | every 30 min | **No** | Pages Yahoska if the Facebook token dies. |
-| **Ads heartbeat DUPLICATE** | — | **No** | Id `9843178a`. **DROP CONFIRMED Yahoska 2026-08-29.** Noise, not extra coverage. OpenClaw must run `openclaw cron rm 9843178a` (or `openclaw cron disable 9843178a`). This Cursor agent cannot mutate Railway crons until Railway CLI is signed in. |
+| **Site uptime** | every 5 min | **No** | `v2-site-uptime`. healthexps.com + Agent Hub. Pages Yahoska if a site is actually down. |
+| **Ads / ops heartbeat** | every 30 min | **Read** (IMAP) | `v2-igor-heartbeat`. Pages if Facebook token dies; also scans `info@` for carrier/urgent mail now that IMAP is wired. |
+| **Ads heartbeat DUPLICATE** | — | **No** | Id `9843178a-3642-443c-b5a8-0068c394e864`. **DROPPED 2026-08-29** (`active=false`). Health now shows 2 scheduled jobs. |
 
-**None of the live Railway jobs send or read email.** They page/Telegram only.
+**Email on Igor V2 (wired 2026-08-29):** SMTP/SendGrid/IMAP vars were copied from the old `igor-config` service onto **Igor V2**. Health: `email=connected`, `imap=connected`.
 
-### Jobs that require email (must work — currently shadow)
+**Send is still blocked:**
+- SendGrid account is **free**, **0 credits** (`Maximum credits exceeded`). Igor prefers SendGrid when the key is set.
+- Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
+- IMAP **read works** (`info@healthexps.com`).
 
-These are the ones Yahoska said must have working mail. They are **seeded off on Railway v2**. Last week's Pulse still went out because regular Gmail / old OpenClaw SMTP still works — not because these v2 jobs are live.
+To make **send** work: add SendGrid credits (or a paid SendGrid plan) **or** upgrade Railway off Hobby so Gmail SMTP can leave the box. Do not email the agent list until a Yahoska-only test lands.
 
-| Job | Needs | Proof it works |
+### Jobs that require email (send still blocked)
+
+| Job | Needs | Status 2026-08-29 |
 |---|---|---|
-| **Daily Carrier Email Scan** | **Read** `theiagentpulse` + carrier broker inboxes | OpenClaw can list today's broker mail (no invented items) |
-| **Agent Pulse inbox brief** (Mon 7:00 ET) | **Read** same inboxes + Hub tickets | Writes `pulse-outbox/INBOX-BRIEF.md` |
-| **Agent Pulse send** (Mon 8:15 ET) | **Send** SMTP from `info@healthexps.com` | One-line test to `yperez@healthexps.com` only, then Monday blast |
-| **SEO Weekly** fail/alert mail | **Send** SMTP to `yperez@healthexps.com` | Fail-mail path uses same `smtp.env` |
-| **Site Health** fail mail | **Send** SMTP or SendGrid (`sendgrid-thei.env`) | Fail-mail path; clean runs stay Notion-only |
-
-Other catalog jobs (Industry Pulse, weekly sales reports, Lead Digest, etc.) stay shadow until Yahoska turns them on. Do **not** enable the duplicate ads heartbeat.
-
-### Make email work on Railway (OpenClaw — do this in order)
-
-Cursor Cloud Agent **cannot** read or send healthexps.com mail (Gmail MCP blocked). OpenClaw owns SMTP + inbox.
-
-1. **Drop the duplicate:** `openclaw cron rm 9843178a`
-2. **Confirm creds on the Railway OpenClaw box** (not only old BOSGAME):
-   - `~/.openclaw/credentials/industry-pulse-email.env` **or** `~/.openclaw/secrets/smtp.env`
-   - SMTP `smtp.gmail.com:587` · From `info@healthexps.com`
-   - Recipient list: `PULSE_TO` or `PULSE_LIST_FILE` (same list as week of Aug 24 — not in git)
-3. **Test send (Yahoska only, never the agent list):** run `pulse-outbox/test-smtp-openclaw.py` — one line to `yperez@healthexps.com`.
-4. **Test read:** OpenClaw opens `theiagentpulse` + one carrier inbox and writes a 5-line proof (date, from, subject). No Hub post from the test.
-5. **Then turn on** Daily Carrier Email Scan + Pulse brief/send on v2. Leave SEO/Site-Health fail-mail off until the test send lands.
-
-Telegram `@Igor_theibot` if the gateway is easier than SSH:
-
-`Delete cron 9843178a. Then confirm smtp.env on Railway, send one-line test to yperez@healthexps.com only, then enable Daily Carrier Email Scan and Monday Pulse send.`
+| **Heartbeat inbox scan** | **Read** `info@` IMAP | **Live** — creds on Igor V2; IMAP login succeeded |
+| **Daily Carrier Email Scan / Pulse brief** | **Read** `theiagentpulse` + carrier inboxes | Inbox path is IMAP on `info@`; Pulse brief job still shadow |
+| **Agent Pulse / Industry Pulse send** | **Send** from `info@healthexps.com` | Creds on V2; **send failed** (SendGrid 0 credits + Hobby SMTP block). Pulse stays `INDUSTRY_PULSE_MODE=test` → `yperez@` only |
+| **SEO Weekly / Site Health fail mail** | **Send** to `yperez@healthexps.com` | Shadow; same send block |
 
 A Friday sales ping did **not** come from this Railway crontab.
 
 ## 📬 OpenClaw owns carrier-inbox read (locked 2026-08-29 — Yahoska)
 
-**Cursor Cloud Agent cannot read healthexps.com mail.** Gmail MCP is blocked. Anything that needs the inbox stays on **OpenClaw / BOSGAME**.
+**Cursor Cloud Agent cannot read healthexps.com mail.** Gmail MCP is blocked. Inbox **read** on Railway is Igor V2 IMAP (`info@`). **Send** is still blocked (SendGrid 0 credits + Hobby SMTP). Old BOSGAME OpenClaw is not the live runtime.
 
 OpenClaw **must** keep reading the carrier broker inboxes (`theiagentpulse` + carrier mail) for broker news — trainings, certs, network changes, SOA/compliance, AEP, events. This is daily, not only Monday Pulse.
 

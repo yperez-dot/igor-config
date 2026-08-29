@@ -24,10 +24,9 @@ Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub ticket
 After Nov 1, 2026: `0 12 * * 1` and `15 13 * * 1` UTC.
 
 Manual Telegram `@Igor_theibot`:
-- `Delete cron 9843178a` (duplicate ads heartbeat — Yahoska drop 2026-08-29)
-- `Confirm smtp.env on Railway, then run pulse-outbox/test-smtp-openclaw.py` (Yahoska only)
+- Duplicate ads cron `9843178a` was **dropped 2026-08-29** on Railway (do not recreate it)
 - `Write the Pulse inbox brief`
-- `Send the Pulse outbox`
+- `Send the Pulse outbox` — only after a Yahoska-only test lands (SendGrid is out of credits; Hobby blocks SMTP)
 
 ## Credentials (OpenClaw box — never in git)
 

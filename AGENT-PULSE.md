@@ -142,7 +142,7 @@ Cursor cannot see carrier mail or Hub tickets. OpenClaw is not “send-only.”
 **Script OpenClaw runs:** `pulse-outbox/send-pulse-openclaw.py`  
 **Credentials (Railway OpenClaw — not only old BOSGAME):** `~/.openclaw/credentials/industry-pulse-email.env` or `~/.openclaw/secrets/smtp.env`  
 **List:** same Agent Pulse / Industry Pulse list OpenClaw used last week (`PULSE_TO` or `PULSE_LIST_FILE` — not in git)  
-**SMTP proof before enabling the send cron:** `python3 pulse-outbox/test-smtp-openclaw.py` → `yperez@healthexps.com` only
+**SMTP proof (2026-08-29):** creds are on Igor V2. SendGrid free account has **0 credits**. Gmail SMTP times out on Railway Hobby. Do not enable the Monday blast until a Yahoska-only test lands.
 
 **OpenClaw crons (ET):** 7:00 inbox/ticket brief · 8:15 SMTP send.
 
