@@ -1,5 +1,6 @@
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
+import { publishHubTicker } from "./hub-ticker.js";
 
 export function carrierDigestRecipients(environment = process.env) {
   return parseRecipientList(
@@ -32,7 +33,8 @@ export async function runCarrierInboxDigest({
   environment = process.env,
   now = new Date(),
   scanInbox = scanMailbox,
-  deliver = sendEmail
+  deliver = sendEmail,
+  publishHub = publishHubTicker
 } = {}) {
   const mode = environment.CARRIER_DIGEST_MODE ?? "send";
   if (!["dry-run", "test", "send"].includes(mode)) {
@@ -50,9 +52,10 @@ export async function runCarrierInboxDigest({
     pass,
     host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
     lookbackMinutes: Number(environment.CARRIER_DIGEST_LOOKBACK_MINUTES ?? 24 * 60),
-    unseenOnly: false,
-    now
-  });
+      unseenOnly: false,
+      includeBodies: true,
+      now
+    });
 
   const subject = findings.length
     ? `Igor: carrier inbox — ${findings.length} item(s)`
@@ -62,8 +65,23 @@ export async function runCarrierInboxDigest({
   if (!findings.length) {
     return { status: "clear", emailed: false, findingCount: 0, subject };
   }
+
+  let hub = { status: "skipped", reason: "not_send_mode" };
+  if (mode === "send") {
+    try {
+      hub = await publishHub({
+        environment,
+        findings,
+        now,
+        includeWeekly: false
+      });
+    } catch (error) {
+      hub = { status: "failed", reason: error.message };
+    }
+  }
+
   if (mode === "dry-run") {
-    return { status: "dry_run", emailed: false, findingCount: findings.length, subject, length: text.length };
+    return { status: "dry_run", emailed: false, findingCount: findings.length, subject, length: text.length, hub };
   }
 
   const recipients = carrierDigestRecipients(environment);
@@ -85,6 +103,7 @@ export async function runCarrierInboxDigest({
     findingCount: findings.length,
     recipientCount: recipients.length,
     subject,
-    messageId: result.messageId
+    messageId: result.messageId,
+    hub
   };
 }

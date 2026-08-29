@@ -1,6 +1,7 @@
 import { askGrok } from "./grok.js";
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
+import { easternMondayIso, publishHubTicker } from "./hub-ticker.js";
 
 const AGENT_PULSE_PROMPT = `You are writing THE Health Experts Insider (Agent Pulse) for contracted Florida Medicare agents at The Health Experts Insurance.
 Write plain text only. Do not use markdown, asterisks, or pound signs except in the issue number.
@@ -96,7 +97,8 @@ export async function runAgentPulseWeekly({
   now = new Date(),
   askModel = askGrok,
   deliver = sendEmail,
-  scanInbox = scanMailbox
+  scanInbox = scanMailbox,
+  publishHub = publishHubTicker
 } = {}) {
   const mode = environment.AGENT_PULSE_MODE ?? "send";
   if (!["dry-run", "test", "send"].includes(mode)) {
@@ -132,6 +134,24 @@ export async function runAgentPulseWeekly({
   }
 
   const subject = agentPulseSubject({ now, environment });
+  const weekLabel = easternMondayLabel(now);
+  const mondayIso = easternMondayIso(now);
+  let hub = { status: "skipped", reason: "not_send_mode" };
+  if (mode === "send") {
+    try {
+      hub = await publishHub({
+        environment,
+        findings,
+        digest,
+        weekLabel,
+        mondayIso,
+        now,
+        includeWeekly: true
+      });
+    } catch (error) {
+      hub = { status: "failed", reason: error.message };
+    }
+  }
   if (mode === "dry-run") {
     return {
       status: "dry_run",
@@ -139,7 +159,8 @@ export async function runAgentPulseWeekly({
       subject,
       length: digest.length,
       findingCount: findings.length,
-      issue: agentPulseIssueNumber({ environment, now })
+      issue: agentPulseIssueNumber({ environment, now }),
+      hub
     };
   }
 
@@ -163,6 +184,7 @@ export async function runAgentPulseWeekly({
     recipientCount: recipients.length,
     findingCount: findings.length,
     issue: agentPulseIssueNumber({ environment, now }),
-    messageId: result.messageId
+    messageId: result.messageId,
+    hub
   };
 }

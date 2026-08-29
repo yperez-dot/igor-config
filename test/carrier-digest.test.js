@@ -10,9 +10,10 @@ test("skips email when the 24-hour scan is clear", async () => {
       HEARTBEAT_IMAP_PASS: "secret",
       INDUSTRY_PULSE_TEST_TO: "yperez@healthexps.com"
     },
-    scanInbox: async ({ lookbackMinutes, unseenOnly }) => {
+    scanInbox: async ({ lookbackMinutes, unseenOnly, includeBodies }) => {
       assert.equal(lookbackMinutes, 24 * 60);
       assert.equal(unseenOnly, false);
+      assert.equal(includeBodies, true);
       return [];
     },
     deliver: async (payload) => {
@@ -41,12 +42,14 @@ test("emails the ops mailbox when carrier items are found", async () => {
     scanInbox: async () => [
       { kind: "carrier", from: "alerts@uhc.com", subject: "Network update", date: "2026-08-29T12:00:00.000Z" }
     ],
+    publishHub: async () => ({ status: "published", addedAlerts: 1 }),
     deliver: async (payload) => {
       delivered.push(payload);
       return { messageId: "digest-1" };
     }
   });
   assert.equal(result.status, "sent");
+  assert.equal(result.hub.status, "published");
   assert.equal(result.findingCount, 1);
   assert.equal(delivered[0].to, "yperez@healthexps.com");
   assert.match(delivered[0].text, /Network update/);

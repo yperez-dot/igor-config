@@ -53,6 +53,39 @@ test("opens carrier email bodies when writing Pulse", async () => {
   assert.equal(scanOptions.unseenOnly, false);
 });
 
+test("publishes the Hub ticker before a live Agent Pulse send", async () => {
+  let hub;
+  const result = await runAgentPulseWeekly({
+    environment: {
+      XAI_API_KEY: "token",
+      AGENT_PULSE_MODE: "send",
+      HEARTBEAT_IMAP_USER: "info@example.com",
+      HEARTBEAT_IMAP_PASS: "secret",
+      AGENT_PULSE_RECIPIENTS: "agent@example.com",
+      FROM_EMAIL: "info@healthexps.com",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "secret"
+    },
+    now: new Date("2026-08-31T14:00:00.000Z"),
+    scanInbox: async () => [{
+      kind: "carrier",
+      from: "alerts@uhc.com",
+      subject: "Network update",
+      snippet: "Private: new TIN."
+    }],
+    askModel: async () => "THE Health Experts Insider Issue #11\n\nUHC sent a private Florida PPO TIN notice this week. Agents should review the inbox item before quoting.\n\nSources: info@ inbox scan, last 7 days.",
+    publishHub: async (payload) => {
+      hub = payload;
+      return { status: "published", addedAlerts: 1 };
+    },
+    deliver: async () => ({ messageId: "sent" })
+  });
+  assert.equal(result.hub.status, "published");
+  assert.equal(hub.includeWeekly, true);
+  assert.equal(hub.findings[0].subject, "Network update");
+});
+
 test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
   const delivered = [];
   const result = await runAgentPulseWeekly({
@@ -67,6 +100,9 @@ test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
     },
     now: new Date("2026-08-31T14:00:00.000Z"),
     scanInbox: async () => [],
+    publishHub: async () => {
+      throw new Error("test mode must not publish the Hub");
+    },
     askModel: async () => "THE Health Experts Insider Issue #11\n\n📋 operational: The info@ inbox had no carrier or urgent items this week.\n\nSources: info@ inbox scan, last 7 days.",
     deliver: async (payload) => {
       delivered.push(payload);

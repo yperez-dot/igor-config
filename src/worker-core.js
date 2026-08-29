@@ -24,14 +24,20 @@ function agentPulseMessage(result) {
   if (result.status === "dry_run") {
     return `✅ Agent Pulse dry-run: Issue #${result.issue} (${result.length} chars, ${result.findingCount} inbox items).`;
   }
-  return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).`;
+  const hub = result.hub?.status === "published"
+    ? " Hub ticker updated."
+    : result.hub?.status === "failed"
+      ? " Hub ticker failed."
+      : "";
+  return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).${hub}`;
 }
 
 function carrierDigestMessage(result) {
   if (result.status === "clear") return "✅ Carrier inbox digest: clear (no email).";
   if (result.status === "dry_run") return `✅ Carrier inbox digest dry-run: ${result.findingCount} item(s).`;
   if (result.status === "skipped") return `✅ Carrier inbox digest skipped: ${result.reason}.`;
-  return `✅ Carrier inbox digest sent: ${result.findingCount} item(s).`;
+  const hub = result.hub?.status === "published" ? " Hub ticker updated." : "";
+  return `✅ Carrier inbox digest sent: ${result.findingCount} item(s).${hub}`;
 }
 
 export const WORKER_WORKFLOWS = new Set([
