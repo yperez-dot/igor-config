@@ -1053,7 +1053,7 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 - Gmail SMTP (`smtp.gmail.com:587`) **times out** on Railway Hobby (outbound SMTP blocked).
 - IMAP **read works** (`info@healthexps.com`).
 
-**Send path (Yahoska 2026-08-29, simplified):** Igor writes the Pulse and drops it in Notion. Existing Zapier emails it. Cursor is not on Monday Pulse.
+**Igor mail login (same as old OpenClaw, confirmed 2026-08-29):** `info@healthexps.com` Gmail app password is already on Igor V2 (`SMTP_*` + IMAP). He can **read**. He **cannot send** from Railway Hobby — `smtp.gmail.com:587` times out (Hobby blocks outbound SMTP). Not a missing password. SendGrid key is present but dead (0 credits); do not buy more. To send like OpenClaw: take Igor off Hobby, or use existing Zapier as the no-click workaround.
 
 Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 

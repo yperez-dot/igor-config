@@ -2,7 +2,7 @@
 
 **Standing order (Yahoska, 2026-08-29):** **Igor (OpenClaw) does Pulse. Cursor does not.**
 
-Igor writes the newsletter, drops it in Notion, existing Zapier emails it from `info@`. You do not click Send. This Cursor agent is not on the Monday job.
+Igor already has his own `info@healthexps.com` Gmail login (app password), same as old OpenClaw. He can read mail. Railway Hobby blocks him from *sending* SMTP. Until that box can reach Gmail SMTP, existing Zapier is the no-click send. You do not click Send. This Cursor agent is not on the Monday job.
 
 ---
 
