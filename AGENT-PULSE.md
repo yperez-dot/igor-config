@@ -130,7 +130,7 @@ https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e
 
 1. **Hub first** — publish the edition. Agents can read it even if inbox fails. Not a substitute for email.
 2. **Write the full send-ready copy to the Notion Send Desk** before attempting SMTP.
-3. **Gmail MCP** (Cursor desktop, connected as `info@healthexps.com` or an account that can send as info@). Preferred. Cloud Agents cannot interactively auth Gmail — desktop must be connected first.
+3. **Gmail MCP — BLOCKED as of 2026-08-29.** Google returns “not authorized” for healthexps.com. Cursor Cloud Google OAuth is also a known broken redirect. Do **not** block the Pulse on this. Optional later: connect from https://cursor.com/agents → MCP Servers → Gmail → Login (not the desktop Authenticate button). If Google still says not authorized, Workspace admin must allow Cursor under admin.google.com → Security → Access and data control → API controls.
 4. **OpenClaw SMTP** — `smtp.gmail.com:587` / `industry-pulse-email.env`. Try once. If it errors, do not retry in a loop.
 5. **Fail-open to humans, never silent:**
    - Post in the Igor Cloud Agent chat (Yahoska gets the notification).
