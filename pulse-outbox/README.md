@@ -7,10 +7,9 @@ Yahoska (2026-08-29): Cursor **cannot** read carrier inboxes or Agent Hub ticket
 | Who | When (ET) | Does |
 |---|---|---|
 | **OpenClaw** | Daily + Mon 7:00 AM | Scan `theiagentpulse` / carrier inboxes + Hub tickets. **If applicable, update the Agent Hub the same day** (pulse-feed / `/events` / certs). Write `INBOX-BRIEF.md` + `BRIEF.json` (`BRIEF_READY`). Upline/Hector = Yahoska only. |
-| Cursor Cloud Agent | Mon 8:00 AM | Read the brief + public sources. Draft Pulse. Publish Hub edition page. Write `READY.json` + `latest.html`. **If the brief is missing, do not invent inbox news.** |
-| **OpenClaw** | Mon 8:15 AM | SMTP-send `latest.html` from `info@healthexps.com` if `READY.json` is `READY`. Write `SENT.json`. Telegram Yahoska. |
-| **Notion** | Mon 8:00 AM | Receive the send-ready Pulse (Outbox row Kind `Pulse` + Send Desk). |
-| Yahoska / Katy | Mon 8:15 AM | **Gmail sends** as `info@healthexps.com` from that Notion copy. Mark row Sent. |
+| Cursor Cloud Agent | Mon 8:00 AM | Read the brief + public sources. Draft Pulse. Publish Hub. **Drop send-ready copy into Notion** (Outbox Kind `Pulse` + Send Desk). Do not invent inbox news if the brief is missing. |
+| **Notion** | Mon 8:00 AM | Holds the newsletter. Does not mail the list by itself. |
+| **Existing Zapier** | when Status is `Test ready` or `Ready` | **Gmail sends** as `info@healthexps.com`. Marks row Sent. You do not click Send. |
 
 ## OpenClaw cron (Railway v2 — still shadow until SMTP is proven)
 

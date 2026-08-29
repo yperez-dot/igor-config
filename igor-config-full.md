@@ -1058,7 +1058,8 @@ This is **Railway**, not a Linux crontab on BOSGAME. Old OpenClaw catalog jobs a
 Do **not** buy SendGrid credits. Do **not** add Mailgun / Resend / Postmark / another metered mail API. Do **not** sign up for a new Zapier.
 
 - Igor writes the newsletter into [Igor Email Outbox](https://app.notion.com/p/367e51e33b1646b89ae8a82a98ee82ed) (Kind `Pulse`) and the [Send Desk](https://app.notion.com/p/3cb77cd3be8e811f9bb9e35df19edc2e).
-- **Gmail** (`info@healthexps.com`) is what actually delivers — Yahoska or Katy hit Send, BCC the same list as week of Aug 24. Notion does not mail the list by itself.
+- **Existing Zapier** watches the Outbox and sends Gmail as `info@healthexps.com`. You do not click Send. This is not a new credit app.
+- Notion does not mail the list by itself. Human Gmail is backup only if the Zap is off.
 - This week’s drop: https://app.notion.com/p/3cb77cd3be8e81959c18f67d553c5fc1
 - Leave Railway SMTP/SendGrid broken. Inbox **read** on Igor V2 IMAP stays live.
 
