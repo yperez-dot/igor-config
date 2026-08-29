@@ -15,7 +15,7 @@ Issue numbers increment from the Hub baseline: July 13, 2026 Issue #4. Monday Au
 
 ## What Igor uses
 
-1. IMAP scan of `info@` for the last 7 days. Carrier and urgent mail is opened (subject + body), because broker notices are often not public.
+1. IMAP scan of `theiagentpulse@gmail.com` for the last 7 days (that inbox gets Yahoska’s other emails forwarded in). Carrier and urgent mail is opened (subject + body), because broker notices are often not public. Send-from stays `info@healthexps.com`.
 2. Grok writes the issue from those notices. If the scan is empty, the issue must say so. Igor does not invent carrier operational news from the public web.
 3. Update the Agent Hub live ticker (`files/pulse-feed.json` alerts) and the weekly archive, then deploy the Hub. Hector / BSI / upline items never go on the Hub.
 4. SMTP send. Failures Telegram-alert Yahoska. Same-day carrier notices also update the ticker (daily digest), not only Mondays.

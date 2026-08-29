@@ -77,7 +77,7 @@ test("publishes sneak-peeks.json copies and triggers Hub deploy", async () => {
   assert.equal(calls.some((call) => call.url.includes("sneak-peeks.json") && call.method === "PUT"), true);
 });
 
-test("empty info@ scan tells her to forward or drop files", async () => {
+test("empty scan without pulse inbox asks for theiagentpulse app password", async () => {
   const result = await runSneakPeekUpdate({
     environment: {
       HEARTBEAT_IMAP_USER: "info@healthexps.com",
@@ -88,8 +88,23 @@ test("empty info@ scan tells her to forward or drop files", async () => {
   assert.equal(result.status, "unchanged");
   assert.equal(result.scanned, 631);
   assert.equal(result.matched, 0);
-  assert.match(result.hint, /info@/);
-  assert.match(sneakPeekHint(), /Telegram/);
+  assert.match(result.hint, /theiagentpulse@gmail.com/);
+  assert.match(result.hint, /app password/);
+});
+
+test("empty theiagentpulse scan tells her to forward or drop files", async () => {
+  const environment = {
+    PULSE_IMAP_USER: "theiagentpulse@gmail.com",
+    PULSE_IMAP_PASS: "x"
+  };
+  const result = await runSneakPeekUpdate({
+    environment,
+    scanInbox: async () => ({ mailbox: "theiagentpulse@gmail.com", raw: 40, findings: [] })
+  });
+  assert.equal(result.status, "unchanged");
+  assert.equal(result.mailbox, "theiagentpulse@gmail.com");
+  assert.match(result.hint, /theiagentpulse@gmail.com/);
+  assert.match(sneakPeekHint(environment), /Telegram/);
 });
 
 test("builds a Hub card from a Telegram B-PAG file name", () => {

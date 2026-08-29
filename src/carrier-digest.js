@@ -1,6 +1,7 @@
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
 import { publishHubTicker } from "./hub-ticker.js";
+import { imapAccounts, scanAllAccounts } from "./imap-accounts.js";
 
 export function carrierDigestRecipients(environment = process.env) {
   return parseRecipientList(
@@ -41,21 +42,20 @@ export async function runCarrierInboxDigest({
     throw new Error("Carrier digest mode must be dry-run, test, or send.");
   }
 
-  const user = environment.HEARTBEAT_IMAP_USER;
-  const pass = environment.HEARTBEAT_IMAP_PASS;
-  if (!user || !pass) {
+  if (!imapAccounts(environment).length) {
     return { status: "skipped", reason: "imap_not_configured", emailed: false };
   }
 
-  const findings = await scanInbox({
-    user,
-    pass,
-    host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
-    lookbackMinutes: Number(environment.CARRIER_DIGEST_LOOKBACK_MINUTES ?? 24 * 60),
+  const findings = (await scanAllAccounts({
+    environment,
+    scanOne: scanInbox,
+    options: {
+      lookbackMinutes: Number(environment.CARRIER_DIGEST_LOOKBACK_MINUTES ?? 24 * 60),
       unseenOnly: false,
       includeBodies: true,
       now
-    });
+    }
+  })).findings;
 
   const subject = findings.length
     ? `Igor: carrier inbox — ${findings.length} item(s)`

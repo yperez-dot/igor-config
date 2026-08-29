@@ -1,5 +1,6 @@
 import { ImapFlow } from "imapflow";
 import { calendarConfig, listUpcomingEvents } from "./calendar.js";
+import { scanAllAccounts } from "./imap-accounts.js";
 import { formatLookoutAlert, runLookout, shouldNotifyLookout } from "./lookout.js";
 
 const CARRIER_HINTS = [
@@ -182,19 +183,16 @@ export async function runHeartbeat({
     };
   }
 
-  const user = environment.HEARTBEAT_IMAP_USER;
-  const pass = environment.HEARTBEAT_IMAP_PASS;
   const calendarAlerts = String(environment.HEARTBEAT_CALENDAR_ALERTS ?? "").toLowerCase() === "true";
   const calendarReady = calendarAlerts && calendarConfig(environment).connected;
 
-  const findings = user && pass
-    ? await scanInbox({
-      user,
-      pass,
-      host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
+  const findings = (await scanAllAccounts({
+    environment,
+    scanOne: scanInbox,
+    options: {
       lookbackMinutes: Number(environment.HEARTBEAT_LOOKBACK_MINUTES ?? 35)
-    })
-    : [];
+    }
+  })).findings;
 
   let upcomingCalendar = [];
   let calendarError = null;

@@ -1,6 +1,7 @@
 import { askGrok } from "./grok.js";
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
+import { scanAllAccounts } from "./imap-accounts.js";
 import { easternMondayIso, publishHubTicker } from "./hub-ticker.js";
 
 const AGENT_PULSE_PROMPT = `You are writing THE Health Experts Insider (Agent Pulse) for contracted Florida Medicare agents at The Health Experts Insurance.
@@ -8,8 +9,8 @@ Write plain text only. Do not use markdown, asterisks, or pound signs except in 
 Never recommend plans or carriers. Never quote CMS-prohibited marketing terms verbatim. Never invent facts or include PHI.
 Do not mention Hector, BSI, or any upline. Do not invent carrier operational news.
 Use emoji section tags when helpful: 🚨 urgent, 📋 operational, 📰 general, 🌴 Florida-specific.
-The only carrier/ops items you may include are those in the inbox scan. Those emails are broker notices — often not public. Summarize what the carrier actually wrote in the body. If the scan is empty, say the info@ inbox had no carrier or urgent items this week. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices from general knowledge.
-Keep the issue concise but useful. End with a short "Sources" line that names the info@ inbox scan. Do not add public web items as if they came from a carrier email.`;
+The only carrier/ops items you may include are those in the inbox scan. Those emails are broker notices — often not public. Summarize what the carrier actually wrote in the body. If the scan is empty, say theiagentpulse@gmail.com had no carrier or urgent items this week. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices from general knowledge.
+Keep the issue concise but useful. End with a short "Sources" line that names the theiagentpulse inbox scan. Send-from stays info@healthexps.com. Do not add public web items as if they came from a carrier email.`;
 
 function zonedYmd(now, timeZone = "America/New_York") {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -108,19 +109,16 @@ export async function runAgentPulseWeekly({
   const apiKey = environment.XAI_API_KEY;
   if (!apiKey) throw new Error("XAI_API_KEY is required for Agent Pulse.");
 
-  const user = environment.HEARTBEAT_IMAP_USER;
-  const pass = environment.HEARTBEAT_IMAP_PASS;
-  const findings = user && pass
-    ? await scanInbox({
-      user,
-      pass,
-      host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
+  const findings = (await scanAllAccounts({
+    environment,
+    scanOne: scanInbox,
+    options: {
       lookbackMinutes: Number(environment.AGENT_PULSE_LOOKBACK_MINUTES ?? 7 * 24 * 60),
       unseenOnly: false,
       includeBodies: true,
       now
-    })
-    : [];
+    }
+  })).findings;
 
   const digest = await askModel({
     apiKey,

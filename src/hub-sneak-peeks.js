@@ -9,6 +9,7 @@ import {
   slug,
   triggerHubDeploy
 } from "./hub-ticker.js";
+import { hasPulseInbox, imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
 
 export const HUB_SNEAK_PATHS = ["files/sneak-peeks.json", "pages/files/sneak-peeks.json"];
 
@@ -202,8 +203,11 @@ const PEEK_SEARCH = {
 
 const ATTACH_EXTENSIONS = new Set(["xlsx", "xls", "pdf", "jpg", "jpeg", "png", "webp"]);
 
-export function sneakPeekHint() {
-  return "Igor only reads info@. Forward the sneak-peek emails there, or drop the B-PAG / reveal files in Telegram.";
+export function sneakPeekHint(environment = process.env) {
+  if (!hasPulseInbox(environment)) {
+    return `Igor is set to read ${PULSE_INBOX} (the inbox your other emails forward into), but that Gmail app password is not on Railway yet. Drop the B-PAG / reveal files here, or send me that app password.`;
+  }
+  return `Igor reads ${PULSE_INBOX} — the inbox your other emails forward into. If the peek is missing, forward it there or drop the B-PAG / reveal files in Telegram.`;
 }
 
 export async function scanSneakPeekMailbox({
@@ -326,40 +330,49 @@ export async function runSneakPeekUpdate({
       fileName: pendingAttachment.fileName,
       buffer: pendingAttachment.buffer
     });
-    return { ...published, source: "telegram_file", mailbox: environment.HEARTBEAT_IMAP_USER ?? null };
+    return { ...published, source: "telegram_file", mailbox: environment.PULSE_IMAP_USER || PULSE_INBOX };
   }
 
-  const user = environment.HEARTBEAT_IMAP_USER;
-  const pass = environment.HEARTBEAT_IMAP_PASS;
-  if (!user || !pass) {
-    return { status: "skipped", reason: "imap_not_configured", hint: sneakPeekHint() };
+  const accounts = imapAccounts(environment);
+  if (!accounts.length) {
+    return { status: "skipped", reason: "imap_not_configured", hint: sneakPeekHint(environment) };
   }
 
-  const scanned = await scanInbox({
-    user,
-    pass,
-    host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
-    lookbackMinutes: Number(environment.SNEAK_PEEK_LOOKBACK_MINUTES ?? 60 * 24 * 60),
-    now
-  });
+  const findings = [];
+  const mailboxes = [];
+  let raw = 0;
+  for (const account of accounts) {
+    const scanned = await scanInbox({
+      user: account.user,
+      pass: account.pass,
+      host: account.host,
+      lookbackMinutes: Number(environment.SNEAK_PEEK_LOOKBACK_MINUTES ?? 60 * 24 * 60),
+      now
+    });
+    mailboxes.push(scanned.mailbox ?? account.user);
+    raw += scanned.raw ?? 0;
+    findings.push(...(scanned.findings ?? []));
+  }
 
-  const peeks = (scanned.findings ?? [])
+  const peeks = findings
     .filter(isSneakPeek)
     .map((finding) => peekFromFinding(finding, { now }));
   if (!peeks.length) {
     return {
       status: "unchanged",
-      mailbox: scanned.mailbox,
-      scanned: scanned.raw ?? 0,
+      mailbox: mailboxes.join(", "),
+      mailboxes,
+      scanned: raw,
       matched: 0,
-      hint: sneakPeekHint()
+      hint: sneakPeekHint(environment)
     };
   }
   const published = await publish({ environment, peeks });
   return {
     ...published,
-    mailbox: scanned.mailbox,
-    scanned: scanned.raw ?? scanned.findings?.length ?? 0,
+    mailbox: mailboxes.join(", "),
+    mailboxes,
+    scanned: raw,
     matched: peeks.length
   };
 }
