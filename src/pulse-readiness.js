@@ -32,7 +32,7 @@ export function pulseReadiness(environment = process.env) {
   if (!present(environment.XAI_API_KEY)) {
     blockers.push({
       id: "XAI_API_KEY",
-      detail: "XAI_API_KEY is missing on igor-config. Grok cannot draft Pulse."
+      detail: "XAI_API_KEY is missing on igor-config and Igor V2. Grok cannot draft Pulse."
     });
   }
   if (!pulseConfigured) {
@@ -70,7 +70,7 @@ export function pulseReadinessAlert(readiness) {
   if (readiness.ready) return null;
   const lines = readiness.blockers.map((item) => `• ${item.detail}`);
   return [
-    "🚨 Agent Pulse is not send-ready. Fix all of these on Railway igor-config, then one Telegram send:",
+    "🚨 Agent Pulse is not send-ready. Fix all of these on Railway igor-config and Igor V2, then one Telegram send:",
     ...lines,
     "Do not queue another catch-up until /health pulseReady is true. This is not Anthropic."
   ].join("\n");
