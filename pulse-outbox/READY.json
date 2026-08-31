@@ -1,0 +1,13 @@
+{
+  "status": "READY",
+  "sent": false,
+  "issue": 11,
+  "week": "August 31, 2026",
+  "mondayIso": "2026-08-31",
+  "from": "info@healthexps.com",
+  "subject": "THE Health Experts Insider — Issue #11 — Week of August 31, 2026",
+  "inboxBrief": "missing",
+  "hub": "/pulse-2026-08-31.html",
+  "copy": "pulse-outbox/latest.txt",
+  "notes": "Public CMS and Hub calendar only. No carrier-email items. Cursor did not send Gmail. If info@ already delivered Issue #11 this morning, do not send again. Otherwise Yahoska or Katy send from info@ using latest.txt."
+}
