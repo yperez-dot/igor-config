@@ -4,6 +4,7 @@ import { connectedSystems } from "../src/systems.js";
 import { executeTool, grokTools } from "../src/tools.js";
 import { isStaleOpportunity, staleLeadsCsv } from "../src/ghl.js";
 import { last4, maskName } from "../src/redact.js";
+import { PULSE_READY_ENV } from "./pulse-ready-env.js";
 
 test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   const names = (env) => grokTools(env).map((tool) => tool.function.name);
@@ -48,9 +49,28 @@ test("run_sales_tracker_sync queues an apply task for the Railway worker", async
   assert.equal(created[0].payload.source, "telegram");
 });
 
+test("run_agent_pulse refuses to queue when the send path is not ready", async () => {
+  const created = [];
+  const result = await executeTool("run_agent_pulse", {}, {
+    store: {
+      async createTask(task) {
+        created.push(task);
+        return task;
+      }
+    }
+  });
+  assert.equal(result.queued, false);
+  assert.equal(result.pulseReady, false);
+  assert.ok(result.pulseBlockers.includes("PULSE_IMAP_PASS"));
+  assert.ok(result.pulseBlockers.includes("SMTP"));
+  assert.equal(created.length, 0);
+  assert.match(result.error, /not Anthropic/);
+});
+
 test("run_agent_pulse queues a send task for the Railway worker", async () => {
   const created = [];
   const result = await executeTool("run_agent_pulse", {}, {
+    environment: PULSE_READY_ENV,
     store: {
       async createTask(task) {
         created.push(task);
@@ -139,6 +159,18 @@ test("connectedSystems reports missing Railway secrets without values", () => {
   assert.deepEqual(github.missingEnv, ["GITHUB_TOKEN"]);
 });
 
+test("connectedSystems treats pulse as a separate inbox from info@", () => {
+  const infoOnly = connectedSystems({
+    HEARTBEAT_IMAP_USER: "info@healthexps.com",
+    HEARTBEAT_IMAP_PASS: "info-pass"
+  });
+  assert.equal(infoOnly.find((system) => system.id === "imap").connected, true);
+  assert.equal(infoOnly.find((system) => system.id === "pulse").connected, false);
+  assert.deepEqual(infoOnly.find((system) => system.id === "pulse").missingEnv, ["PULSE_IMAP_PASS"]);
+  const wired = connectedSystems({ PULSE_IMAP_PASS: "pulse-pass" });
+  assert.equal(wired.find((system) => system.id === "pulse").connected, true);
+});
+
 test("stale-opportunity filter uses last activity date", () => {
   const now = Date.parse("2026-08-25T12:00:00Z");
   assert.equal(isStaleOpportunity({ updatedAt: "2026-08-01T00:00:00Z" }, { staleDays: 14, now }), true);
@@ -160,15 +192,21 @@ test("email to Yahoska is standing-approved", async () => {
     subject: "test",
     text: "hello"
   }, {
-    environment: { SENDGRID_API_KEY: "sg.test" },
-    fetchImpl: async (_url, options) => {
-      sent = JSON.parse(options.body);
-      return { ok: true, headers: { get: () => "msg-1" }, text: async () => "" };
+    environment: {
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "app-pass"
+    },
+    transporter: {
+      sendMail: async (mail) => {
+        sent = mail;
+        return { messageId: "smtp-1" };
+      }
     }
   });
   assert.equal(result.needsConfirmation, undefined);
   assert.equal(result.sent, true);
-  assert.equal(sent.from.email, "info@healthexps.com");
+  assert.equal(sent.from, "info@healthexps.com");
 });
 
 test("GHL stale leads mask contact identity", async () => {
@@ -202,15 +240,23 @@ test("GHL stale leads mask contact identity", async () => {
   assert.equal(JSON.stringify(result).includes("maria@example.com"), false);
 });
 
-test("stale-leads emails a CSV when SendGrid is set without FROM_EMAIL", async () => {
+test("stale-leads emails a CSV when SMTP for info@ is set without FROM_EMAIL", async () => {
   let sent;
   const result = await executeTool("ghl_stale_leads", { staleDays: 14, emailTo: "yperez@healthexps.com" }, {
-    environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc", SENDGRID_API_KEY: "sg.test" },
-    fetchImpl: async (url, options) => {
-      if (String(url).includes("sendgrid.com")) {
-        sent = JSON.parse(options.body);
-        return { ok: true, headers: { get: () => "msg-1" }, text: async () => "" };
+    environment: {
+      GHL_API_TOKEN: "token",
+      GHL_LOCATION_ID: "loc",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "app-pass"
+    },
+    transporter: {
+      sendMail: async (mail) => {
+        sent = mail;
+        return { messageId: "smtp-1" };
       }
+    },
+    fetchImpl: async (url) => {
       if (String(url).includes("/pipelines")) {
         return { ok: true, json: async () => ({ pipelines: [] }) };
       }
@@ -230,7 +276,7 @@ test("stale-leads emails a CSV when SendGrid is set without FROM_EMAIL", async (
   });
   assert.equal(result.delivered.email, true);
   assert.equal(result.delivered.emailedTo, "yperez@healthexps.com");
-  assert.equal(sent.from.email, "info@healthexps.com");
+  assert.equal(sent.from, "info@healthexps.com");
   assert.equal(sent.attachments[0].filename, "stale-leads-14d.csv");
   assert.equal(result.csv, undefined);
 });
@@ -268,9 +314,15 @@ test("stale-leads report sends a CSV to Telegram", async () => {
   assert.equal(calls.some((call) => call.url.includes("sendDocument")), true);
 });
 
-test("SendGrid alone marks email as connected", () => {
-  const email = connectedSystems({ SENDGRID_API_KEY: "sg" }).find((system) => system.id === "email");
-  assert.equal(email.connected, true);
+test("SMTP for info@ marks email as connected; SendGrid does not", () => {
+  const sendgrid = connectedSystems({ SENDGRID_API_KEY: "sg" }).find((system) => system.id === "email");
+  assert.equal(sendgrid.connected, false);
+  const smtp = connectedSystems({
+    SMTP_HOST: "smtp.gmail.com",
+    SMTP_USER: "info@healthexps.com",
+    SMTP_PASS: "app-pass"
+  }).find((system) => system.id === "email");
+  assert.equal(smtp.connected, true);
 });
 
 test("redaction helpers keep last 4 only", () => {
@@ -342,7 +394,7 @@ test("list_schedules returns the legacy catalog without waiting on IMAP", async 
 
 test("run_lookout uses the Facebook probe", async () => {
   const result = await executeTool("run_lookout", {}, {
-    environment: { FACEBOOK_ACCESS_TOKEN: "stale" },
+    environment: { ...PULSE_READY_ENV, FACEBOOK_ACCESS_TOKEN: "stale" },
     fetchImpl: async (url) => {
       if (String(url).includes("graph.facebook.com")) {
         return { ok: false, status: 401, json: async () => ({ error: { code: 190 } }) };

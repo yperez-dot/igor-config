@@ -226,3 +226,16 @@ test("runtime identity lists Pulse on the worker", () => {
   const identity = runtimeIdentity();
   assert.ok(identity.workflows.includes("agent_pulse_weekly"));
 });
+
+test("runtime identity reports pulse send-path readiness without leaking secrets", () => {
+  const missing = runtimeIdentity({});
+  assert.equal(missing.pulseConfigured, false);
+  assert.equal(missing.pulseReady, false);
+  assert.ok(missing.pulseBlockers.includes("PULSE_IMAP_PASS"));
+  assert.ok(missing.pulseBlockers.includes("SMTP"));
+  assert.equal(missing.pulseInbox, "theiagentpulse@gmail.com");
+  const wired = runtimeIdentity({ PULSE_IMAP_PASS: "secret-pass" });
+  assert.equal(wired.pulseConfigured, true);
+  assert.equal(wired.pulseReady, false);
+  assert.equal(JSON.stringify(wired).includes("secret-pass"), false);
+});

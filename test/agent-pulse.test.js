@@ -41,7 +41,8 @@ test("opens carrier email bodies when writing Pulse", async () => {
       XAI_API_KEY: "token",
       AGENT_PULSE_MODE: "dry-run",
       HEARTBEAT_IMAP_USER: "info@example.com",
-      HEARTBEAT_IMAP_PASS: "secret"
+      HEARTBEAT_IMAP_PASS: "secret",
+      PULSE_IMAP_PASS: "pulse-pass"
     },
     scanInbox: async (options) => {
       scanOptions = options;
@@ -51,6 +52,7 @@ test("opens carrier email bodies when writing Pulse", async () => {
   });
   assert.equal(scanOptions.includeBodies, true);
   assert.equal(scanOptions.unseenOnly, false);
+  assert.equal(scanOptions.user, "theiagentpulse@gmail.com");
 });
 
 test("publishes the Hub ticker before a live Agent Pulse send", async () => {
@@ -61,6 +63,7 @@ test("publishes the Hub ticker before a live Agent Pulse send", async () => {
       AGENT_PULSE_MODE: "send",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret",
+      PULSE_IMAP_PASS: "pulse-pass",
       AGENT_PULSE_RECIPIENTS: "agent@example.com",
       FROM_EMAIL: "info@healthexps.com",
       SMTP_HOST: "smtp.gmail.com",
@@ -92,6 +95,7 @@ test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
     environment: {
       XAI_API_KEY: "token",
       AGENT_PULSE_MODE: "test",
+      PULSE_IMAP_PASS: "pulse-pass",
       AGENT_PULSE_TEST_TO: "yperez@healthexps.com",
       FROM_EMAIL: "info@healthexps.com",
       SMTP_HOST: "smtp.gmail.com",
@@ -115,4 +119,39 @@ test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
   assert.equal(result.findingCount, 0);
   assert.equal(delivered[0].to, "yperez@healthexps.com");
   assert.equal(delivered[0].bcc.length, 0);
+});
+
+test("refuses to scan info@ when the pulse inbox password is missing", async () => {
+  await assert.rejects(
+    runAgentPulseWeekly({
+      environment: {
+        XAI_API_KEY: "token",
+        AGENT_PULSE_MODE: "send",
+        HEARTBEAT_IMAP_USER: "info@healthexps.com",
+        HEARTBEAT_IMAP_PASS: "secret"
+      },
+      scanInbox: async () => {
+        throw new Error("must not scan without PULSE_IMAP_PASS");
+      },
+      askModel: async () => {
+        throw new Error("must not draft without the pulse inbox");
+      }
+    }),
+    /PULSE_IMAP_PASS is missing/
+  );
+});
+
+test("Pulse send fails with the full blocker list, not one secret at a time", async () => {
+  await assert.rejects(
+    runAgentPulseWeekly({
+      environment: { AGENT_PULSE_MODE: "send" },
+      scanInbox: async () => {
+        throw new Error("must not scan when send-path is not ready");
+      },
+      askModel: async () => {
+        throw new Error("must not draft when send-path is not ready");
+      }
+    }),
+    /XAI_API_KEY[\s\S]*PULSE_IMAP_PASS[\s\S]*SMTP[\s\S]*AGENT_PULSE_RECIPIENTS/
+  );
 });

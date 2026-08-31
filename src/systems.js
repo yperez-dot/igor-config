@@ -1,4 +1,5 @@
 import { DEFAULT_SALES_SHEET_CSV_URL } from "./sales-sync.js";
+import { hasPulseInbox } from "./imap-accounts.js";
 
 export const DEFAULT_OLICOMM_BASE_URL = "https://commission-tracker-production-e4fc.up.railway.app";
 export { DEFAULT_SALES_SHEET_CSV_URL };
@@ -46,8 +47,8 @@ export const SYSTEM_IDS = [
   },
   {
     id: "email",
-    label: "Email (SendGrid/SMTP)",
-    env: ["SENDGRID_API_KEY"]
+    label: "Email (info@ Gmail SMTP)",
+    env: ["SMTP_HOST", "SMTP_USER", "SMTP_PASS"]
   },
   {
     id: "sheets",
@@ -63,6 +64,11 @@ export const SYSTEM_IDS = [
     id: "imap",
     label: "Leadership inbox (IMAP)",
     env: ["HEARTBEAT_IMAP_USER", "HEARTBEAT_IMAP_PASS"]
+  },
+  {
+    id: "pulse",
+    label: "Agent Pulse inbox (theiagentpulse)",
+    env: ["PULSE_IMAP_PASS"]
   }
 ];
 
@@ -73,17 +79,17 @@ export function envPresent(environment, keys) {
 export function connectedSystems(environment = process.env) {
   return SYSTEM_IDS.map((system) => {
     const connected = system.id === "email"
-      ? Boolean((environment.FROM_EMAIL || environment.SENDGRID_API_KEY) && (environment.SENDGRID_API_KEY || (environment.SMTP_HOST && environment.SMTP_USER && environment.SMTP_PASS)))
+      ? Boolean(String(environment.SMTP_HOST ?? "").trim() && String(environment.SMTP_USER ?? "").trim() && String(environment.SMTP_PASS ?? "").trim())
       : system.id === "olicomm"
         ? Boolean(String(environment.OLICOMM_BASE_URL ?? DEFAULT_OLICOMM_BASE_URL).trim())
         : system.id === "sheets"
           ? Boolean(String(environment.SALES_SHEET_CSV_URL ?? DEFAULT_SALES_SHEET_CSV_URL).trim())
-          : envPresent(environment, system.env);
+          : system.id === "pulse"
+            ? hasPulseInbox(environment)
+            : envPresent(environment, system.env);
     const missingEnv = connected
       ? []
-      : system.id === "email"
-        ? ["FROM_EMAIL", "SENDGRID_API_KEY"].filter((key) => !String(environment[key] ?? "").trim())
-        : system.env.filter((key) => !String(environment[key] ?? "").trim());
+      : system.env.filter((key) => !String(environment[key] ?? "").trim());
     return { ...system, connected, missingEnv };
   });
 }

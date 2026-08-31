@@ -42,3 +42,21 @@ test("scans every configured mailbox", async () => {
   assert.equal(findings.length, 2);
   assert.equal(findings[1].mailbox, PULSE_INBOX);
 });
+
+test("can scan only the pulse mailbox", async () => {
+  const called = [];
+  const { mailboxes } = await scanAllAccounts({
+    environment: {
+      HEARTBEAT_IMAP_USER: "info@healthexps.com",
+      HEARTBEAT_IMAP_PASS: "info-pass",
+      PULSE_IMAP_PASS: "pulse-pass"
+    },
+    role: "pulse",
+    scanOne: async ({ user }) => {
+      called.push(user);
+      return [];
+    }
+  });
+  assert.deepEqual(called, [PULSE_INBOX]);
+  assert.deepEqual(mailboxes, [PULSE_INBOX]);
+});

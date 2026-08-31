@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyMessage, extractMailText, isQuietHours, mailboxSearchQuery, runHeartbeat, scanMailbox } from "../src/heartbeat.js";
+import { PULSE_READY_ENV } from "./pulse-ready-env.js";
+
 
 function okFetch() {
   return async () => ({
@@ -80,6 +82,7 @@ test("skips quiet hours for a dead ads token", async () => {
   assert.equal(isQuietHours(new Date("2026-08-24T06:00:00.000Z")), true);
   const quiet = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret",
@@ -100,7 +103,7 @@ test("skips quiet hours for a dead ads token", async () => {
 
 test("looks out even when IMAP is not configured", async () => {
   const clear = await runHeartbeat({
-    environment: { HEARTBEAT_MODE: "report-only" },
+    environment: { ...PULSE_READY_ENV, HEARTBEAT_MODE: "report-only" },
     now: new Date("2026-08-26T16:00:00.000Z"),
     fetchImpl: okFetch()
   });
@@ -110,6 +113,7 @@ test("looks out even when IMAP is not configured", async () => {
 
   const ads = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       FACEBOOK_ACCESS_TOKEN: "stale"
     },
@@ -129,6 +133,7 @@ test("looks out even when IMAP is not configured", async () => {
 test("alerts on actionable mail findings", async () => {
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "shadow",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"

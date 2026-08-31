@@ -168,7 +168,7 @@ export async function runHeartbeat({
     return { status: "skipped", reason: "disabled", shouldNotify: false };
   }
 
-  const lookout = await runLookout({ environment, fetchImpl, includeSites: false });
+  const lookout = await runLookout({ environment, fetchImpl, includeSites: false, includePulse: true });
   const recovered = Boolean(lastFingerprint && lastFingerprint !== "clear" && lookout.fingerprint === "clear");
   const lookoutAlert = recovered
     ? formatLookoutAlert([], { recovered: true })
@@ -200,6 +200,7 @@ export async function runHeartbeat({
   const rawFindings = (await scanAllAccounts({
     environment,
     scanOne: scanInbox,
+    role: "heartbeat",
     options: { lookbackMinutes }
   })).findings;
   const findings = filterMailFindings(rawFindings, { since, suppressions });
