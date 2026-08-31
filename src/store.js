@@ -266,6 +266,12 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       }));
     },
     record,
+    async openWorkflowTask(workflow) {
+      const { rows } = await pool.query(
+        "SELECT * FROM tasks WHERE status IN ('queued', 'running')"
+      );
+      return rows.find((row) => row.payload?.workflow === workflow) ?? null;
+    },
     async latestEvent(eventType) {
       const { rows } = await pool.query(
         "SELECT event_type, subject_id, detail, created_at FROM audit_events WHERE event_type = $1 ORDER BY created_at DESC, id DESC LIMIT 1",

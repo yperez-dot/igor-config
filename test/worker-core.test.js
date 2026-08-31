@@ -162,20 +162,27 @@ test("site uptime lookout pings Telegram when healthexps.com is down", async () 
 
 test("processes agent pulse weekly tasks", async () => {
   const notifications = [];
+  const events = [];
   const result = await processTask(
     { payload: { workflow: "agent_pulse_weekly" } },
     {
       runAgentPulse: async () => ({
         status: "sent",
         issue: 11,
+        mondayIso: "2026-08-31",
         recipientCount: 1,
         findingCount: 2
       }),
+      store: {
+        async record(type, subject, detail) { events.push({ type, subject, detail }); }
+      },
       notify: async (message) => notifications.push(message)
     }
   );
   assert.equal(result.status, "sent");
   assert.match(notifications[0], /Issue #11/);
+  assert.equal(events[0].type, "agent_pulse.sent");
+  assert.equal(events[0].detail.mondayIso, "2026-08-31");
 });
 
 test("processes carrier inbox digest tasks", async () => {

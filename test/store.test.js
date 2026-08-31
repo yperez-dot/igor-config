@@ -38,6 +38,31 @@ test("persists tasks and scheduled work with metadata-only audit events", async 
   await store.close();
 });
 
+test("finds an open Pulse task without treating completed work as queued", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+
+  await store.createTask({
+    id: "pulse-open",
+    type: "content_draft",
+    payload: { workflow: "agent_pulse_weekly", source: "boot_catchup" }
+  });
+  await store.createTask({
+    id: "pulse-done",
+    type: "content_draft",
+    payload: { workflow: "agent_pulse_weekly", source: "v2" }
+  });
+  await store.completeTask("pulse-done", { result: "sent" });
+
+  const open = await store.openWorkflowTask("agent_pulse_weekly");
+  assert.equal(open.id, "pulse-open");
+  assert.equal(await store.openWorkflowTask("sales_tracker_sync"), null);
+
+  await store.close();
+});
+
 test("stores bounded chat turns without writing message text to audit events", async () => {
   const database = newDb();
   const { Pool } = database.adapters.createPg();

@@ -37,6 +37,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /PULSE_IMAP_PASS is missing/);
   assert.match(SYSTEM_PROMPT, /pulseReady is false/);
   assert.match(SYSTEM_PROMPT, /full blocker list/);
+  assert.match(SYSTEM_PROMPT, /PULSE_IMAP_PASS on igor-config/);
   assert.match(SYSTEM_PROMPT, /never have to ask/);
   assert.match(SYSTEM_PROMPT, /healthexps.com/);
   assert.match(SYSTEM_PROMPT, /5-minute/);

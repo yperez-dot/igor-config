@@ -152,6 +152,7 @@ export async function runAgentPulseWeekly({
       hub = { status: "failed", reason: error.message };
     }
   }
+  const issue = agentPulseIssueNumber({ environment, now });
   if (mode === "dry-run") {
     return {
       status: "dry_run",
@@ -159,7 +160,8 @@ export async function runAgentPulseWeekly({
       subject,
       length: digest.length,
       findingCount: findings.length,
-      issue: agentPulseIssueNumber({ environment, now }),
+      issue,
+      mondayIso,
       hub
     };
   }
@@ -183,7 +185,8 @@ export async function runAgentPulseWeekly({
     subject,
     recipientCount: recipients.length,
     findingCount: findings.length,
-    issue: agentPulseIssueNumber({ environment, now }),
+    issue,
+    mondayIso,
     messageId: result.messageId,
     hub
   };
