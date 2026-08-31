@@ -67,16 +67,22 @@ export async function processTask(task, {
 
   if (workflow === "igor_heartbeat") {
     const last = store ? await store.latestEvent("heartbeat.lookout") : null;
+    const suppressions = store?.listAlertSuppressions
+      ? (await store.listAlertSuppressions()).map((row) => row.pattern)
+      : [];
     const result = await runHeartbeatFn({
       environment,
       lastFingerprint: last?.detail?.fingerprint,
-      lastAlertAt: last?.createdAt ? new Date(last.createdAt) : null
+      lastMailFingerprint: last?.detail?.mailFingerprint,
+      lastAlertAt: last?.createdAt ? new Date(last.createdAt) : null,
+      suppressions
     });
     if (result.shouldNotify && result.alert) {
       await notify(result.alert);
       if (store) {
         await store.record("heartbeat.lookout", "igor", {
           fingerprint: result.fingerprint,
+          mailFingerprint: result.mailFingerprint ?? last?.detail?.mailFingerprint ?? "clear",
           status: result.status
         });
       }

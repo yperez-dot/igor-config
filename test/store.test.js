@@ -119,6 +119,32 @@ test("persists agent memories without writing the note text to audit events", as
   await store.close();
 });
 
+test("persists mail-alert dismissals for the heartbeat to read", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+
+  const first = await store.saveAlertSuppression({
+    pattern: "Statement is Ready for Viewing",
+    reason: "user_dismiss",
+    source: "telegram:111"
+  });
+  assert.equal(first.saved, true);
+  assert.equal(first.pattern, "statement is ready for viewing");
+
+  await store.saveAlertSuppression({
+    pattern: "Statement is Ready for Viewing",
+    reason: "user_dismiss",
+    source: "telegram:111"
+  });
+  const listed = await store.listAlertSuppressions();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].pattern, "statement is ready for viewing");
+
+  await store.close();
+});
+
 test("ensureActiveSchedule turns a seeded shadow job live", async () => {
   const database = newDb();
   const { Pool } = database.adapters.createPg();

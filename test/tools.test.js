@@ -12,6 +12,7 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("github_get"), true);
   assert.equal(names({}).includes("memory_search"), true);
   assert.equal(names({}).includes("memory_remember"), true);
+  assert.equal(names({}).includes("dismiss_alert"), true);
   assert.equal(names({}).includes("list_schedules"), true);
   assert.equal(names({}).includes("run_lookout"), true);
 });
@@ -267,6 +268,20 @@ test("memory tools search files and persist notes", async () => {
   });
   assert.equal(saved.saved, true);
   assert.equal(notes[0].source, "telegram:111");
+
+  const dismissed = [];
+  const mute = await executeTool("dismiss_alert", { pattern: "statement is ready" }, {
+    senderId: "111",
+    store: {
+      async saveAlertSuppression(row) {
+        dismissed.push(row);
+        return { saved: true, pattern: row.pattern };
+      }
+    }
+  });
+  assert.equal(mute.saved, true);
+  assert.deepEqual(mute.patterns, ["statement is ready"]);
+  assert.equal(dismissed[0].reason, "dismiss_alert");
 });
 
 test("list_schedules returns the legacy catalog without waiting on IMAP", async () => {

@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { calendarConfig, listUpcomingEvents } from "./calendar.js";
 import { formatLookoutAlert, runLookout, shouldNotifyLookout } from "./lookout.js";
+import { filterMailFindings, isMailNoise, mailFingerprint } from "./mail-alerts.js";
 
 const CARRIER_HINTS = [
   "uhc", "unitedhealth", "humana", "aetna", "wellcare", "centene", "careplus",
@@ -24,6 +25,7 @@ export function isQuietHours(now = new Date(), { start = 23, end = 8 } = {}) {
 }
 
 export function classifyMessage({ from = "", subject = "" }) {
+  if (isMailNoise(subject)) return null;
   const haystack = `${from} ${subject}`.toLowerCase();
   const carrier = CARRIER_HINTS.some((hint) => haystack.includes(hint));
   const urgent = URGENT_HINTS.some((hint) => haystack.includes(hint));
@@ -54,11 +56,20 @@ export async function scanMailbox({
     const lock = await client.getMailboxLock("INBOX");
     try {
       for await (const message of client.fetch({ seen: false, since }, { envelope: true })) {
+        const envelopeDate = message.envelope.date;
+        if (envelopeDate && envelopeDate < since) continue;
         const from = message.envelope.from?.map((entry) => entry.address).join(", ") ?? "";
         const subject = message.envelope.subject ?? "";
         const kind = classifyMessage({ from, subject });
         if (kind) {
-          findings.push({ kind, from, subject, date: message.envelope.date?.toISOString?.() ?? null });
+          findings.push({
+            kind,
+            from,
+            subject,
+            date: envelopeDate?.toISOString?.() ?? null,
+            uid: message.uid ?? null,
+            messageId: message.envelope.messageId ?? null
+          });
         }
       }
     } finally {
@@ -78,7 +89,9 @@ export async function runHeartbeat({
   fetchImpl = fetch,
   listCalendar = listUpcomingEvents,
   lastFingerprint,
-  lastAlertAt
+  lastMailFingerprint,
+  lastAlertAt,
+  suppressions = []
 } = {}) {
   const mode = environment.HEARTBEAT_MODE ?? "report-only";
   if (mode === "off") {
@@ -114,14 +127,18 @@ export async function runHeartbeat({
   const calendarAlerts = String(environment.HEARTBEAT_CALENDAR_ALERTS ?? "").toLowerCase() === "true";
   const calendarReady = calendarAlerts && calendarConfig(environment).connected;
 
-  const findings = user && pass
+  const lookbackMinutes = Number(environment.HEARTBEAT_LOOKBACK_MINUTES ?? 35);
+  const since = new Date(now.getTime() - lookbackMinutes * 60 * 1000);
+  const rawFindings = user && pass
     ? await scanInbox({
       user,
       pass,
       host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
-      lookbackMinutes: Number(environment.HEARTBEAT_LOOKBACK_MINUTES ?? 35)
+      lookbackMinutes
     })
     : [];
+  const findings = filterMailFindings(rawFindings, { since, suppressions });
+  const currentMailFingerprint = mailFingerprint(findings);
 
   let upcomingCalendar = [];
   let calendarError = null;
@@ -153,6 +170,7 @@ export async function runHeartbeat({
     findings: findings.slice(0, 5),
     lookout,
     fingerprint: lookout.fingerprint,
+    mailFingerprint: currentMailFingerprint,
     shouldNotify: false,
     upcomingCalendar: upcomingCalendar.slice(0, 8).map((event) => ({
       summary: event.summary,
@@ -163,7 +181,8 @@ export async function runHeartbeat({
   };
   if (calendarError) result.calendarError = calendarError;
 
-  const mailBit = findings.length
+  const mailIsNew = findings.length > 0 && currentMailFingerprint !== (lastMailFingerprint || "clear");
+  const mailBit = mailIsNew
     ? `${findings.length} carrier/urgent mail item(s): ${findings.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
     : null;
   const calBit = imminentCalendar.length

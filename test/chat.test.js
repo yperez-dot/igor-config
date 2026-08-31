@@ -243,3 +243,38 @@ test("photos pass vision media into Grok", async () => {
   assert.equal(grokCalls[0].media.length, 1);
   assert.match(grokCalls[0].media[0].dataUrl, /^data:image\/png;base64,/);
 });
+
+test("Stop after a Humana mail alert persists dismissals without calling Grok", async () => {
+  const store = memoryStore();
+  store.saveAlertSuppression = async ({ pattern }) => {
+    store.turns.push({ role: "suppression", content: pattern });
+    return { saved: true, pattern };
+  };
+  await store.appendChatTurn({
+    role: "assistant",
+    content: "Heads up. 1 carrier/urgent mail item(s): [carrier] Statement is Ready for Viewing via www.humana.com"
+  });
+
+  let grokCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    message: { chatId: 99, senderId: "111", text: "Stop with this alert" },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+
+  assert.equal(grokCalled, false);
+  assert.match(reply, /will not ping you/i);
+  assert.deepEqual(sent, [reply]);
+  assert.ok(store.turns.some((turn) => turn.role === "suppression" && turn.content === "statement is ready"));
+});

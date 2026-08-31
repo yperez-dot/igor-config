@@ -12,6 +12,12 @@ import {
 import { sendEmail, smtpConfig } from "./email.js";
 import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
+import {
+  findLatestMailAlert,
+  persistMailDismissals,
+  subjectsFromAlert,
+  suppressionPatternsFrom
+} from "./mail-alerts.js";
 import { rememberMemory, searchMemory } from "./memory.js";
 import { summarizeJson } from "./redact.js";
 import { parseSalesCsv } from "./sales-sync.js";
@@ -70,6 +76,14 @@ export function grokTools(environment = process.env) {
         tags: { type: "string", description: "Optional labels, comma-separated (olicomm, website, team)." }
       },
       required: ["content"],
+      additionalProperties: false
+    }),
+    functionTool("dismiss_alert", "Permanently stop repeating a carrier-mail alert. Use when the user says stop, dismiss, mute, or do not ping this again. Heartbeat reads this list — saying it in chat is not enough.", {
+      type: "object",
+      properties: {
+        pattern: { type: "string", description: "Subject fragment to suppress, e.g. statement is ready. Use last to dismiss the most recent mail alert." }
+      },
+      required: ["pattern"],
       additionalProperties: false
     }),
     functionTool("list_schedules", "List Igor’s cron/scheduled jobs: live Railway schedules plus the legacy catalog (most are shadow/inactive until turned on).", {
@@ -464,6 +478,34 @@ export async function executeTool(name, rawArgs, {
         tags: args.tags,
         store,
         source: senderId ? `telegram:${senderId}` : "telegram"
+      });
+    }
+
+    if (name === "dismiss_alert") {
+      const requested = String(args.pattern ?? "").trim();
+      const source = senderId ? `telegram:${senderId}` : "telegram";
+      if (!requested || requested.toLowerCase() === "last") {
+        const history = store?.recentChatTurns && chatId
+          ? await store.recentChatTurns(chatId)
+          : [];
+        const alertText = findLatestMailAlert({ history });
+        const subjects = subjectsFromAlert(alertText);
+        const patterns = suppressionPatternsFrom({ subjects, quoted: alertText });
+        if (!patterns.length) {
+          return { saved: false, error: "No mail alert to dismiss. Pass a subject pattern." };
+        }
+        return persistMailDismissals({
+          store,
+          patterns,
+          source,
+          reason: "dismiss_alert"
+        });
+      }
+      return persistMailDismissals({
+        store,
+        patterns: [requested],
+        source,
+        reason: "dismiss_alert"
       });
     }
 

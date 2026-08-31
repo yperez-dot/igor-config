@@ -48,6 +48,13 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       content TEXT NOT NULL,
       source TEXT NOT NULL DEFAULT 'telegram'
     );
+    CREATE TABLE IF NOT EXISTS alert_suppressions (
+      id TEXT PRIMARY KEY,
+      pattern TEXT NOT NULL UNIQUE,
+      reason TEXT,
+      source TEXT NOT NULL DEFAULT 'telegram',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
@@ -216,6 +223,33 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
         tags: row.tags,
         content: row.content,
         source: row.source
+      }));
+    },
+    async saveAlertSuppression({ id, pattern, reason, source = "telegram" }) {
+      const normalized = String(pattern ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+      if (normalized.length < 4) return { saved: false, error: "pattern too short" };
+      const suppressionId = id || crypto.randomUUID();
+      await pool.query(
+        `INSERT INTO alert_suppressions (id, pattern, reason, source)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (pattern) DO UPDATE SET
+           reason = COALESCE(EXCLUDED.reason, alert_suppressions.reason),
+           source = EXCLUDED.source`,
+        [suppressionId, normalized, reason ?? null, String(source ?? "telegram")]
+      );
+      await record("alert.suppressed", suppressionId, { pattern: normalized });
+      return { saved: true, id: suppressionId, pattern: normalized, reason: reason ?? null };
+    },
+    async listAlertSuppressions() {
+      const { rows } = await pool.query(
+        "SELECT id, pattern, reason, source, created_at FROM alert_suppressions ORDER BY created_at DESC"
+      );
+      return rows.map((row) => ({
+        id: row.id,
+        pattern: row.pattern,
+        reason: row.reason,
+        source: row.source,
+        createdAt: row.created_at
       }));
     },
     record,
