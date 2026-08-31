@@ -44,6 +44,13 @@ test("numbers Agent Pulse from the July 13 Issue #4 epoch", () => {
     }),
     /Issue #11 — Week of August 31, 2026 — CORRECTED/
   );
+  assert.match(
+    agentPulseSubject({
+      now: new Date("2026-08-31T14:00:00.000Z"),
+      environment: { AGENT_PULSE_LANG: "es", AGENT_PULSE_SUBJECT_NOTE: "CORREGIDO" }
+    }),
+    /Edición #11 — Semana del 31 de agosto de 2026 — CORREGIDO/
+  );
 });
 
 test("refuses to invent carrier items when the inbox scan is empty", () => {
@@ -199,6 +206,60 @@ test("Pulse send fails with the full blocker list, not one secret at a time", as
     }),
     /XAI_API_KEY[\s\S]*PULSE_IMAP_PASS[\s\S]*SMTP[\s\S]*AGENT_PULSE_RECIPIENTS/
   );
+});
+
+test("Spanish send uses the ES list and does not overwrite the English Hub", async () => {
+  let published = false;
+  const delivered = [];
+  const result = await runAgentPulseWeekly({
+    environment: {
+      XAI_API_KEY: "token",
+      AGENT_PULSE_MODE: "send",
+      AGENT_PULSE_LANG: "es",
+      PULSE_IMAP_PASS: "pulse-pass",
+      INDUSTRY_PULSE_RECIPIENTS_ES: "es1@example.com,es2@example.com",
+      FROM_EMAIL: "info@healthexps.com",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "secret"
+    },
+    now: new Date("2026-08-31T14:00:00.000Z"),
+    scanInbox: async () => [],
+    askModel: async (options) => {
+      assert.match(options.systemPrompt, /ESPAÑOL/);
+      return JSON.stringify({
+        preheader: "AEP está a 45 días.",
+        intro: ["¡Feliz lunes, equipo! 👋", "CMS termina la espera de SOA el 1 de octubre.", "— Yahoska & Katy"],
+        items: [{
+          flag: "ACTION",
+          beat: "CMS",
+          headline: "La espera de SOA termina el 1 de octubre",
+          minutes: 2,
+          body: "CMS elimina la **espera de 48 horas** el 1 de octubre.",
+          meaning: "Actualiza los flujos de SOA.",
+          source: "CMS"
+        }],
+        sources: "CMS Newsroom"
+      });
+    },
+    fetchImpl: noLogoFetch,
+    publishHub: async () => {
+      published = true;
+      throw new Error("Spanish send must not publish Hub");
+    },
+    deliver: async (payload) => {
+      delivered.push(payload);
+      return { messageId: "es-sent" };
+    }
+  });
+  assert.equal(result.status, "sent");
+  assert.equal(result.lang, "es");
+  assert.equal(result.recipientCount, 2);
+  assert.equal(published, false);
+  assert.equal(result.hub.reason, "spanish_does_not_overwrite_english_hub");
+  assert.match(result.subject, /Edición #11/);
+  assert.match(delivered[0].html, /Qué significa esto para ti/);
+  assert.equal(delivered[0].to, "es1@example.com");
 });
 
 test("maps an AbortSignal timeout to a Pulse retry message", async () => {

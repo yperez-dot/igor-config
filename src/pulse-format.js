@@ -8,6 +8,53 @@ const FLAG_EMOJI = {
   FLORIDA: "🌴"
 };
 
+const COPY = {
+  en: {
+    lang: "en",
+    issuePrefix: "ISSUE",
+    greeting: "Happy Monday, team! 👋",
+    greetingRe: /happy monday|hey team/i,
+    weekOf: "Week of",
+    theWeekIn: "The Week in",
+    medicare: "Medicare",
+    forward: "📬 Reading THE Health Experts Insider? If a colleague would benefit, please forward it on!",
+    weekBanner: "— THE WEEK IN MEDICARE —",
+    meaning: "What this means for you:",
+    source: "Source:",
+    minuteRead: (n) => `${n}-minute read`,
+    watch: "— WHAT TO WATCH THIS WEEK —",
+    sourcesReviewed: "SOURCES REVIEWED",
+    footer: "You're receiving this because you're a contracted agent with The Health Experts Insurance.<br><br><b>Questions? Tips? Carrier intel to share?</b> Reply to this email.",
+    tagline: "Making Healthcare Easy",
+    flags: { ACTION: "ACTION", IMPORTANT: "IMPORTANT", FYI: "FYI", FLORIDA: "FLORIDA" },
+    correctionRe: /corrected version/i
+  },
+  es: {
+    lang: "es",
+    issuePrefix: "EDICIÓN",
+    greeting: "¡Feliz lunes, equipo! 👋",
+    greetingRe: /feliz lunes|hola equipo/i,
+    weekOf: "Semana del",
+    theWeekIn: "La semana en",
+    medicare: "Medicare",
+    forward: "📬 ¿Lees THE Health Experts Insider? Si un colega se beneficiaría, ¡reenvíalo!",
+    weekBanner: "— LA SEMANA EN MEDICARE —",
+    meaning: "Qué significa esto para ti:",
+    source: "Fuente:",
+    minuteRead: (n) => `lectura de ${n} minutos`,
+    watch: "— QUÉ VIGILAR ESTA SEMANA —",
+    sourcesReviewed: "FUENTES REVISADAS",
+    footer: "Recibes esto porque eres un agente contratado de The Health Experts Insurance.<br><br><b>¿Preguntas? ¿Tips? ¿Intel de carriers para compartir?</b> Responde a este correo.",
+    tagline: "Haciendo la salud fácil",
+    flags: { ACTION: "ACCIÓN", IMPORTANT: "IMPORTANTE", FYI: "PARA TU INFO", FLORIDA: "FLORIDA" },
+    correctionRe: /versi[oó]n corregida|corrected version/i
+  }
+};
+
+export function pulseCopy(locale = "en") {
+  return COPY[locale] ?? COPY.en;
+}
+
 export function escapeHtml(value) {
   return String(value ?? "").replace(/[<>&"]/g, (char) => ({
     "<": "&lt;",
@@ -17,10 +64,11 @@ export function escapeHtml(value) {
   })[char]);
 }
 
-export function issueBadge(issue) {
+export function issueBadge(issue, locale = "en") {
   const number = Number(issue);
-  if (!Number.isInteger(number) || number < 1) return "ISSUE 000";
-  return `ISSUE ${String(number).padStart(3, "0")}`;
+  const prefix = pulseCopy(locale).issuePrefix;
+  if (!Number.isInteger(number) || number < 1) return `${prefix} 000`;
+  return `${prefix} ${String(number).padStart(3, "0")}`;
 }
 
 function extractJson(raw) {
@@ -49,14 +97,26 @@ function paragraphs(value) {
   return chunks.map((chunk) => `<p>${richText(chunk).replace(/\n/g, "<br>")}</p>`).join("");
 }
 
+function normalizeFlag(flag) {
+  const raw = String(flag ?? "FYI")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^A-Z]/g, "");
+  if (FLAG_EMOJI[raw]) return raw;
+  if (raw === "ACCION") return "ACTION";
+  if (raw === "IMPORTANTE") return "IMPORTANT";
+  if (raw === "PARATUINFO" || raw === "INFO") return "FYI";
+  return "FYI";
+}
+
 function normalizeItem(item = {}) {
-  const flag = String(item.flag ?? "FYI").toUpperCase();
   const beat = String(item.beat ?? "OPS").toUpperCase();
   const headline = String(item.headline ?? "").trim();
   if (!headline) return null;
   const minutes = Number(item.minutes);
   return {
-    flag: FLAG_EMOJI[flag] ? flag : "FYI",
+    flag: normalizeFlag(item.flag),
     beat: beat.replace(/[^A-Z]/g, "").slice(0, 12) || "OPS",
     headline: headline.slice(0, 200),
     minutes: Number.isInteger(minutes) && minutes > 0 ? minutes : 2,
@@ -66,11 +126,12 @@ function normalizeItem(item = {}) {
   };
 }
 
-function withSignoff(intro) {
+function withSignoff(intro, locale = "en") {
+  const copy = pulseCopy(locale);
   const lines = intro.map((line) => String(line).trim()).filter(Boolean);
-  if (!lines.length) lines.push("Happy Monday, team! 👋");
-  if (!/happy monday|hey team/i.test(lines[0])) {
-    lines.unshift("Happy Monday, team! 👋");
+  if (!lines.length) lines.push(copy.greeting);
+  if (!copy.greetingRe.test(lines[0])) {
+    lines.unshift(copy.greeting);
   }
   if (!lines.some((line) => /yahoska/i.test(line))) {
     lines.push("— Yahoska & Katy");
@@ -78,7 +139,7 @@ function withSignoff(intro) {
   return lines;
 }
 
-export function parseInsiderIssue(raw, { emptyScan: _emptyScan = false } = {}) {
+export function parseInsiderIssue(raw, { emptyScan: _emptyScan = false, locale = "en" } = {}) {
   const parsed = extractJson(raw);
   const intro = parsed
     ? (Array.isArray(parsed.intro) ? parsed.intro : [parsed.intro]).filter(Boolean)
@@ -95,49 +156,51 @@ export function parseInsiderIssue(raw, { emptyScan: _emptyScan = false } = {}) {
   const sources = String(parsed?.sources ?? "CMS Newsroom, KFF, public industry sources this week").trim();
   return {
     preheader: String(parsed?.preheader ?? items[0]?.headline ?? "THE Health Experts Insider").slice(0, 160),
-    intro: withSignoff(intro),
+    intro: withSignoff(intro, locale),
     items,
     watch,
     sources
   };
 }
 
-export function insiderPlainText(issue) {
+export function insiderPlainText(issue, locale = "en") {
+  const copy = pulseCopy(locale);
   const lines = [
     issue.intro.join("\n\n"),
     "",
-    "— THE WEEK IN MEDICARE —",
+    copy.weekBanner,
     ...issue.items.flatMap((item) => [
       "",
-      `${FLAG_EMOJI[item.flag]} ${item.flag} · ${item.beat}`,
+      `${FLAG_EMOJI[item.flag]} ${copy.flags[item.flag] ?? item.flag} · ${item.beat}`,
       item.headline,
       item.body,
-      item.meaning ? `What this means for you: ${item.meaning}` : "",
-      item.source ? `Source: ${item.source}` : ""
+      item.meaning ? `${copy.meaning} ${item.meaning}` : "",
+      item.source ? `${copy.source} ${item.source}` : ""
     ]),
-    issue.watch.length ? "\n— WHAT TO WATCH THIS WEEK —" : "",
+    issue.watch.length ? `\n${copy.watch}` : "",
     ...issue.watch.map((row) => `• ${row.title}${row.detail ? `: ${row.detail}` : ""}`),
     "",
-    `SOURCES REVIEWED: ${issue.sources}`
+    `${copy.sourcesReviewed}: ${issue.sources}`
   ];
   return lines.filter((line) => line !== "").join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function itemRows(items) {
+function itemRows(items, copy) {
   return items.map((item) => {
+    const flagLabel = copy.flags[item.flag] ?? item.flag;
     const source = item.source
-      ? `<p style="margin:14px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#8A8A8A;font-style:italic;">Source: ${richText(item.source)}</p>`
+      ? `<p style="margin:14px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#8A8A8A;font-style:italic;">${escapeHtml(copy.source)} ${richText(item.source)}</p>`
       : "";
     const meaning = item.meaning
-      ? `<div style="background:#FBEFC8;border-radius:6px;padding:18px 22px;margin:18px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#2A2A2A;line-height:1.55;"><p><b style="color:#3D1560;">What this means for you:</b> ${richText(item.meaning)}</p></div>`
+      ? `<div style="background:#FBEFC8;border-radius:6px;padding:18px 22px;margin:18px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#2A2A2A;line-height:1.55;"><p><b style="color:#3D1560;">${escapeHtml(copy.meaning)}</b> ${richText(item.meaning)}</p></div>`
       : "";
     return `<tr>
   <td style="padding:28px 36px;border-bottom:1px solid #E5E0EA;">
     <p style="margin:0 0 8px 0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#D6006C;font-weight:700;letter-spacing:2px;">
-      <span style="font-size:14px;letter-spacing:0;">${FLAG_EMOJI[item.flag]}</span>&nbsp;&nbsp;${escapeHtml(item.flag)} · ${escapeHtml(item.beat)}
+      <span style="font-size:14px;letter-spacing:0;">${FLAG_EMOJI[item.flag]}</span>&nbsp;&nbsp;${escapeHtml(flagLabel)} · ${escapeHtml(item.beat)}
     </p>
     <h2 style="margin:0 0 6px 0;font-family:Georgia,'Times New Roman',serif;font-size:22px;line-height:1.25;color:#3D1560;font-weight:700;">${escapeHtml(item.headline)}</h2>
-    <p style="margin:0 0 14px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#8A8A8A;font-style:italic;">${item.minutes}-minute read</p>
+    <p style="margin:0 0 14px 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#8A8A8A;font-style:italic;">${escapeHtml(copy.minuteRead(item.minutes))}</p>
     <div style="font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#2A2A2A;line-height:1.6;">${paragraphs(item.body)}</div>
     ${meaning}
     ${source}
@@ -146,7 +209,7 @@ function itemRows(items) {
   }).join("\n");
 }
 
-function watchRow(watch) {
+function watchRow(watch, copy) {
   if (!watch.length) return "";
   const items = watch.map((row) => {
     const title = escapeHtml(row.title);
@@ -155,7 +218,7 @@ function watchRow(watch) {
   }).join("");
   return `<tr>
   <td style="padding:28px 36px;border-bottom:1px solid #E5E0EA;">
-    <p style="margin:0 0 14px 0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#D6006C;font-weight:700;letter-spacing:2px;">— WHAT TO WATCH THIS WEEK —</p>
+    <p style="margin:0 0 14px 0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#D6006C;font-weight:700;letter-spacing:2px;">${escapeHtml(copy.watch)}</p>
     <ul style="margin:0;padding:0 0 0 22px;font-family:Georgia,'Times New Roman',serif;font-size:15px;color:#2A2A2A;line-height:1.6;">${items}</ul>
   </td>
 </tr>`;
@@ -166,8 +229,10 @@ export function renderInsiderEmail({
   weekLabel,
   parsed,
   logoSrc = PULSE_LOGO_URL,
-  correctionNote = ""
+  correctionNote = "",
+  locale = "en"
 } = {}) {
+  const copy = pulseCopy(locale);
   const introHtml = parsed.intro.map((line) => `<p>${richText(line)}</p>`).join("");
   const correctionRow = String(correctionNote ?? "").trim()
     ? `<tr>
@@ -177,7 +242,7 @@ export function renderInsiderEmail({
         </tr>`
     : "";
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${copy.lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -196,14 +261,14 @@ export function renderInsiderEmail({
         ${correctionRow}
         <tr>
           <td style="background:#FBEFC8;padding:14px 36px;font-family:Georgia,'Times New Roman',serif;font-size:14px;color:#3D1560;line-height:1.5;">
-            📬 Reading THE Health Experts Insider? If a colleague would benefit, please forward it on!
+            ${escapeHtml(copy.forward)}
           </td>
         </tr>
         <tr>
           <td style="background:#2A0E45;padding:48px 36px;text-align:center;">
-            <p style="margin:0 0 14px 0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#FFFFFF;letter-spacing:3px;font-weight:700;opacity:0.85;">Week of ${escapeHtml(weekLabel)} &nbsp;·&nbsp; ${issueBadge(issueNumber)}</p>
-            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:30px;color:#FFFFFF;line-height:1;">The Week in</p>
-            <p style="margin:6px 0 0 0;font-family:Helvetica,Arial,sans-serif;font-weight:900;font-size:56px;color:#E6007E;line-height:1;letter-spacing:-1px;">Medicare</p>
+            <p style="margin:0 0 14px 0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#FFFFFF;letter-spacing:3px;font-weight:700;opacity:0.85;">${escapeHtml(copy.weekOf)} ${escapeHtml(weekLabel)} &nbsp;·&nbsp; ${issueBadge(issueNumber, locale)}</p>
+            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:30px;color:#FFFFFF;line-height:1;">${escapeHtml(copy.theWeekIn)}</p>
+            <p style="margin:6px 0 0 0;font-family:Helvetica,Arial,sans-serif;font-weight:900;font-size:56px;color:#E6007E;line-height:1;letter-spacing:-1px;">${escapeHtml(copy.medicare)}</p>
             <div style="width:60px;height:3px;background:#E6007E;margin:18px auto 0 auto;"></div>
           </td>
         </tr>
@@ -214,23 +279,23 @@ export function renderInsiderEmail({
         </tr>
         <tr>
           <td style="padding:8px 36px 24px 36px;text-align:center;">
-            <p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#D6006C;letter-spacing:3px;font-weight:700;">— THE WEEK IN MEDICARE —</p>
+            <p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#D6006C;letter-spacing:3px;font-weight:700;">${escapeHtml(copy.weekBanner)}</p>
           </td>
         </tr>
-        ${itemRows(parsed.items)}
-        ${watchRow(parsed.watch)}
+        ${itemRows(parsed.items, copy)}
+        ${watchRow(parsed.watch, copy)}
         <tr>
           <td style="padding:24px 36px 32px 36px;">
-            <p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#8A8A8A;letter-spacing:1.5px;">SOURCES REVIEWED</p>
+            <p style="margin:0;font-family:Helvetica,Arial,sans-serif;font-size:11px;color:#8A8A8A;letter-spacing:1.5px;">${escapeHtml(copy.sourcesReviewed)}</p>
             <p style="margin:8px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-size:13px;color:#8A8A8A;line-height:1.55;">${escapeHtml(parsed.sources)}</p>
           </td>
         </tr>
         <tr>
           <td style="background:#2A0E45;padding:32px 36px;text-align:center;">
             <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:14px;color:#FFFFFF;line-height:1.6;">
-              You're receiving this because you're a contracted agent with The Health Experts Insurance.<br><br><b>Questions? Tips? Carrier intel to share?</b> Reply to this email.
+              ${copy.footer}
             </p>
-            <p style="margin:18px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:14px;color:#E6007E;">Making Healthcare Easy</p>
+            <p style="margin:18px 0 0 0;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-size:14px;color:#E6007E;">${escapeHtml(copy.tagline)}</p>
           </td>
         </tr>
       </table>
@@ -303,22 +368,24 @@ export function buildInsiderEdition({
   emptyScan = false,
   logoSrc = PULSE_LOGO_URL,
   hubLogoSrc = "/thei-logo.png",
-  correctionNote = ""
+  correctionNote = "",
+  locale = "en"
 } = {}) {
-  const parsed = parseInsiderIssue(raw, { emptyScan });
+  const copy = pulseCopy(locale);
+  const parsed = parseInsiderIssue(raw, { emptyScan, locale });
   const note = String(correctionNote ?? "").trim();
-  if (note && !parsed.intro.some((line) => /corrected version/i.test(line))) {
-    const insertAt = /happy monday|hey team/i.test(parsed.intro[0] ?? "") ? 1 : 0;
+  if (note && !parsed.intro.some((line) => copy.correctionRe.test(line))) {
+    const insertAt = copy.greetingRe.test(parsed.intro[0] ?? "") ? 1 : 0;
     parsed.intro.splice(insertAt, 0, note);
   }
-  const html = renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc, correctionNote: note });
+  const html = renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc, correctionNote: note, locale });
   return {
     parsed,
-    text: insiderPlainText(parsed),
+    text: insiderPlainText(parsed, locale),
     html,
     hubHtml: wrapHubPulsePage({
       weekLabel,
-      innerHtml: renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc: hubLogoSrc, correctionNote: note })
+      innerHtml: renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc: hubLogoSrc, correctionNote: note, locale })
     }),
     headline: parsed.preheader
   };
