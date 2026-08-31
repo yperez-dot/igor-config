@@ -184,3 +184,30 @@ test("ensureActiveSchedule turns a seeded shadow job live", async () => {
 
   await store.close();
 });
+
+test("ensureInactiveSchedule turns a live job back off", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+
+  await store.ensureActiveSchedule({
+    id: "v2-industry-pulse",
+    taskType: "content_draft",
+    cron: "0 8 * * 1",
+    payload: { workflow: "industry_pulse_weekly", mode: "shadow", source: "v2" },
+    timezone: "America/New_York"
+  });
+  assert.equal((await store.activeSchedules()).length, 1);
+
+  await store.ensureInactiveSchedule({
+    id: "v2-industry-pulse",
+    taskType: "content_draft",
+    cron: "0 8 * * 1",
+    payload: { workflow: "industry_pulse_weekly", mode: "shadow", source: "v2" },
+    timezone: "America/New_York"
+  });
+  assert.deepEqual(await store.activeSchedules(), []);
+
+  await store.close();
+});

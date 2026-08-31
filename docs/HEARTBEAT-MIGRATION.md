@@ -6,7 +6,7 @@ Legacy OpenClaw heartbeat polls Anthropic about every 30 minutes during active h
 
 Each heartbeat may:
 
-1. Scan `info@healthexps.com` for carrier and urgent mail
+1. Scan `theiagentpulse@gmail.com` (forwards from Yahoska’s other emails) for carrier and urgent mail. Send-from stays `info@healthexps.com`.
 2. Check calendar events in the next 48 hours
 3. Track state in `memory/heartbeat-state.json`
 4. Auto-edit carrier knowledge, push GitHub, redeploy Hub, and alert WhatsApp
@@ -31,8 +31,10 @@ This removes Anthropic from the polling loop. Grok is optional for summarizing f
 | Variable | Purpose |
 | --- | --- |
 | `HEARTBEAT_MODE` | `off`, `shadow`, or `report-only` (default `report-only`) |
-| `HEARTBEAT_IMAP_USER` | Mailbox user, usually `info@healthexps.com` |
-| `HEARTBEAT_IMAP_PASS` | Gmail app password for IMAP |
+| `HEARTBEAT_IMAP_USER` | Legacy/secondary scan mailbox (currently `info@healthexps.com`) |
+| `HEARTBEAT_IMAP_PASS` | Gmail app password for that mailbox |
+| `PULSE_IMAP_USER` | Optional. Defaults to `theiagentpulse@gmail.com` |
+| `PULSE_IMAP_PASS` | Gmail app password for `theiagentpulse@gmail.com` (required to read the forwarded inbox) |
 | `HEARTBEAT_IMAP_HOST` | Optional, default `imap.gmail.com` |
 | `GOOGLE_CALENDAR_CLIENT_ID` | OAuth client id (same as Telegram calendar tools) |
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | OAuth client secret |

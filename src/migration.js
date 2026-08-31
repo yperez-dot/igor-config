@@ -27,17 +27,17 @@ export const migrationCapabilities = [
     id: "scheduled-alerts",
     area: "Scheduled operations",
     legacy: "OpenClaw/BOSGAME cron jobs",
-    v2: "Worker verified for Sales Tracker dry-run; other jobs not migrated",
+    v2: "Heartbeat, site uptime, Monday Agent Pulse, and daily carrier-inbox digest are live on Railway Igor V2",
     state: "testing",
-    gate: "Enable each job in v2 after shadow test; keep legacy job active until verified."
+    gate: "Keep SEO weekly and other unported jobs shadow until their v2 handlers exist."
   },
   {
     id: "agent-pulse-newsletter",
     area: "Agent Pulse newsletter",
     legacy: "Scheduled email newsletter to agents",
-    v2: "Not connected",
-    state: "not_started",
-    gate: "Approved recipient list, draft/compliance review, send approval, SMTP access, and unsubscribe/recipient controls."
+    v2: "Monday 8:00 AM ET from info@ via Gmail SMTP; recipients from AGENT_PULSE_RECIPIENTS or INDUSTRY_PULSE_RECIPIENTS_EN",
+    state: "testing",
+    gate: "Monday send is automatic. Keep AGENT_PULSE_MODE=send for the contracted list; use test only for a Yahoska-only proof."
   },
   {
     id: "openclaw-heartbeat",
