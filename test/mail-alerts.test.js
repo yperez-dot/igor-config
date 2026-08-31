@@ -9,7 +9,8 @@ import {
   mailFingerprint,
   persistMailDismissals,
   subjectsFromAlert,
-  suppressionPatternsFrom
+  suppressionPatternsFrom,
+  unseenMailFindings
 } from "../src/mail-alerts.js";
 import { classifyMessage, runHeartbeat } from "../src/heartbeat.js";
 
@@ -100,6 +101,43 @@ test("same unread mail item is not re-paged on the next heartbeat", async () => 
   });
   assert.equal(second.shouldNotify, false);
   assert.equal(second.mailFingerprint, first.mailFingerprint);
+});
+
+test("a new mail item pages only itself, not already-seen unread mail", async () => {
+  const seen = {
+    kind: "carrier",
+    from: "alerts@uhc.com",
+    subject: "Network update",
+    date: "2026-08-30T19:50:00.000Z",
+    messageId: "<net-1@uhc.com>"
+  };
+  const fresh = {
+    kind: "carrier",
+    from: "training@aetna.com",
+    subject: "AEP cert window",
+    date: "2026-08-30T20:10:00.000Z",
+    messageId: "<aep-1@aetna.com>"
+  };
+  assert.deepEqual(
+    unseenMailFindings([seen, fresh], mailFingerprint([seen])).map((item) => item.messageId),
+    ["<aep-1@aetna.com>"]
+  );
+
+  const result = await runHeartbeat({
+    environment: {
+      HEARTBEAT_MODE: "report-only",
+      HEARTBEAT_IMAP_USER: "info@example.com",
+      HEARTBEAT_IMAP_PASS: "secret"
+    },
+    now: new Date("2026-08-30T20:20:00.000Z"),
+    scanInbox: async () => [seen, fresh],
+    lastMailFingerprint: mailFingerprint([seen]),
+    fetchImpl: okFetch()
+  });
+  assert.equal(result.shouldNotify, true);
+  assert.match(result.alert, /AEP cert window/);
+  assert.equal(result.alert.includes("Network update"), false);
+  assert.match(result.alert, /1 carrier\/urgent mail item/);
 });
 
 test("user dismissals suppress matching mail even if it is still unread", async () => {

@@ -38,6 +38,17 @@ export function mailFingerprint(findings = []) {
   return keys.join("|") || "clear";
 }
 
+export function parseMailFingerprint(fingerprint) {
+  const raw = String(fingerprint ?? "").trim();
+  if (!raw || raw === "clear") return new Set();
+  return new Set(raw.split("|").filter(Boolean));
+}
+
+export function unseenMailFindings(findings = [], lastMailFingerprint) {
+  const seen = parseMailFingerprint(lastMailFingerprint);
+  return findings.filter((item) => !seen.has(mailItemKey(item)));
+}
+
 export function filterMailFindings(findings = [], { since, suppressions = [] } = {}) {
   const sinceMs = since instanceof Date ? since.getTime() : Number(since) || 0;
   return findings.filter((item) => {
