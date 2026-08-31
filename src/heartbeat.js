@@ -103,7 +103,11 @@ export async function scanMailbox({
     host,
     port: 993,
     secure: true,
-    auth: { user, pass }
+    auth: { user, pass },
+    logger: false,
+    connectionTimeout: 20_000,
+    greetingTimeout: 20_000,
+    socketTimeout: 30_000
   });
 
   await client.connect();

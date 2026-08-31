@@ -9,6 +9,7 @@ import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
 import { INACTIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
+import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -106,6 +107,7 @@ app.get("/health", (_request, response) => {
     service: "igor-v2",
     scheduledJobs: scheduledJobs.size,
     telegramConfigured: Boolean(TELEGRAM.botToken && TELEGRAM.webhookSecret && TELEGRAM.allowedUserIds.size),
+    ...runtimeIdentity(),
     systems: connectedSystems().map((system) => ({
       id: system.id,
       connected: system.connected,

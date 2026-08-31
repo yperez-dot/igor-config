@@ -62,7 +62,7 @@ test("run_agent_pulse queues a send task for the Railway worker", async () => {
   assert.equal(created[0].type, "content_draft");
   assert.equal(created[0].payload.workflow, "agent_pulse_weekly");
   assert.equal(created[0].payload.mode, "send");
-  assert.equal(created[0].payload.source, "telegram");
+  assert.equal(created[0].payload.source, "catchup");
 });
 
 test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {
