@@ -15,8 +15,8 @@ Issue numbers increment from the Hub baseline: July 13, 2026 Issue #4. Monday Au
 
 ## What Igor uses
 
-1. IMAP scan of `theiagentpulse@gmail.com` for the last 7 days (that inbox gets Yahoska’s other emails forwarded in). Carrier and urgent mail is opened (subject + body), because broker notices are often not public. Send-from stays `info@healthexps.com`.
-2. Grok writes the issue from those notices. If the scan is empty, the issue must say so. Igor does not invent carrier operational news from the public web.
+1. **Industry news first.** Grok web-searches CMS, Florida DFS/SHINE, AEP/certs/SOA, KFF/OIG/Congress, and public carrier news. That is The Week in Medicare (Issue #4 style). Yahoska 2026-08-31: the issue is not a dump of her emails.
+2. IMAP scan of `theiagentpulse@gmail.com` is **optional extras** (at most two broker-notice cards). Send-from stays `info@healthexps.com`. Do not invent private carrier emails. Public CMS/industry facts are required, not optional.
 3. Update the Agent Hub live ticker (`files/pulse-feed.json` alerts) and the weekly archive, then deploy the Hub. Hector / BSI / upline items never go on the Hub.
 4. Send from `info@healthexps.com` via Gmail SMTP (`SMTP_HOST` / `SMTP_USER` / `SMTP_PASS`). THEI does not use SendGrid. Failures Telegram-alert Yahoska. Same-day carrier notices also update the ticker (daily digest), not only Mondays.
 

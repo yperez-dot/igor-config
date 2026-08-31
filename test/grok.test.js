@@ -148,3 +148,26 @@ test("askGrok honors an explicit timeoutMs", async () => {
   }
   assert.equal(seen[0], 180_000);
 });
+
+test("askGrok Pulse path uses xAI web_search on the responses API", async () => {
+  let url;
+  let payload;
+  const reply = await askGrok({
+    apiKey: "test-key",
+    model: "grok-4.6",
+    text: "write insider",
+    systemPrompt: "You are Pulse.",
+    nativeTools: [{ type: "web_search" }],
+    fetchImpl: async (endpoint, options) => {
+      url = String(endpoint);
+      payload = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () => ({ output_text: "{\"preheader\":\"ok\"}" })
+      };
+    }
+  });
+  assert.match(url, /\/v1\/responses$/);
+  assert.deepEqual(payload.tools, [{ type: "web_search" }]);
+  assert.equal(reply, "{\"preheader\":\"ok\"}");
+});

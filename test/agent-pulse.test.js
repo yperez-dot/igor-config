@@ -47,7 +47,7 @@ test("numbers Agent Pulse from the July 13 Issue #4 epoch", () => {
 });
 
 test("refuses to invent carrier items when the inbox scan is empty", () => {
-  assert.match(formatInboxBrief([]), /no carrier or urgent items/);
+  assert.match(formatInboxBrief([]), /Write the full industry issue anyway/);
 });
 
 test("passes private carrier notice text into the Pulse brief", () => {
@@ -65,6 +65,7 @@ test("passes private carrier notice text into the Pulse brief", () => {
 
 test("opens carrier email bodies when writing Pulse", async () => {
   let scanOptions;
+  let asked;
   await runAgentPulseWeekly({
     environment: {
       XAI_API_KEY: "token",
@@ -77,13 +78,17 @@ test("opens carrier email bodies when writing Pulse", async () => {
       scanOptions = options;
       return [];
     },
-    askModel: async () => "THE Health Experts Insider Issue #11\n\n📋 operational: The info@ inbox had no carrier or urgent items this week.\n\nSources: info@ inbox scan, last 7 days.",
+    askModel: async (options) => {
+      asked = options;
+      return INSIDER_JSON;
+    },
     fetchImpl: noLogoFetch
   });
   assert.equal(scanOptions.includeBodies, true);
   assert.equal(scanOptions.unseenOnly, false);
   assert.equal(scanOptions.user, "theiagentpulse@gmail.com");
   assert.equal(scanOptions.maxMessages, 250);
+  assert.deepEqual(asked.nativeTools, [{ type: "web_search" }]);
 });
 
 test("publishes the Hub ticker before a live Agent Pulse send", async () => {
