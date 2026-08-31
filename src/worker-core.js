@@ -5,6 +5,7 @@ import { runCarrierInboxDigest } from "./carrier-digest.js";
 import { runHeartbeat } from "./heartbeat.js";
 import { runSiteLookout } from "./lookout.js";
 import { sendOpsAlert } from "./email.js";
+import { easternMondayIso } from "./hub-ticker.js";
 import { pulseHealthFields } from "./pulse-readiness.js";
 
 function salesTrackerMessage(result, environment) {
@@ -115,6 +116,13 @@ export async function processTask(task, {
     const result = await runAgentPulse({
       environment: withModeOverride(environment, task, "AGENT_PULSE_MODE")
     });
+    if (store?.record && result.status === "sent") {
+      await store.record("agent_pulse.sent", String(result.issue), {
+        mondayIso: result.mondayIso ?? easternMondayIso(),
+        issue: result.issue,
+        recipientCount: result.recipientCount
+      });
+    }
     await notify(agentPulseMessage(result));
     return result;
   }
