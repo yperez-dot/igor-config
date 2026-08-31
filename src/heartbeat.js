@@ -89,6 +89,22 @@ export function mailboxSearchQuery({
   return unseenOnly ? { seen: false, since } : { since };
 }
 
+/** Keep the newest UIDs when a week-long inbox search is huge. */
+export function capUidList(uids, max = 0) {
+  const list = [...(uids ?? [])].map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  if (!max || list.length <= max) return list;
+  return list.slice(-max);
+}
+
+export function imapClientTimeouts({ lookbackMinutes = 35, includeBodies = false } = {}) {
+  const long = includeBodies || Number(lookbackMinutes) > 60;
+  return {
+    connectionTimeout: long ? 60_000 : 20_000,
+    greetingTimeout: long ? 60_000 : 20_000,
+    socketTimeout: long ? 120_000 : 30_000
+  };
+}
+
 export async function scanMailbox({
   user,
   pass,
@@ -96,6 +112,7 @@ export async function scanMailbox({
   lookbackMinutes = 35,
   unseenOnly = true,
   includeBodies = false,
+  maxMessages = 0,
   now = new Date(),
   imapFactory = (options) => new ImapFlow(options)
 } = {}) {
@@ -105,9 +122,7 @@ export async function scanMailbox({
     secure: true,
     auth: { user, pass },
     logger: false,
-    connectionTimeout: 20_000,
-    greetingTimeout: 20_000,
-    socketTimeout: 30_000
+    ...imapClientTimeouts({ lookbackMinutes, includeBodies })
   });
 
   await client.connect();
@@ -116,7 +131,20 @@ export async function scanMailbox({
   try {
     const lock = await client.getMailboxLock("INBOX");
     try {
-      for await (const message of client.fetch(mailboxSearchQuery({ lookbackMinutes, now, unseenOnly }), { envelope: true, uid: true })) {
+      const query = mailboxSearchQuery({ lookbackMinutes, now, unseenOnly });
+      let range = query;
+      const fetchOptions = {};
+      if (typeof client.search === "function") {
+        const found = await client.search(query, { uid: true });
+        const uids = capUidList(Array.isArray(found) ? found : [], maxMessages);
+        if (!uids.length) {
+          return findings;
+        }
+        range = uids;
+        fetchOptions.uid = true;
+      }
+
+      for await (const message of client.fetch(range, { envelope: true, uid: true }, fetchOptions)) {
         const from = message.envelope.from?.map((entry) => entry.address).join(", ") ?? "";
         const subject = message.envelope.subject ?? "";
         const kind = classifyMessage({ from, subject });

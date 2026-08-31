@@ -53,6 +53,7 @@ test("opens carrier email bodies when writing Pulse", async () => {
   assert.equal(scanOptions.includeBodies, true);
   assert.equal(scanOptions.unseenOnly, false);
   assert.equal(scanOptions.user, "theiagentpulse@gmail.com");
+  assert.equal(scanOptions.maxMessages, 250);
 });
 
 test("publishes the Hub ticker before a live Agent Pulse send", async () => {
@@ -153,5 +154,24 @@ test("Pulse send fails with the full blocker list, not one secret at a time", as
       }
     }),
     /XAI_API_KEY[\s\S]*PULSE_IMAP_PASS[\s\S]*SMTP[\s\S]*AGENT_PULSE_RECIPIENTS/
+  );
+});
+
+test("maps an AbortSignal timeout to a Pulse retry message", async () => {
+  await assert.rejects(
+    runAgentPulseWeekly({
+      environment: {
+        XAI_API_KEY: "token",
+        AGENT_PULSE_MODE: "dry-run",
+        PULSE_IMAP_PASS: "pulse-pass"
+      },
+      scanInbox: async () => {
+        throw new Error("The operation was aborted due to timeout");
+      },
+      askModel: async () => {
+        throw new Error("must not draft after a scan timeout");
+      }
+    }),
+    /timed out scanning theiagentpulse or drafting with Grok/
   );
 });

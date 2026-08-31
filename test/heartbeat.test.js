@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyMessage, extractMailText, isQuietHours, mailboxSearchQuery, runHeartbeat, scanMailbox } from "../src/heartbeat.js";
+import { capUidList, classifyMessage, extractMailText, imapClientTimeouts, isQuietHours, mailboxSearchQuery, runHeartbeat, scanMailbox } from "../src/heartbeat.js";
 import { PULSE_READY_ENV } from "./pulse-ready-env.js";
 
 
@@ -20,6 +20,52 @@ test("searches recent seen mail when unseenOnly is false", () => {
   });
   assert.equal(query.seen, undefined);
   assert.equal(query.since.toISOString(), "2026-08-22T16:00:00.000Z");
+});
+
+test("caps a huge UID list to the newest messages", () => {
+  assert.deepEqual(capUidList([1, 2, 3, 4, 5], 3), [3, 4, 5]);
+  assert.deepEqual(capUidList([9, 10], 50), [9, 10]);
+  assert.equal(imapClientTimeouts({ includeBodies: true }).socketTimeout, 120_000);
+});
+
+test("searches then fetches a capped UID list instead of the whole week", async () => {
+  const searches = [];
+  const fetches = [];
+  await scanMailbox({
+    user: "theiagentpulse@gmail.com",
+    pass: "secret",
+    lookbackMinutes: 7 * 24 * 60,
+    unseenOnly: false,
+    maxMessages: 2,
+    imapFactory: (options) => {
+      assert.equal(options.socketTimeout, 120_000);
+      return {
+        async connect() {},
+        async logout() {},
+        async getMailboxLock() {
+          return { release() {} };
+        },
+        async search(query, options) {
+          searches.push({ query, options });
+          return [10, 11, 12, 13];
+        },
+        async *fetch(range, _fields, fetchOptions) {
+          fetches.push({ range, fetchOptions });
+          yield {
+            uid: 12,
+            envelope: {
+              from: [{ address: "alerts@uhc.com" }],
+              subject: "Network update",
+              date: new Date("2026-08-28T12:00:00.000Z")
+            }
+          };
+        }
+      };
+    }
+  });
+  assert.equal(searches[0].options.uid, true);
+  assert.deepEqual(fetches[0].range, [12, 13]);
+  assert.equal(fetches[0].fetchOptions.uid, true);
 });
 
 test("extracts plain text from a carrier notice body", () => {

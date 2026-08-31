@@ -39,6 +39,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /full blocker list/);
   assert.match(SYSTEM_PROMPT, /whatever goes on igor-config also goes on Igor V2/);
   assert.match(SYSTEM_PROMPT, /Never tell her igor-config only/);
+  assert.match(SYSTEM_PROMPT, /timed out \/ aborted/);
   assert.match(SYSTEM_PROMPT, /never have to ask/);
   assert.match(SYSTEM_PROMPT, /healthexps.com/);
   assert.match(SYSTEM_PROMPT, /5-minute/);
