@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_SALES_SHEET_CSV_URL,
   missingSales,
   normalizeAgentName,
   normalizeNotionId,
@@ -9,8 +10,19 @@ import {
   parseSalesCsv,
   resolveNotionSalesTarget,
   salesKey,
+  salesSheetUrl,
+  salesSyncMode,
   toIsoDate
 } from "../src/sales-sync.js";
+
+test("uses the approved public sheet and apply mode unless overridden", () => {
+  assert.match(DEFAULT_SALES_SHEET_CSV_URL, /16JnukM9BnLVzky2tvj1zHS0V2ylXGhClxJxmUeHhevo/);
+  assert.equal(salesSheetUrl({}), DEFAULT_SALES_SHEET_CSV_URL);
+  assert.equal(salesSheetUrl({ SALES_SHEET_CSV_URL: "https://example.com/x.csv" }), "https://example.com/x.csv");
+  assert.equal(salesSyncMode({ payload: { mode: "apply" } }, { SALES_SYNC_MODE: "dry-run" }), "apply");
+  assert.equal(salesSyncMode({ payload: {} }, { SALES_SYNC_MODE: "dry-run" }), "dry-run");
+  assert.equal(salesSyncMode({ payload: {} }, {}), "apply");
+});
 
 test("normalizes sales rows and finds missing records", () => {
   const sales = parseSalesCsv([

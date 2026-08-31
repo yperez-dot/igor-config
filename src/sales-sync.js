@@ -3,6 +3,23 @@ import { parse } from "csv-parse/sync";
 const NOTION_VERSION_LEGACY = "2022-06-28";
 const NOTION_VERSION_CURRENT = "2025-09-03";
 
+/** Approved THEI sales tracker CSV. Railway may override with SALES_SHEET_CSV_URL. */
+export const DEFAULT_SALES_SHEET_CSV_URL =
+  "https://docs.google.com/spreadsheets/d/16JnukM9BnLVzky2tvj1zHS0V2ylXGhClxJxmUeHhevo/export?format=csv";
+
+export function salesSheetUrl(environment = process.env) {
+  return String(environment.SALES_SHEET_CSV_URL ?? DEFAULT_SALES_SHEET_CSV_URL).trim()
+    || DEFAULT_SALES_SHEET_CSV_URL;
+}
+
+export function salesSyncMode(task = {}, environment = process.env) {
+  const payloadMode = task.payload?.mode;
+  if (payloadMode === "apply" || payloadMode === "dry-run") return payloadMode;
+  const envMode = environment.SALES_SYNC_MODE;
+  if (envMode === "apply" || envMode === "dry-run") return envMode;
+  return "apply";
+}
+
 export function normalizeNotionId(value) {
   return String(value ?? "").trim().split("?")[0].split("/").pop().replace(/-/g, "");
 }

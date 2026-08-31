@@ -7,7 +7,7 @@ Goal: move daily Igor use to v2 quickly without breaking legacy automation.
 | Priority | What | Why | Legacy stays on? |
 | --- | --- | --- | --- |
 | 1 | **Telegram production bot** | This is how you talk to Igor | BOSGAME crons keep running |
-| 2 | **Sales Tracker worker** | Dry-run verified; enable schedule when ready | OpenClaw Monday job until v2 apply verified |
+| 2 | **Sales Tracker worker** | Live on Railway Monday 7:00 AM ET (`apply`) | **Disable** leftover OpenClaw/Anthropic cron |
 | 3 | **Industry Pulse email** | Next Monday scheduled job | OpenClaw until v2 shadow match |
 | 4 | **SEP + SEO + rest** | Important but not blocking chat | Yes, until each passes shadow test |
 | 5 | **OpenClaw retirement** | Last | After all required workflows verified |
@@ -57,13 +57,13 @@ Point the production bot webhook back to the OpenClaw URL from `getWebhookInfo` 
 Do **not** stop OpenClaw or BOSGAME crons during Phase 1. They continue:
 
 - Industry Pulse, SEP, SEO, site health, backups, etc.
-- Sales Tracker on OpenClaw until v2 apply mode is verified
+- Sales Tracker is **Railway v2** (no Anthropic). Disable the leftover OpenClaw Monday job if it is still enabled.
 
 ## Phase 3 — Move scheduled jobs one at a time
 
 After Telegram cutover:
 
-1. Sales Tracker — switch `SALES_SYNC_MODE` to `apply`, shadow one Monday, then disable OpenClaw copy.
+1. Sales Tracker — **done on v2.** Live `apply` Monday 7:00 AM ET. Disable OpenClaw copy `651b9d36-33da-4530-b826-3feccffb98f0` if it still alerts.
 2. Industry Pulse — port script + SMTP secrets, shadow test, then cut over.
 3. SEP pipeline — consolidated Monday job.
 4. Remaining crons per [schedule decisions](SCHEDULE-DECISIONS.md).

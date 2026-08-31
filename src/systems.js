@@ -1,4 +1,7 @@
+import { DEFAULT_SALES_SHEET_CSV_URL } from "./sales-sync.js";
+
 export const DEFAULT_OLICOMM_BASE_URL = "https://commission-tracker-production-e4fc.up.railway.app";
+export { DEFAULT_SALES_SHEET_CSV_URL };
 
 export const SYSTEM_IDS = [
   {
@@ -73,7 +76,9 @@ export function connectedSystems(environment = process.env) {
       ? Boolean((environment.FROM_EMAIL || environment.SENDGRID_API_KEY) && (environment.SENDGRID_API_KEY || (environment.SMTP_HOST && environment.SMTP_USER && environment.SMTP_PASS)))
       : system.id === "olicomm"
         ? Boolean(String(environment.OLICOMM_BASE_URL ?? DEFAULT_OLICOMM_BASE_URL).trim())
-        : envPresent(environment, system.env);
+        : system.id === "sheets"
+          ? Boolean(String(environment.SALES_SHEET_CSV_URL ?? DEFAULT_SALES_SHEET_CSV_URL).trim())
+          : envPresent(environment, system.env);
     const missingEnv = connected
       ? []
       : system.id === "email"

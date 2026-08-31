@@ -173,5 +173,14 @@ test("ensureActiveSchedule turns a seeded shadow job live", async () => {
   assert.equal(live[0].cron, "*/5 * * * *");
   assert.equal(live[0].payload.workflow, "site_uptime");
 
+  await store.ensureInactiveSchedule({
+    id: "v2-site-uptime",
+    taskType: "daily_operations",
+    cron: "*/5 * * * *",
+    payload: { workflow: "site_uptime", mode: "retired", source: "openclaw" },
+    timezone: "America/New_York"
+  });
+  assert.deepEqual(await store.activeSchedules(), []);
+
   await store.close();
 });

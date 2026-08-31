@@ -141,6 +141,19 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
         [schedule.id, schedule.taskType, schedule.cron, schedule.payload, schedule.timezone]
       );
     },
+    async ensureInactiveSchedule(schedule) {
+      await pool.query(
+        `INSERT INTO schedules (id, task_type, cron, payload, active, timezone)
+         VALUES ($1, $2, $3, $4, FALSE, $5)
+         ON CONFLICT (id) DO UPDATE SET
+           task_type = EXCLUDED.task_type,
+           cron = EXCLUDED.cron,
+           payload = EXCLUDED.payload,
+           timezone = EXCLUDED.timezone,
+           active = FALSE`,
+        [schedule.id, schedule.taskType, schedule.cron, schedule.payload, schedule.timezone]
+      );
+    },
     async activeSchedules() {
       const { rows } = await pool.query("SELECT * FROM schedules WHERE active = TRUE");
       return rows

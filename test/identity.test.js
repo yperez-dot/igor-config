@@ -25,6 +25,8 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /Look out/);
   assert.match(SYSTEM_PROMPT, /run_lookout/);
   assert.match(SYSTEM_PROMPT, /list_schedules/);
+  assert.match(SYSTEM_PROMPT, /run_sales_tracker_sync/);
+  assert.match(SYSTEM_PROMPT, /Anthropic \/ Claude is retired/);
   assert.match(SYSTEM_PROMPT, /never have to ask/);
   assert.match(SYSTEM_PROMPT, /healthexps.com/);
   assert.match(SYSTEM_PROMPT, /5-minute/);
