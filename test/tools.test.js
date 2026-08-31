@@ -15,6 +15,30 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({}).includes("dismiss_alert"), true);
   assert.equal(names({}).includes("list_schedules"), true);
   assert.equal(names({}).includes("run_lookout"), true);
+  assert.equal(names({}).includes("run_sales_tracker_sync"), true);
+  assert.equal(names({}).includes("sales_sheet_summary"), true);
+});
+
+test("sheets is connected via the approved public CSV without SALES_SHEET_CSV_URL", () => {
+  const sheets = connectedSystems({}).find((system) => system.id === "sheets");
+  assert.equal(sheets.connected, true);
+  assert.deepEqual(sheets.missingEnv, []);
+});
+
+test("run_sales_tracker_sync queues an apply task for the Railway worker", async () => {
+  const created = [];
+  const result = await executeTool("run_sales_tracker_sync", {}, {
+    store: {
+      async createTask(task) {
+        created.push(task);
+        return task;
+      }
+    }
+  });
+  assert.equal(result.queued, true);
+  assert.equal(created[0].payload.workflow, "sales_tracker_sync");
+  assert.equal(created[0].payload.mode, "apply");
+  assert.equal(created[0].payload.source, "telegram");
 });
 
 test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {

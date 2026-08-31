@@ -1,4 +1,5 @@
 export const LOOKOUT_LIVE_SCHEDULE_IDS = ["v2-igor-heartbeat", "v2-site-uptime"];
+export const LIVE_SCHEDULE_IDS = [...LOOKOUT_LIVE_SCHEDULE_IDS, "v2-sales-tracker-sync"];
 
 export const legacySchedules = [
   {
@@ -122,12 +123,30 @@ export const legacySchedules = [
     payload: { workflow: "netlify_credit_check", mode: "shadow", source: "openclaw" }
   },
   {
-    id: "legacy-openclaw-sales-tracker-sync",
+    id: "v2-sales-tracker-sync",
     title: "Sales tracker sync",
     taskType: "daily_operations",
     cron: "0 7 * * 1",
     timezone: "America/New_York",
-    payload: { workflow: "sales_tracker_sync", mode: "shadow", source: "openclaw" }
+    payload: {
+      workflow: "sales_tracker_sync",
+      mode: "apply",
+      source: "v2",
+      replaces: ["Daily Sales Tracker Sync (Google Sheets → Notion)"]
+    }
+  },
+  {
+    id: "legacy-openclaw-sales-tracker-sync",
+    title: "Sales tracker sync (retired OpenClaw / Anthropic)",
+    taskType: "daily_operations",
+    cron: "0 7 * * 1",
+    timezone: "America/New_York",
+    payload: {
+      workflow: "sales_tracker_sync",
+      mode: "retired",
+      source: "openclaw",
+      retiredReason: "Moved to Railway v2. Do not run this job on Anthropic."
+    }
   },
   {
     id: "legacy-openclaw-industry-pulse",

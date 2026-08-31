@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import {
   availability as calendarAvailability,
   calendarConfig,
@@ -20,7 +21,7 @@ import {
 } from "./mail-alerts.js";
 import { rememberMemory, searchMemory } from "./memory.js";
 import { summarizeJson } from "./redact.js";
-import { parseSalesCsv } from "./sales-sync.js";
+import { parseSalesCsv, salesSheetUrl } from "./sales-sync.js";
 import {
   olicommBearerToken,
   olicommUploadWithVerification,
@@ -94,6 +95,13 @@ export function grokTools(environment = process.env) {
     functionTool("run_lookout", "Probe Facebook ads token and public sites (healthexps.com, agentmedicarehub.com) right now. Website uptime also runs every 5 minutes on its own. Do not check OliComm. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
       type: "object",
       properties: {},
+      additionalProperties: false
+    }),
+    functionTool("run_sales_tracker_sync", "Queue the Railway sales tracker sync (Google Sheets → Notion). Deterministic, no Anthropic/Claude. Standing-approved. Use when Yahoska asks to run the sales sync, or when an old OpenClaw/Anthropic cron alert fires.", {
+      type: "object",
+      properties: {
+        mode: { type: "string", description: "apply (default, writes Notion) or dry-run." }
+      },
       additionalProperties: false
     })
   ];
@@ -512,7 +520,7 @@ export async function executeTool(name, rawArgs, {
     if (name === "list_schedules") {
       const live = store ? await store.allSchedules() : [];
       return {
-        note: "Legacy jobs are seeded inactive (shadow) on v2 until Yahoska turns them on. Live lookout: v2-site-uptime every 5 min (websites) and v2-igor-heartbeat every 30 min (ads token).",
+        note: "Live Railway jobs: v2-site-uptime every 5 min, v2-igor-heartbeat every 30 min, v2-sales-tracker-sync Monday 7:00 AM ET (Sheets → Notion, no Anthropic). OpenClaw/Anthropic sales cron is retired leftover — do not buy Anthropic credits for it.",
         live: live.map((row) => ({
           id: row.id,
           cron: row.cron,
@@ -874,8 +882,26 @@ export async function executeTool(name, rawArgs, {
       return { sent: true, to: args.to, messageId: result.messageId ?? null };
     }
 
+    if (name === "run_sales_tracker_sync") {
+      const mode = args.mode === "dry-run" ? "dry-run" : "apply";
+      if (!store?.createTask) {
+        return { error: "Sales sync queue is unavailable in this process. The Railway worker runs it Monday 7:00 AM ET." };
+      }
+      const task = await store.createTask({
+        id: crypto.randomUUID(),
+        type: "daily_operations",
+        payload: { workflow: "sales_tracker_sync", mode, source: "telegram" }
+      });
+      return {
+        queued: true,
+        taskId: task.id,
+        mode,
+        note: "Worker will sync Sheets → Notion and Telegram the result. No Anthropic."
+      };
+    }
+
     if (name === "sales_sheet_summary") {
-      const response = await fetchImpl(environment.SALES_SHEET_CSV_URL, { signal: AbortSignal.timeout(25_000) });
+      const response = await fetchImpl(salesSheetUrl(environment), { signal: AbortSignal.timeout(25_000) });
       if (!response.ok) return { error: `Sales sheet fetch failed with HTTP ${response.status}` };
       const sales = parseSalesCsv(await response.text());
       const byAgent = {};

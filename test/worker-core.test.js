@@ -2,6 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { processTask } from "../src/worker-core.js";
 
+test("sales sync uses the public sheet default and payload apply mode", async () => {
+  let received;
+  await processTask(
+    { payload: { workflow: "sales_tracker_sync", mode: "apply" } },
+    {
+      environment: {
+        NOTION_TOKEN: "token",
+        NOTION_SALES_TRACKER_DB_ID: "database"
+      },
+      runSalesSync: async (args) => {
+        received = args;
+        return { status: "completed", createdCount: 2, missingCount: 2 };
+      },
+      notify: async () => {}
+    }
+  );
+  assert.match(received.sheetUrl, /16JnukM9BnLVzky2tvj1zHS0V2ylXGhClxJxmUeHhevo/);
+  assert.equal(received.mode, "apply");
+});
+
 test("processes sales sync tasks with a Telegram-ready result", async () => {
   const notifications = [];
   const result = await processTask(

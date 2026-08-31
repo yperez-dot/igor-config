@@ -7,7 +7,7 @@ import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
-import { LOOKOUT_LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
+import { LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -80,9 +80,12 @@ function scheduleTask(schedule) {
 
 await store.ready;
 for (const schedule of legacySchedules) await store.seedSchedule(schedule);
-for (const id of LOOKOUT_LIVE_SCHEDULE_IDS) {
+for (const id of LIVE_SCHEDULE_IDS) {
   const schedule = legacySchedules.find((row) => row.id === id);
   if (schedule) await store.ensureActiveSchedule(schedule);
+}
+for (const schedule of legacySchedules.filter((row) => row.payload?.mode === "retired")) {
+  await store.ensureInactiveSchedule(schedule);
 }
 for (const schedule of await store.activeSchedules()) scheduleTask(schedule);
 

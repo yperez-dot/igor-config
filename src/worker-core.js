@@ -1,4 +1,4 @@
-import { runSalesTrackerSync } from "./sales-sync.js";
+import { runSalesTrackerSync, salesSheetUrl, salesSyncMode } from "./sales-sync.js";
 import { runIndustryPulseWeekly } from "./industry-pulse.js";
 import { runHeartbeat } from "./heartbeat.js";
 import { runSiteLookout } from "./lookout.js";
@@ -48,11 +48,11 @@ export async function processTask(task, {
 
   if (workflow === "sales_tracker_sync") {
     const result = await runSalesSync({
-      sheetUrl: environment.SALES_SHEET_CSV_URL,
+      sheetUrl: salesSheetUrl(environment),
       notionToken: environment.NOTION_TOKEN,
       notionDatabaseId: environment.NOTION_SALES_TRACKER_DB_ID,
       notionDataSourceId: environment.NOTION_SALES_TRACKER_DATA_SOURCE_ID,
-      mode: environment.SALES_SYNC_MODE ?? "dry-run",
+      mode: salesSyncMode(task, environment),
       threshold: Number(environment.SALES_SYNC_THRESHOLD ?? 20)
     });
     await notify(salesTrackerMessage(result, environment));
