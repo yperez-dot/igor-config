@@ -96,6 +96,7 @@ export async function askGrok({
   executeTool,
   conversationId,
   maxToolRounds = 6,
+  timeoutMs,
   fetchImpl = fetch
 }) {
   const messages = [
@@ -112,7 +113,7 @@ export async function askGrok({
       tools,
       conversationId,
       fetchImpl,
-      timeoutMs: media.length ? 120_000 : (tools?.length ? 90_000 : 60_000)
+      timeoutMs: timeoutMs ?? (media.length ? 120_000 : (tools?.length ? 90_000 : 60_000))
     });
     const calls = toolCallsFrom(message);
     if (!calls.length) {

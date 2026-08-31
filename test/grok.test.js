@@ -123,3 +123,28 @@ test("askGrok sends photos as image_url content parts", async () => {
   assert.deepEqual(payload.messages.at(-1).content, userMessageContent("what is this", [{ dataUrl: "data:image/png;base64,aaa" }]));
   assert.equal(payload.messages.at(-1).content[1].type, "image_url");
 });
+
+test("askGrok honors an explicit timeoutMs", async () => {
+  const original = AbortSignal.timeout;
+  const seen = [];
+  AbortSignal.timeout = (ms) => {
+    seen.push(ms);
+    return original.call(AbortSignal, ms);
+  };
+  try {
+    await askGrok({
+      apiKey: "test-key",
+      model: "grok-4.6",
+      text: "write pulse",
+      timeoutMs: 180_000,
+      systemPrompt: "You are Igor.",
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "Issue #11" } }] })
+      })
+    });
+  } finally {
+    AbortSignal.timeout = original;
+  }
+  assert.equal(seen[0], 180_000);
+});

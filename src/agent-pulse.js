@@ -94,6 +94,14 @@ export function agentPulseRecipients(environment = process.env) {
   );
 }
 
+export function isPulseTimeoutError(error) {
+  return /aborted due to timeout|AbortError|The operation was aborted/i.test(String(error?.message ?? error));
+}
+
+export function pulseTimeoutMessage() {
+  return "Agent Pulse timed out scanning theiagentpulse or drafting with Grok. Next worker boot retries this week's issue. Do not queue another catch-up. Not Anthropic.";
+}
+
 export async function runAgentPulseWeekly({
   environment = process.env,
   now = new Date(),
@@ -110,6 +118,7 @@ export async function runAgentPulseWeekly({
   assertPulseSendReady(environment);
   const apiKey = environment.XAI_API_KEY;
 
+  try {
   const findings = (await scanAllAccounts({
     environment,
     scanOne: scanInbox,
@@ -118,6 +127,7 @@ export async function runAgentPulseWeekly({
       lookbackMinutes: Number(environment.AGENT_PULSE_LOOKBACK_MINUTES ?? 7 * 24 * 60),
       unseenOnly: false,
       includeBodies: true,
+      maxMessages: Number(environment.AGENT_PULSE_IMAP_MAX ?? 250),
       now
     }
   })).findings;
@@ -126,7 +136,8 @@ export async function runAgentPulseWeekly({
     apiKey,
     model: environment.XAI_MODEL ?? "grok-4.6",
     systemPrompt: AGENT_PULSE_PROMPT,
-    text: agentPulsePrompt({ findings, now, environment })
+    text: agentPulsePrompt({ findings, now, environment }),
+    timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000)
   });
 
   if (digest.length < 150) {
@@ -190,4 +201,10 @@ export async function runAgentPulseWeekly({
     messageId: result.messageId,
     hub
   };
+  } catch (error) {
+    if (isPulseTimeoutError(error)) {
+      throw new Error(pulseTimeoutMessage());
+    }
+    throw error;
+  }
 }

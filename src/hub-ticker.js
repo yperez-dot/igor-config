@@ -179,7 +179,7 @@ export async function githubGetFile({
 }) {
   const response = await fetchImpl(`https://api.github.com/repos/${repo}/contents/${path}`, {
     headers: githubHeaders(token),
-    signal: AbortSignal.timeout(25_000)
+    signal: AbortSignal.timeout(60_000)
   });
   if (response.status === 404) return { sha: null, text: null };
   if (!response.ok) throw new Error(`GitHub read failed for ${path} (HTTP ${response.status})`);
@@ -219,7 +219,7 @@ export async function githubPutFile({
       branch: "main",
       ...(sha ? { sha } : {})
     }),
-    signal: AbortSignal.timeout(25_000)
+    signal: AbortSignal.timeout(60_000)
   });
   if (!response.ok) throw new Error(`GitHub write failed for ${path} (HTTP ${response.status})`);
   return readJsonResponse(response);
@@ -238,7 +238,7 @@ export async function triggerHubDeploy({
       method: "POST",
       headers: { ...githubHeaders(token), "Content-Type": "application/json" },
       body: JSON.stringify({ ref: "main" }),
-      signal: AbortSignal.timeout(25_000)
+      signal: AbortSignal.timeout(60_000)
     });
     result.workflow = response.status === 204 ? "dispatched" : `http_${response.status}`;
   }
@@ -250,7 +250,7 @@ export async function triggerHubDeploy({
         "Content-Type": "application/json"
       },
       body: JSON.stringify({}),
-      signal: AbortSignal.timeout(25_000)
+      signal: AbortSignal.timeout(60_000)
     });
     result.netlify = response.ok ? "triggered" : `http_${response.status}`;
   }
