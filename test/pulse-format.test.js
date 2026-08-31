@@ -96,3 +96,37 @@ test("raw non-JSON does not invent an empty-inbox issue", () => {
   const parsed = parseInsiderIssue("not json", { emptyScan: true });
   assert.equal(parsed.items.length, 0);
 });
+
+test("Spanish chrome uses Edición labels and Spanish meaning boxes", () => {
+  const edition = buildInsiderEdition({
+    raw: JSON.stringify({
+      preheader: "AEP está a 45 días. La espera de SOA termina el 1 de octubre.",
+      intro: ["¡Feliz lunes, equipo! 👋", "CMS termina la espera de 48 horas de SOA el 1 de octubre.", "— Yahoska & Katy"],
+      items: [{
+        flag: "ACCIÓN",
+        beat: "CMS",
+        headline: "La espera de 48 horas de SOA termina el 1 de octubre",
+        minutes: 2,
+        body: "La regla final CY2027 de CMS elimina la **espera de 48 horas de SOA** desde el 1 de octubre.",
+        meaning: "Actualiza los flujos de SOA antes de octubre.",
+        source: "CMS CY2027 Final Rule"
+      }],
+      watch: [{ title: "AEP abre el 15 de octubre", detail: "Faltan 45 días." }],
+      sources: "CMS Newsroom"
+    }),
+    issueNumber: 11,
+    weekLabel: "31 de agosto de 2026",
+    locale: "es",
+    correctionNote: "Versión corregida — el Issue #11 de esta mañana salió en el formato incorrecto. Por favor usa este correo e ignora el anterior."
+  });
+  assert.match(edition.html, /lang="es"/);
+  assert.match(edition.html, /EDICIÓN 011/);
+  assert.match(edition.html, /La semana en/);
+  assert.match(edition.html, /ACCIÓN · CMS/);
+  assert.match(edition.html, /Qué significa esto para ti/);
+  assert.match(edition.html, /Haciendo la salud fácil/);
+  assert.match(edition.html, /Versión corregida/);
+  assert.match(edition.text, /Qué significa esto para ti/);
+  assert.equal(edition.html.includes("What this means for you"), false);
+  assert.equal(edition.html.includes("ISSUE 011"), false);
+});

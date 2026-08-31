@@ -16,8 +16,9 @@ function pulseRecipientCount(environment) {
     ).length;
   }
   return parseRecipientList(
-    environment.AGENT_PULSE_RECIPIENTS
-    ?? environment.INDUSTRY_PULSE_RECIPIENTS_EN
+    String(environment.AGENT_PULSE_LANG ?? "en").toLowerCase() === "es"
+      ? (environment.AGENT_PULSE_RECIPIENTS_ES ?? environment.INDUSTRY_PULSE_RECIPIENTS_ES)
+      : (environment.AGENT_PULSE_RECIPIENTS ?? environment.INDUSTRY_PULSE_RECIPIENTS_EN)
   ).length;
 }
 
@@ -48,9 +49,12 @@ export function pulseReadiness(environment = process.env) {
     });
   }
   if (mode !== "dry-run" && pulseRecipientCount(environment) === 0) {
+    const spanish = String(environment.AGENT_PULSE_LANG ?? "en").toLowerCase() === "es";
     blockers.push({
       id: "AGENT_PULSE_RECIPIENTS",
-      detail: "AGENT_PULSE_RECIPIENTS (or INDUSTRY_PULSE_RECIPIENTS_EN) is empty."
+      detail: spanish
+        ? "AGENT_PULSE_RECIPIENTS_ES (or INDUSTRY_PULSE_RECIPIENTS_ES) is empty."
+        : "AGENT_PULSE_RECIPIENTS (or INDUSTRY_PULSE_RECIPIENTS_EN) is empty."
     });
   }
 
