@@ -139,6 +139,18 @@ test("connectedSystems reports missing Railway secrets without values", () => {
   assert.deepEqual(github.missingEnv, ["GITHUB_TOKEN"]);
 });
 
+test("connectedSystems treats pulse as a separate inbox from info@", () => {
+  const infoOnly = connectedSystems({
+    HEARTBEAT_IMAP_USER: "info@healthexps.com",
+    HEARTBEAT_IMAP_PASS: "info-pass"
+  });
+  assert.equal(infoOnly.find((system) => system.id === "imap").connected, true);
+  assert.equal(infoOnly.find((system) => system.id === "pulse").connected, false);
+  assert.deepEqual(infoOnly.find((system) => system.id === "pulse").missingEnv, ["PULSE_IMAP_PASS"]);
+  const wired = connectedSystems({ PULSE_IMAP_PASS: "pulse-pass" });
+  assert.equal(wired.find((system) => system.id === "pulse").connected, true);
+});
+
 test("stale-opportunity filter uses last activity date", () => {
   const now = Date.parse("2026-08-25T12:00:00Z");
   assert.equal(isStaleOpportunity({ updatedAt: "2026-08-01T00:00:00Z" }, { staleDays: 14, now }), true);
