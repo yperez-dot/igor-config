@@ -12,13 +12,14 @@ import {
 } from "./pulse-format.js";
 
 const AGENT_PULSE_PROMPT = `You are writing THE Health Experts Insider (Agent Pulse) for contracted Florida Medicare agents at The Health Experts Insurance.
-Return JSON only. No markdown fences. The JSON is rendered into the branded HTML email (logo, purple hero "The Week in Medicare", ACTION/IMPORTANT/FYI cards, yellow "What this means for you" boxes). Do not write a plain-text newsletter.
-Never recommend plans or carriers. Never quote CMS-prohibited marketing terms verbatim. Never invent facts or include PHI.
-Do not mention Hector, BSI, or any upline. Do not invent carrier operational news.
-The only carrier/ops items you may include are those in the inbox scan. Those emails are broker notices — often not public. Summarize what the carrier actually wrote in the body. If the scan is empty, say theiagentpulse@gmail.com had no carrier or urgent items this week and do not add other items. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices from general knowledge. Do not add public web items as if they came from a carrier email.
-Send-from stays info@healthexps.com.
+This is The Week in Medicare — a public industry newsletter. Model it on Issue #4: CMS/regulatory, Florida, AEP/certs/SOA, public carrier and policy news, "What this means for you," then WHAT TO WATCH. It is NOT a dump of Yahoska's inbox.
+Use web search. 4–6 main cards from public sources this week (CMS, Florida DFS/SHINE, KFF, OIG, Congress, carrier investor/newsroom). Cite source + date. Yellow-highlight key facts with **double asterisks**.
+Never recommend plans or carriers. Never quote CMS-prohibited marketing terms verbatim. Never include PHI. Do not mention Hector, BSI, or any upline.
+Do not invent private broker emails. Public CMS/industry facts are the point of this issue — search for them. Do not fill the issue with inbox subjects.
+Broker-inbox items are optional extras (max two cards) and only if they are real operational carrier notices. Statement-ready / portal mail is noise. If the inbox is empty or noisy, write a full industry issue anyway.
+Return JSON only. No markdown fences.
 JSON shape:
-{"preheader":"one-line preview","intro":["Happy Monday, team! 👋","short week brief","— Yahoska & Katy"],"items":[{"flag":"ACTION|IMPORTANT|FYI","beat":"CARRIER|AGENT|POLICY|LEGAL|FLORIDA|OPS","headline":"...","minutes":2,"body":"plain sentences. Wrap key facts in **double asterisks** for yellow highlight.","meaning":"what THEI agents should do","source":"who sent the notice"}],"watch":[{"title":"...","detail":"..."}],"sources":"theiagentpulse@gmail.com inbox scan, last 7 days"}`;
+{"preheader":"one-line industry preview","intro":["Happy Monday, team! 👋","short week brief naming the lead industry item","— Yahoska & Katy"],"items":[{"flag":"ACTION|IMPORTANT|FYI","beat":"CMS|POLICY|LEGAL|CARRIER|AGENT|FLORIDA|OPS","headline":"...","minutes":2,"body":"plain sentences. Wrap key facts in **double asterisks**.","meaning":"what THEI agents should do this week","source":"CMS / KFF / named outlet + date"}],"watch":[{"title":"...","detail":"..."}],"sources":"CMS Newsroom, KFF, ..."}`;
 
 function zonedYmd(now, timeZone = "America/New_York") {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -72,11 +73,11 @@ export function agentPulseSubject({ now = new Date(), environment = process.env 
 
 export function formatInboxBrief(findings = []) {
   if (!findings.length) {
-    return "INBOX SCAN (last 7 days): no carrier or urgent items. Do not invent any.";
+    return "BROKER INBOX: no extra carrier/urgent notices. Write the full industry issue anyway. Do not make empty-inbox the story.";
   }
   return [
-    `INBOX SCAN (last 7 days): ${findings.length} carrier/urgent item(s). Use only these:`,
-    ...findings.slice(0, 40).map((item, index) => {
+    `BROKER INBOX (optional, max two cards): ${findings.length} carrier/urgent item(s). Use at most two if they are real operational notices. Do not dump this list into the issue:`,
+    ...findings.slice(0, 8).map((item, index) => {
       const when = item.date ? ` (${item.date})` : "";
       const body = item.snippet ? `\n   Notice: ${item.snippet}` : "";
       return `${index + 1}. [${item.kind}] ${item.subject} — from ${item.from}${when}${body}`;
@@ -87,8 +88,8 @@ export function formatInboxBrief(findings = []) {
 export function agentPulsePrompt({ findings = [], now = new Date(), environment = process.env } = {}) {
   const issue = agentPulseIssueNumber({ environment, now });
   return `Write THE Health Experts Insider Issue #${issue} for the week of ${easternMondayLabel(now)} as JSON for the branded HTML email.
-Audience: contracted Florida Medicare agents. Hub page is agentmedicarehub.com/agent-pulse.
-${formatInboxBrief(findings)}
+This is The Week in Medicare for contracted Florida Medicare agents — industry news first (CMS, Florida, AEP/certs, public carrier/policy), like Issue #4. Hub page is agentmedicarehub.com/agent-pulse.
+Use web search. ${formatInboxBrief(findings)}
 Return only the JSON object.`;
 }
 
@@ -148,7 +149,8 @@ export async function runAgentPulseWeekly({
     model: environment.XAI_MODEL ?? "grok-4.6",
     systemPrompt: AGENT_PULSE_PROMPT,
     text: agentPulsePrompt({ findings, now, environment }),
-    timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000)
+    timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000),
+    nativeTools: [{ type: "web_search" }]
   });
 
   const issue = agentPulseIssueNumber({ environment, now });

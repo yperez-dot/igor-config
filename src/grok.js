@@ -2,6 +2,7 @@ import { SYSTEM_PROMPT, systemPromptFor } from "./identity.js";
 import { stringifyToolResult } from "./tools.js";
 
 const XAI_CHAT_COMPLETIONS_URL = "https://api.x.ai/v1/chat/completions";
+const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
 
 export { SYSTEM_PROMPT, systemPromptFor };
 
@@ -74,6 +75,44 @@ async function completeChat({ apiKey, model, messages, tools, conversationId, fe
   return message;
 }
 
+export function textFromXaiResponses(body) {
+  if (typeof body?.output_text === "string" && body.output_text.trim()) {
+    return body.output_text.trim();
+  }
+  const chunks = [];
+  for (const item of body?.output ?? []) {
+    if (item?.type !== "message") continue;
+    for (const part of item.content ?? []) {
+      if (typeof part?.text === "string") chunks.push(part.text);
+    }
+  }
+  return chunks.join("\n").trim();
+}
+
+async function completeResponses({ apiKey, model, input, tools, fetchImpl, timeoutMs = 60_000 }) {
+  const response = await fetchImpl(XAI_RESPONSES_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      input,
+      tools,
+      store: false
+    }),
+    signal: AbortSignal.timeout(timeoutMs)
+  });
+  if (!response.ok) {
+    throw new Error(`xAI request failed with HTTP ${response.status}`);
+  }
+  const body = await response.json();
+  const text = textFromXaiResponses(body);
+  if (!text) throw new Error("xAI returned no assistant text.");
+  return text;
+}
+
 export function userMessageContent(text, media = []) {
   if (!Array.isArray(media) || !media.length) return text;
   return [
@@ -93,12 +132,28 @@ export async function askGrok({
   history = [],
   systemPrompt = SYSTEM_PROMPT,
   tools,
+  nativeTools,
   executeTool,
   conversationId,
   maxToolRounds = 6,
   timeoutMs,
   fetchImpl = fetch
 }) {
+  if (nativeTools?.length) {
+    const input = [
+      { role: "system", content: systemPrompt },
+      ...historyMessages(history),
+      { role: "user", content: typeof text === "string" ? text : userMessageContent(text, media) }
+    ];
+    return completeResponses({
+      apiKey,
+      model,
+      input,
+      tools: nativeTools,
+      fetchImpl,
+      timeoutMs: timeoutMs ?? 180_000
+    });
+  }
   const messages = [
     { role: "system", content: systemPrompt },
     ...historyMessages(history),

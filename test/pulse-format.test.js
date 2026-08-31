@@ -67,9 +67,32 @@ test("correction resend shows a pink Corrected version banner", () => {
   assert.match(edition.text, /Corrected version/);
 });
 
-test("empty scan still uses the Insider shell and does not invent carrier news", () => {
+test("industry cards do not require an inbox dump", () => {
+  const edition = buildInsiderEdition({
+    raw: JSON.stringify({
+      preheader: "AEP is 45 days out. SOA wait ends October 1.",
+      intro: ["Happy Monday, team! 👋", "CMS SOA wait ends October 1. AEP is 45 days out.", "— Yahoska & Katy"],
+      items: [{
+        flag: "ACTION",
+        beat: "CMS",
+        headline: "48-hour SOA wait ends October 1",
+        minutes: 2,
+        body: "CMS CY2027 Final Rule removes the **48-hour SOA wait** starting October 1.",
+        meaning: "Update SOA workflows before October.",
+        source: "CMS CY2027 Final Rule"
+      }],
+      watch: [{ title: "AEP opens October 15", detail: "45 days out." }],
+      sources: "CMS Newsroom"
+    }),
+    issueNumber: 11,
+    weekLabel: "August 31, 2026"
+  });
+  assert.match(edition.html, /ACTION · CMS/);
+  assert.match(edition.html, /SOA wait/);
+  assert.equal(edition.html.includes("theiagentpulse had no carrier"), false);
+});
+
+test("raw non-JSON does not invent an empty-inbox issue", () => {
   const parsed = parseInsiderIssue("not json", { emptyScan: true });
-  assert.equal(parsed.items[0].beat, "OPS");
-  assert.match(parsed.items[0].headline, /no carrier or urgent items/);
-  assert.match(parsed.items[0].body, /does not invent/);
+  assert.equal(parsed.items.length, 0);
 });

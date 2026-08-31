@@ -66,18 +66,6 @@ function normalizeItem(item = {}) {
   };
 }
 
-function emptyScanItem() {
-  return {
-    flag: "FYI",
-    beat: "OPS",
-    headline: "theiagentpulse had no carrier or urgent items this week",
-    minutes: 1,
-    body: "The scan of theiagentpulse@gmail.com found no carrier or urgent broker notices in the last 7 days. This issue does not invent Humana, UHC, Aetna, WellCare, or CMS operational news.",
-    meaning: "If a carrier notice still needs to go to agents, forward it to theiagentpulse@gmail.com.",
-    source: "theiagentpulse@gmail.com inbox scan"
-  };
-}
-
 function withSignoff(intro) {
   const lines = intro.map((line) => String(line).trim()).filter(Boolean);
   if (!lines.length) lines.push("Happy Monday, team! 👋");
@@ -90,7 +78,7 @@ function withSignoff(intro) {
   return lines;
 }
 
-export function parseInsiderIssue(raw, { emptyScan = false } = {}) {
+export function parseInsiderIssue(raw, { emptyScan: _emptyScan = false } = {}) {
   const parsed = extractJson(raw);
   const intro = parsed
     ? (Array.isArray(parsed.intro) ? parsed.intro : [parsed.intro]).filter(Boolean)
@@ -104,12 +92,11 @@ export function parseInsiderIssue(raw, { emptyScan = false } = {}) {
       detail: String(row?.detail ?? row?.body ?? "").trim()
     })).filter((row) => row.title)
     : [];
-  const sources = String(parsed?.sources ?? "theiagentpulse@gmail.com inbox scan, last 7 days").trim();
-  const resolvedItems = items.length ? items : (emptyScan ? [emptyScanItem()] : items);
+  const sources = String(parsed?.sources ?? "CMS Newsroom, KFF, public industry sources this week").trim();
   return {
-    preheader: String(parsed?.preheader ?? resolvedItems[0]?.headline ?? "THE Health Experts Insider").slice(0, 160),
+    preheader: String(parsed?.preheader ?? items[0]?.headline ?? "THE Health Experts Insider").slice(0, 160),
     intro: withSignoff(intro),
-    items: resolvedItems,
+    items,
     watch,
     sources
   };
