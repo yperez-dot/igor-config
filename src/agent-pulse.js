@@ -1,7 +1,7 @@
 import { askGrok } from "./grok.js";
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
-import { scanAllAccounts } from "./imap-accounts.js";
+import { hasPulseInbox, PULSE_INBOX, scanAllAccounts } from "./imap-accounts.js";
 import { easternMondayIso, publishHubTicker } from "./hub-ticker.js";
 
 const AGENT_PULSE_PROMPT = `You are writing THE Health Experts Insider (Agent Pulse) for contracted Florida Medicare agents at The Health Experts Insurance.
@@ -108,10 +108,16 @@ export async function runAgentPulseWeekly({
 
   const apiKey = environment.XAI_API_KEY;
   if (!apiKey) throw new Error("XAI_API_KEY is required for Agent Pulse.");
+  if (!hasPulseInbox(environment)) {
+    throw new Error(
+      `PULSE_IMAP_PASS is missing. Set the Gmail app password for ${PULSE_INBOX} on Railway igor-config (and Igor V2). Send-from stays info@healthexps.com.`
+    );
+  }
 
   const findings = (await scanAllAccounts({
     environment,
     scanOne: scanInbox,
+    role: "pulse",
     options: {
       lookbackMinutes: Number(environment.AGENT_PULSE_LOOKBACK_MINUTES ?? 7 * 24 * 60),
       unseenOnly: false,

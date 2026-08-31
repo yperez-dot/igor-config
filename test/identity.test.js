@@ -31,6 +31,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /info@/);
   assert.match(SYSTEM_PROMPT, /run_agent_pulse/);
   assert.match(SYSTEM_PROMPT, /Queued with no send confirmation is not proof/);
+  assert.match(SYSTEM_PROMPT, /PULSE_IMAP_PASS is missing/);
   assert.match(SYSTEM_PROMPT, /never have to ask/);
   assert.match(SYSTEM_PROMPT, /healthexps.com/);
   assert.match(SYSTEM_PROMPT, /5-minute/);
