@@ -7,6 +7,28 @@ import {
   runAgentPulseWeekly
 } from "../src/agent-pulse.js";
 
+const noLogoFetch = async () => ({ ok: false });
+
+const INSIDER_JSON = JSON.stringify({
+  preheader: "UHC sent a private Florida PPO TIN notice this week.",
+  intro: [
+    "Happy Monday, team! 👋",
+    "UHC sent a private Florida PPO TIN notice. Read item 1 before you quote.",
+    "— Yahoska & Katy"
+  ],
+  items: [{
+    flag: "ACTION",
+    beat: "CARRIER",
+    headline: "UHC sent a private Florida PPO TIN notice",
+    minutes: 2,
+    body: "UHC told contracted agencies the **new TIN** is required for Florida PPO claims effective Tuesday.",
+    meaning: "Review the inbox item before quoting. Do not post the notice publicly.",
+    source: "UHC broker email via theiagentpulse"
+  }],
+  watch: [{ title: "UHC contracting blackout", detail: "September 1. Submit open transfers today." }],
+  sources: "theiagentpulse@gmail.com inbox scan, last 7 days"
+});
+
 test("numbers Agent Pulse from the July 13 Issue #4 epoch", () => {
   assert.equal(agentPulseIssueNumber({ now: new Date("2026-07-13T14:00:00.000Z") }), 4);
   assert.equal(agentPulseIssueNumber({ now: new Date("2026-08-24T14:00:00.000Z") }), 10);
@@ -48,7 +70,8 @@ test("opens carrier email bodies when writing Pulse", async () => {
       scanOptions = options;
       return [];
     },
-    askModel: async () => "THE Health Experts Insider Issue #11\n\n📋 operational: The info@ inbox had no carrier or urgent items this week.\n\nSources: info@ inbox scan, last 7 days."
+    askModel: async () => "THE Health Experts Insider Issue #11\n\n📋 operational: The info@ inbox had no carrier or urgent items this week.\n\nSources: info@ inbox scan, last 7 days.",
+    fetchImpl: noLogoFetch
   });
   assert.equal(scanOptions.includeBodies, true);
   assert.equal(scanOptions.unseenOnly, false);
@@ -78,7 +101,8 @@ test("publishes the Hub ticker before a live Agent Pulse send", async () => {
       subject: "Network update",
       snippet: "Private: new TIN."
     }],
-    askModel: async () => "THE Health Experts Insider Issue #11\n\nUHC sent a private Florida PPO TIN notice this week. Agents should review the inbox item before quoting.\n\nSources: info@ inbox scan, last 7 days.",
+    askModel: async () => INSIDER_JSON,
+    fetchImpl: noLogoFetch,
     publishHub: async (payload) => {
       hub = payload;
       return { status: "published", addedAlerts: 1 };
@@ -88,6 +112,9 @@ test("publishes the Hub ticker before a live Agent Pulse send", async () => {
   assert.equal(result.hub.status, "published");
   assert.equal(hub.includeWeekly, true);
   assert.equal(hub.findings[0].subject, "Network update");
+  assert.match(hub.editionHtml, /The Week in/);
+  assert.match(hub.editionHtml, /What this means for you/);
+  assert.match(hub.headline, /TIN notice/);
 });
 
 test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
@@ -108,7 +135,8 @@ test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
     publishHub: async () => {
       throw new Error("test mode must not publish the Hub");
     },
-    askModel: async () => "THE Health Experts Insider Issue #11\n\n📋 operational: The info@ inbox had no carrier or urgent items this week.\n\nSources: info@ inbox scan, last 7 days.",
+    askModel: async () => INSIDER_JSON,
+    fetchImpl: noLogoFetch,
     deliver: async (payload) => {
       delivered.push(payload);
       return { messageId: "test-message" };
@@ -120,6 +148,10 @@ test("sends Agent Pulse in test mode to the proof mailbox only", async () => {
   assert.equal(result.findingCount, 0);
   assert.equal(delivered[0].to, "yperez@healthexps.com");
   assert.equal(delivered[0].bcc.length, 0);
+  assert.match(delivered[0].html, /The Week in/);
+  assert.match(delivered[0].html, /ISSUE 011/);
+  assert.match(delivered[0].html, /What this means for you/);
+  assert.equal(delivered[0].html.includes("<pre"), false);
 });
 
 test("refuses to scan info@ when the pulse inbox password is missing", async () => {
