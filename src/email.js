@@ -99,12 +99,17 @@ function escapeHtml(text) {
   return text.replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[char]);
 }
 
+function defaultHtml(text) {
+  return `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${escapeHtml(text)}</pre>`;
+}
+
 async function sendViaSmtp({
   config,
   to,
   bcc = [],
   subject,
   text,
+  html,
   attachments = [],
   transporter = nodemailer.createTransport({
     host: config.host,
@@ -122,13 +127,14 @@ async function sendViaSmtp({
     bcc: bcc.length ? bcc : undefined,
     subject,
     text,
-    html: `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${escapeHtml(text)}</pre>`
+    html: html ?? defaultHtml(text)
   };
   if (attachments.length) {
     mail.attachments = attachments.map((file) => ({
       filename: file.filename,
       content: file.content,
-      contentType: file.type ?? "text/csv"
+      contentType: file.type ?? "text/csv",
+      ...(file.cid ? { cid: file.cid, contentDisposition: "inline" } : {})
     }));
   }
   return transporter.sendMail(mail);
@@ -140,6 +146,7 @@ export async function sendEmail({
   bcc = [],
   subject,
   text,
+  html,
   attachments = [],
   transporter
 }) {
@@ -154,6 +161,7 @@ export async function sendEmail({
       bcc: recipients.slice(1),
       subject,
       text,
+      html,
       attachments
     };
     if (transporter) options.transporter = transporter;

@@ -4,14 +4,21 @@ import { scanMailbox } from "./heartbeat.js";
 import { scanAllAccounts } from "./imap-accounts.js";
 import { easternMondayIso, publishHubTicker } from "./hub-ticker.js";
 import { assertPulseSendReady } from "./pulse-readiness.js";
+import {
+  PULSE_LOGO_CID,
+  PULSE_LOGO_URL,
+  buildInsiderEdition,
+  pulseLogoAttachment
+} from "./pulse-format.js";
 
 const AGENT_PULSE_PROMPT = `You are writing THE Health Experts Insider (Agent Pulse) for contracted Florida Medicare agents at The Health Experts Insurance.
-Write plain text only. Do not use markdown, asterisks, or pound signs except in the issue number.
+Return JSON only. No markdown fences. The JSON is rendered into the branded HTML email (logo, purple hero "The Week in Medicare", ACTION/IMPORTANT/FYI cards, yellow "What this means for you" boxes). Do not write a plain-text newsletter.
 Never recommend plans or carriers. Never quote CMS-prohibited marketing terms verbatim. Never invent facts or include PHI.
 Do not mention Hector, BSI, or any upline. Do not invent carrier operational news.
-Use emoji section tags when helpful: 🚨 urgent, 📋 operational, 📰 general, 🌴 Florida-specific.
-The only carrier/ops items you may include are those in the inbox scan. Those emails are broker notices — often not public. Summarize what the carrier actually wrote in the body. If the scan is empty, say theiagentpulse@gmail.com had no carrier or urgent items this week. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices from general knowledge.
-Keep the issue concise but useful. End with a short "Sources" line that names the theiagentpulse inbox scan. Send-from stays info@healthexps.com. Do not add public web items as if they came from a carrier email.`;
+The only carrier/ops items you may include are those in the inbox scan. Those emails are broker notices — often not public. Summarize what the carrier actually wrote in the body. If the scan is empty, say theiagentpulse@gmail.com had no carrier or urgent items this week and do not add other items. Do not fabricate Humana, UHC, Aetna, WellCare, or CMS notices from general knowledge. Do not add public web items as if they came from a carrier email.
+Send-from stays info@healthexps.com.
+JSON shape:
+{"preheader":"one-line preview","intro":["Happy Monday, team! 👋","short week brief","— Yahoska & Katy"],"items":[{"flag":"ACTION|IMPORTANT|FYI","beat":"CARRIER|AGENT|POLICY|LEGAL|FLORIDA|OPS","headline":"...","minutes":2,"body":"plain sentences. Wrap key facts in **double asterisks** for yellow highlight.","meaning":"what THEI agents should do","source":"who sent the notice"}],"watch":[{"title":"...","detail":"..."}],"sources":"theiagentpulse@gmail.com inbox scan, last 7 days"}`;
 
 function zonedYmd(now, timeZone = "America/New_York") {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -77,10 +84,10 @@ export function formatInboxBrief(findings = []) {
 
 export function agentPulsePrompt({ findings = [], now = new Date(), environment = process.env } = {}) {
   const issue = agentPulseIssueNumber({ environment, now });
-  return `Write THE Health Experts Insider Issue #${issue} for the week of ${easternMondayLabel(now)}.
+  return `Write THE Health Experts Insider Issue #${issue} for the week of ${easternMondayLabel(now)} as JSON for the branded HTML email.
 Audience: contracted Florida Medicare agents. Hub page is agentmedicarehub.com/agent-pulse.
 ${formatInboxBrief(findings)}
-Return only the final newsletter text with a header line, tagged items, and a short Sources footer.`;
+Return only the JSON object.`;
 }
 
 export function agentPulseRecipients(environment = process.env) {
@@ -108,7 +115,8 @@ export async function runAgentPulseWeekly({
   askModel = askGrok,
   deliver = sendEmail,
   scanInbox = scanMailbox,
-  publishHub = publishHubTicker
+  publishHub = publishHubTicker,
+  fetchImpl = fetch
 } = {}) {
   const mode = environment.AGENT_PULSE_MODE ?? "send";
   if (!["dry-run", "test", "send"].includes(mode)) {
@@ -140,20 +148,31 @@ export async function runAgentPulseWeekly({
     timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000)
   });
 
-  if (digest.length < 150) {
+  const issue = agentPulseIssueNumber({ environment, now });
+  const weekLabel = easternMondayLabel(now);
+  const mondayIso = easternMondayIso(now);
+  const logo = await pulseLogoAttachment({ fetchImpl });
+  const edition = buildInsiderEdition({
+    raw: digest,
+    issueNumber: issue,
+    weekLabel,
+    emptyScan: findings.length === 0,
+    logoSrc: logo ? `cid:${PULSE_LOGO_CID}` : PULSE_LOGO_URL
+  });
+  if (edition.text.length < 150) {
     throw new Error("Agent Pulse digest failed validation: output too short.");
   }
 
   const subject = agentPulseSubject({ now, environment });
-  const weekLabel = easternMondayLabel(now);
-  const mondayIso = easternMondayIso(now);
   let hub = { status: "skipped", reason: "not_send_mode" };
   if (mode === "send") {
     try {
       hub = await publishHub({
         environment,
         findings,
-        digest,
+        digest: edition.text,
+        editionHtml: edition.hubHtml,
+        headline: edition.headline,
         weekLabel,
         mondayIso,
         now,
@@ -163,13 +182,12 @@ export async function runAgentPulseWeekly({
       hub = { status: "failed", reason: error.message };
     }
   }
-  const issue = agentPulseIssueNumber({ environment, now });
   if (mode === "dry-run") {
     return {
       status: "dry_run",
       mode,
       subject,
-      length: digest.length,
+      length: edition.text.length,
       findingCount: findings.length,
       issue,
       mondayIso,
@@ -187,7 +205,9 @@ export async function runAgentPulseWeekly({
     to: recipients[0],
     bcc: recipients.slice(1),
     subject,
-    text: digest
+    text: edition.text,
+    html: edition.html,
+    attachments: logo ? [logo] : []
   });
 
   return {
