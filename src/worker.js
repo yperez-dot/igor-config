@@ -1,3 +1,5 @@
+import { createStore } from "./store.js";
+import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import http from "node:http";
 
