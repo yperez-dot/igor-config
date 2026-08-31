@@ -141,7 +141,7 @@ export async function sendEmail({
   } catch (error) {
     if (/timeout|ETIMEDOUT|ECONNREFUSED|Connection timeout/i.test(String(error.message))) {
       throw new Error(
-        "SMTP from info@ failed. Check SMTP_HOST/SMTP_USER/SMTP_PASS (Gmail app password for info@healthexps.com) on igor-config. Railway Hobby may block outbound SMTP — upgrade to Pro if this times out. THEI does not use SendGrid."
+        "SMTP from info@ failed. Check SMTP_HOST/SMTP_USER/SMTP_PASS (Gmail app password for info@healthexps.com) on igor-config. After a Railway Pro upgrade, redeploy igor-config so outbound SMTP is enabled. THEI does not use SendGrid."
       );
     }
     throw error;

@@ -98,7 +98,7 @@ test("fails loud when SMTP is missing even if a SendGrid key is present", async 
   );
 });
 
-test("names Railway Hobby when SMTP from info@ times out", async () => {
+test("names a Pro redeploy when SMTP from info@ times out", async () => {
   await assert.rejects(
     sendEmail({
       config: smtpConfig({
@@ -115,7 +115,7 @@ test("names Railway Hobby when SMTP from info@ times out", async () => {
         }
       }
     }),
-    /THEI does not use SendGrid/
+    /redeploy igor-config.*does not use SendGrid/
   );
 });
 
