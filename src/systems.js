@@ -1,4 +1,5 @@
 import { DEFAULT_SALES_SHEET_CSV_URL } from "./sales-sync.js";
+import { hasPulseInbox } from "./imap-accounts.js";
 
 export const DEFAULT_OLICOMM_BASE_URL = "https://commission-tracker-production-e4fc.up.railway.app";
 export { DEFAULT_SALES_SHEET_CSV_URL };
@@ -63,6 +64,11 @@ export const SYSTEM_IDS = [
     id: "imap",
     label: "Leadership inbox (IMAP)",
     env: ["HEARTBEAT_IMAP_USER", "HEARTBEAT_IMAP_PASS"]
+  },
+  {
+    id: "pulse",
+    label: "Agent Pulse inbox (theiagentpulse)",
+    env: ["PULSE_IMAP_PASS"]
   }
 ];
 
@@ -78,7 +84,9 @@ export function connectedSystems(environment = process.env) {
         ? Boolean(String(environment.OLICOMM_BASE_URL ?? DEFAULT_OLICOMM_BASE_URL).trim())
         : system.id === "sheets"
           ? Boolean(String(environment.SALES_SHEET_CSV_URL ?? DEFAULT_SALES_SHEET_CSV_URL).trim())
-          : envPresent(environment, system.env);
+          : system.id === "pulse"
+            ? hasPulseInbox(environment)
+            : envPresent(environment, system.env);
     const missingEnv = connected
       ? []
       : system.id === "email"

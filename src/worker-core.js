@@ -5,6 +5,7 @@ import { runCarrierInboxDigest } from "./carrier-digest.js";
 import { runHeartbeat } from "./heartbeat.js";
 import { runSiteLookout } from "./lookout.js";
 import { sendOpsAlert } from "./email.js";
+import { hasPulseInbox, PULSE_INBOX } from "./imap-accounts.js";
 
 function salesTrackerMessage(result, environment) {
   return result.status === "aborted"
@@ -49,11 +50,13 @@ export const WORKER_WORKFLOWS = new Set([
   "site_uptime"
 ]);
 
-export function runtimeIdentity() {
+export function runtimeIdentity(environment = process.env) {
   return {
-    commit: process.env.RAILWAY_GIT_COMMIT_SHA ?? null,
-    branch: process.env.RAILWAY_GIT_BRANCH ?? null,
-    workflows: [...WORKER_WORKFLOWS].sort()
+    commit: environment.RAILWAY_GIT_COMMIT_SHA ?? null,
+    branch: environment.RAILWAY_GIT_BRANCH ?? null,
+    workflows: [...WORKER_WORKFLOWS].sort(),
+    pulseInbox: PULSE_INBOX,
+    pulseConfigured: hasPulseInbox(environment)
   };
 }
 
