@@ -928,7 +928,7 @@ export async function executeTool(name, rawArgs, {
           pulseReady: false,
           pulseBlockers: readiness.blockerIds,
           error: pulseReadinessAlert(readiness).replace(/^🚨 /, ""),
-          note: "Do not tell her this queued. Fix every blocker on Railway igor-config first. This is not Anthropic."
+          note: "Do not tell her this queued. Fix every blocker on Railway igor-config and Igor V2 first. This is not Anthropic."
         };
       }
       if (!store?.createTask) {

@@ -24,6 +24,7 @@ test("lists every Pulse send-path blocker at once", () => {
   assert.match(alert, /SMTP/);
   assert.match(alert, /not Anthropic/);
   assert.match(alert, /pulseReady is true/);
+  assert.match(alert, /igor-config and Igor V2/);
 });
 
 test("is send-ready only when inbox, SMTP, recipients, and Grok are set", () => {

@@ -2,7 +2,7 @@
 
 Yahoska authorized restoring live API access on the v2 Telegram bot. Credentials stay in Railway — never in git.
 
-Set these on **both** the `Igor V2` web service and the `igor-config` worker if that workflow needs them. After setting secrets, redeploy the web service so Grok tools load.
+Set these on **both** the `Igor V2` web service and the `igor-config` worker. Rule of thumb (Yahoska 2026-08-31): whatever igor-config gets, Igor V2 gets. Telegram reads Igor V2; the worker sends. After setting secrets, redeploy both.
 
 | System | Railway variables | Telegram tools |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker if 
 | Sales sheet | `SALES_SHEET_CSV_URL` | `sales_sheet_summary` |
 | Google Calendar | `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REFRESH_TOKEN`. Optional `GOOGLE_CALENDAR_ID` (default `primary`), `GOOGLE_CALENDAR_TIMEZONE` (default `America/New_York`). Optional `TELEGRAM_YAHOSKA_USER_ID` / `TELEGRAM_HUSBAND_USER_ID` so Igor knows who is chatting and can ping Yahoska when her husband books | `calendar_list_events`, `calendar_availability` (read). `calendar_create_event`, `calendar_update_event`, `calendar_delete_event` (confirm required; allowlisted users including her husband book her calendar) |
 | Leadership inbox | `HEARTBEAT_IMAP_USER`, `HEARTBEAT_IMAP_PASS` | `inbox_status` (no message bodies). `/health` `imap` is this mailbox (`info@`), not Pulse. |
-| Agent Pulse send path | `XAI_API_KEY`, `PULSE_IMAP_PASS`, `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` for `info@`, `AGENT_PULSE_RECIPIENTS`. THEI does not use SendGrid. `PULSE_IMAP_PASS` on **igor-config** is what sends. | `/health` `pulseReady` + `pulseBlockers`. Worker boots and heartbeat 🚨 the full list. When `pulseReady`, worker boot queues this week’s issue if it has not sent (no Telegram needed). `run_agent_pulse` will not queue while `pulseReady` is false. |
+| Agent Pulse send path | `XAI_API_KEY`, `PULSE_IMAP_PASS`, `SMTP_HOST`/`SMTP_USER`/`SMTP_PASS` for `info@`, `AGENT_PULSE_RECIPIENTS` on **both** igor-config and Igor V2. THEI does not use SendGrid. | `/health` `pulseReady` + `pulseBlockers` on each service. Worker boots and heartbeat 🚨 the full list. When worker `pulseReady`, boot queues this week’s issue if it has not sent. Telegram `run_agent_pulse` uses Igor V2’s env and will not queue while that service’s `pulseReady` is false. |
 | Standing memory | none (files in `memory/` + Postgres `agent_memories`) | `memory_search`, `memory_remember`. See [MEMORY.md](MEMORY.md). |
 | Lookout / crons | none | `run_lookout` (ads token + public sites + Pulse send-path — not OliComm). Live jobs: `v2-site-uptime` every 5 min (healthexps.com / Hub never-down), `v2-igor-heartbeat` every 30 min (ads token + Pulse readiness), `v2-sales-tracker-sync` Monday 7:00 AM ET, `v2-carrier-inbox-digest` daily 7:00 AM ET, `v2-agent-pulse` Monday 8:00 AM ET. `list_schedules` (live + shadow catalog). Telegram catch-up: `run_sales_tracker_sync`, `run_agent_pulse` (refuses unless `pulseReady`). Industry Pulse is the old name for Agent Pulse — keep `v2-industry-pulse` off. |
 
