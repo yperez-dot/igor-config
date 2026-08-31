@@ -1,5 +1,4 @@
-import { createStore } from "./store.js";
-import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
+import { runtimeIdentity } from "./worker-core.js";
 import http from "node:http";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -12,7 +11,11 @@ await store.ready;
 const healthServer = http.createServer((request, response) => {
   if (request.url === "/health") {
     response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ status: "ok", service: "igor-v2-worker" }));
+    response.end(JSON.stringify({
+      status: "ok",
+      service: "igor-v2-worker",
+      ...runtimeIdentity()
+    }));
     return;
   }
   response.writeHead(404);

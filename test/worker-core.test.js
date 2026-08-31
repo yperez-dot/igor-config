@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { processTask } from "../src/worker-core.js";
+import { processTask, runtimeIdentity } from "../src/worker-core.js";
 
 test("sales sync uses the public sheet default and payload apply mode", async () => {
   let received;
@@ -56,6 +56,13 @@ test("skips Telegram chat tasks without alerting", async () => {
   );
   assert.deepEqual(result, { status: "skipped", reason: "telegram_chat" });
   assert.deepEqual(notifications, []);
+});
+
+test("telegram-sourced unknown workflows fail loud instead of looking like a chat skip", async () => {
+  await assert.rejects(
+    processTask({ payload: { workflow: "agent_pulse_weekly_typo", source: "telegram" } }),
+    /No v2 handler is registered for workflow: agent_pulse_weekly_typo/
+  );
 });
 
 test("processes industry pulse weekly tasks", async () => {
@@ -213,4 +220,9 @@ test("emails Yahoska when a site-uptime alert fires", async () => {
   );
   assert.equal(result.email.status, "sent");
   assert.equal(emails[0].subject, "Igor: website alert");
+});
+
+test("runtime identity lists Pulse on the worker", () => {
+  const identity = runtimeIdentity();
+  assert.ok(identity.workflows.includes("agent_pulse_weekly"));
 });

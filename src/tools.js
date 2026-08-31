@@ -925,7 +925,7 @@ export async function executeTool(name, rawArgs, {
       const task = await store.createTask({
         id: crypto.randomUUID(),
         type: "content_draft",
-        payload: { workflow: "agent_pulse_weekly", mode, source: "telegram" }
+        payload: { workflow: "agent_pulse_weekly", mode, source: "catchup" }
       });
       return {
         queued: true,

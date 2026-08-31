@@ -49,6 +49,14 @@ export const WORKER_WORKFLOWS = new Set([
   "site_uptime"
 ]);
 
+export function runtimeIdentity() {
+  return {
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA ?? null,
+    branch: process.env.RAILWAY_GIT_BRANCH ?? null,
+    workflows: [...WORKER_WORKFLOWS].sort()
+  };
+}
+
 export function isWorkerWorkflow(payload) {
   return WORKER_WORKFLOWS.has(payload?.workflow);
 }
@@ -74,7 +82,7 @@ export async function processTask(task, {
   const workflow = task.payload?.workflow;
 
   if (!isWorkerWorkflow(task.payload)) {
-    if (task.payload?.source === "telegram") {
+    if (task.payload?.source === "telegram" && !workflow) {
       return { status: "skipped", reason: "telegram_chat" };
     }
     throw new Error(`No v2 handler is registered for workflow: ${workflow ?? "unknown"}`);
