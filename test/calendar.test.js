@@ -10,6 +10,7 @@ import {
 } from "../src/calendar.js";
 import { executeTool, grokTools } from "../src/tools.js";
 import { runHeartbeat } from "../src/heartbeat.js";
+import { PULSE_READY_ENV } from "./pulse-ready-env.js";
 
 const calendarEnv = {
   GOOGLE_CALENDAR_CLIENT_ID: "client",
@@ -160,6 +161,7 @@ function lookoutOkFetch() {
 test("heartbeat does not text calendar events by default", async () => {
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret",
@@ -179,6 +181,7 @@ test("heartbeat does not text calendar events by default", async () => {
 test("heartbeat texts calendar events only when HEARTBEAT_CALENDAR_ALERTS is true", async () => {
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_CALENDAR_ALERTS: "true",
       ...calendarEnv

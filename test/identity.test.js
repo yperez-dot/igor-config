@@ -30,9 +30,12 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /update_hub_sneak_peeks/);
   assert.match(SYSTEM_PROMPT, /info@/);
   assert.match(SYSTEM_PROMPT, /run_agent_pulse/);
-  assert.match(SYSTEM_PROMPT, /Maximum credits exceeded/);
-  assert.match(SYSTEM_PROMPT, /not Anthropic/);
+  assert.match(SYSTEM_PROMPT, /THEI does not use SendGrid/);
+  assert.match(SYSTEM_PROMPT, /not Anthropic|Do not tell her to buy Anthropic/);
   assert.match(SYSTEM_PROMPT, /Queued with no send confirmation is not proof/);
+  assert.match(SYSTEM_PROMPT, /PULSE_IMAP_PASS is missing/);
+  assert.match(SYSTEM_PROMPT, /pulseReady is false/);
+  assert.match(SYSTEM_PROMPT, /full blocker list/);
   assert.match(SYSTEM_PROMPT, /never have to ask/);
   assert.match(SYSTEM_PROMPT, /healthexps.com/);
   assert.match(SYSTEM_PROMPT, /5-minute/);

@@ -10,7 +10,7 @@ import {
   proposedEvent,
   updateEvent
 } from "./calendar.js";
-import { sendEmail, smtpConfig } from "./email.js";
+import { sendEmail, smtpConfig, smtpTransportReady } from "./email.js";
 import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
 import {
@@ -34,7 +34,8 @@ import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 import { legacySchedules } from "./legacy-schedules.js";
 import { runLookout } from "./lookout.js";
 import { runSneakPeekUpdate } from "./hub-sneak-peeks.js";
-import { hasPulseInbox, imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
+import { imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
+import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
@@ -94,7 +95,7 @@ export function grokTools(environment = process.env) {
       properties: {},
       additionalProperties: false
     }),
-    functionTool("run_lookout", "Probe Facebook ads token and public sites (healthexps.com, agentmedicarehub.com) right now. Website uptime also runs every 5 minutes on its own. Do not check OliComm. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
+    functionTool("run_lookout", "Probe Facebook ads token, public sites, and Agent Pulse send-path readiness (pulseReady / pulseBlockers). Website uptime also runs every 5 minutes. Do not check OliComm. Use when asked what’s going on, after a failure, or for ads/site/status. Do not wait for the word diagnose.", {
       type: "object",
       properties: {},
       additionalProperties: false
@@ -106,7 +107,7 @@ export function grokTools(environment = process.env) {
       },
       additionalProperties: false
     }),
-    functionTool("run_agent_pulse", "Queue this week's Agent Pulse (THE Health Experts Insider) on the Railway worker. Use when Yahoska asks to send Pulse, or when a v2 handler missing / agent_pulse_weekly failure fires. Industry Pulse is the old name for this same Monday email — do not queue both.", {
+    functionTool("run_agent_pulse", "Queue this week's Agent Pulse only when /health pulseReady is true. If pulseReady is false, report pulseBlockers and do not queue. Industry Pulse is the old name for this same Monday email — do not queue both.", {
       type: "object",
       properties: {
         mode: { type: "string", description: "send (default, contracted list from info@), test (proof mailbox only), or dry-run." }
@@ -117,7 +118,7 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("ghl")) {
     tools.push(
-      functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails yperez@healthexps.com when SendGrid is configured.", {
+      functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails yperez@healthexps.com when SMTP for info@ is configured.", {
         type: "object",
         properties: {
           staleDays: { type: "integer", description: "Days without opportunity activity. Default 14." },
@@ -471,7 +472,8 @@ export async function executeTool(name, rawArgs, {
   botToken,
   senderId,
   store,
-  pendingAttachment
+  pendingAttachment,
+  transporter
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
@@ -558,7 +560,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "run_lookout") {
-      return runLookout({ environment, fetchImpl });
+      return runLookout({ environment, fetchImpl, includePulse: true });
     }
 
     if (name === "ghl_stale_leads") {
@@ -594,7 +596,7 @@ export async function executeTool(name, rawArgs, {
 
       const emailTo = args.emailTo ?? "yperez@healthexps.com";
       const mailConfig = smtpConfig(environment);
-      if (args.email !== false && mailConfig.sendgridApiKey && allowedEmail(environment, emailTo)) {
+      if (args.email !== false && smtpTransportReady(mailConfig) && allowedEmail(environment, emailTo)) {
         try {
           await sendEmail({
             config: mailConfig,
@@ -602,15 +604,15 @@ export async function executeTool(name, rawArgs, {
             subject: `Stale leads ${report.staleDays}d — ${report.staleCount} open opps`,
             text: `PHI-light GHL stale-leads export.\nStale: ${report.staleCount}\nScanned: ${report.scanned}\nBy stage: ${JSON.stringify(report.byStage)}\nCSV attached.`,
             attachments: [{ filename, content: report.csv, type: "text/csv" }],
-            fetchImpl
+            transporter
           });
           delivered.email = true;
           delivered.emailedTo = emailTo;
         } catch (error) {
           errors.push(`email: ${error.message}`);
         }
-      } else if (args.email !== false && !mailConfig.sendgridApiKey) {
-        delivered.emailSkipped = "SENDGRID_API_KEY is not set on Igor V2.";
+      } else if (args.email !== false && !smtpTransportReady(mailConfig)) {
+        delivered.emailSkipped = "SMTP for info@ is not set on Igor V2.";
       }
 
       return {
@@ -894,7 +896,7 @@ export async function executeTool(name, rawArgs, {
         to: args.to,
         subject: args.subject,
         text: args.text,
-        fetchImpl
+        transporter
       });
       return { sent: true, to: args.to, messageId: result.messageId ?? null };
     }
@@ -919,6 +921,16 @@ export async function executeTool(name, rawArgs, {
 
     if (name === "run_agent_pulse") {
       const mode = ["dry-run", "test", "send"].includes(args.mode) ? args.mode : "send";
+      const readiness = pulseReadiness({ ...environment, AGENT_PULSE_MODE: mode });
+      if (!readiness.ready) {
+        return {
+          queued: false,
+          pulseReady: false,
+          pulseBlockers: readiness.blockerIds,
+          error: pulseReadinessAlert(readiness).replace(/^🚨 /, ""),
+          note: "Do not tell her this queued. Fix every blocker on Railway igor-config first. This is not Anthropic."
+        };
+      }
       if (!store?.createTask) {
         return { error: "Agent Pulse queue is unavailable in this process. The Railway worker sends it Monday 8:00 AM ET." };
       }
@@ -929,6 +941,7 @@ export async function executeTool(name, rawArgs, {
       });
       return {
         queued: true,
+        pulseReady: true,
         taskId: task.id,
         mode,
         note: "Worker will scan theiagentpulse@gmail.com, write Issue # from the July 13 epoch, send from info@, and update the Hub ticker. Industry Pulse is not a second send."
@@ -950,12 +963,15 @@ export async function executeTool(name, rawArgs, {
 
     if (name === "inbox_status") {
       const accounts = imapAccounts(environment);
+      const pulse = pulseReadiness(environment);
       return {
         configured: accounts.length > 0,
         user: environment.HEARTBEAT_IMAP_USER,
         mailboxes: accounts.map((account) => account.user),
         pulseInbox: PULSE_INBOX,
-        pulseConfigured: hasPulseInbox(environment),
+        pulseConfigured: pulse.pulseConfigured,
+        pulseReady: pulse.ready,
+        pulseBlockers: pulse.blockerIds,
         host: environment.HEARTBEAT_IMAP_HOST ?? "imap.gmail.com",
         note: "Igor reads theiagentpulse@gmail.com (forwards from Yahoska’s other emails). Send-from stays info@. IMAP bodies are not dumped into Telegram."
       };

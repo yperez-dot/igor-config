@@ -41,8 +41,8 @@ export function hasPulseInbox(environment = process.env) {
   return imapAccounts(environment).some((account) => account.user.toLowerCase() === PULSE_INBOX);
 }
 
-export async function scanAllAccounts({ environment = process.env, scanOne, options = {} } = {}) {
-  const accounts = imapAccounts(environment);
+export async function scanAllAccounts({ environment = process.env, scanOne, options = {}, role } = {}) {
+  const accounts = imapAccounts(environment).filter((account) => !role || account.role === role);
   const findings = [];
   const mailboxes = [];
   for (const account of accounts) {

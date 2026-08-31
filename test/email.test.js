@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  isSendGridQuotaError,
   opsAlertRecipients,
   parseRecipientList,
   sendEmail,
@@ -17,14 +16,20 @@ test("parses comma-separated recipient lists", () => {
   ]);
 });
 
-test("requires core smtp settings", () => {
+test("requires Gmail SMTP, not SendGrid", () => {
   assert.throws(
-    () => validateSmtpConfig({ fromEmail: "info@example.com" }),
+    () => validateSmtpConfig({ fromEmail: "info@healthexps.com" }),
+    /Do not use SendGrid/
+  );
+  assert.throws(
+    () => validateSmtpConfig({ fromEmail: "info@healthexps.com", sendgridApiKey: "sg.test" }),
     /SMTP is not fully configured/
   );
   assert.doesNotThrow(() => validateSmtpConfig({
-    fromEmail: "info@example.com",
-    sendgridApiKey: "sg.test"
+    fromEmail: "info@healthexps.com",
+    host: "smtp.gmail.com",
+    user: "info@healthexps.com",
+    pass: "app-pass"
   }));
 });
 
@@ -35,48 +40,35 @@ test("ops alerts go to the test mailbox when configured", () => {
   );
 });
 
-test("SendGrid defaults FROM_EMAIL to info@healthexps.com", () => {
-  const config = smtpConfig({ SENDGRID_API_KEY: "sg.test" });
-  assert.equal(config.fromEmail, "info@healthexps.com");
-  assert.doesNotThrow(() => validateSmtpConfig(config));
-});
-
-test("detects SendGrid credit exhaustion without treating SMTP as ready", () => {
-  assert.equal(smtpTransportReady({ host: "smtp.gmail.com" }), false);
-  assert.equal(smtpTransportReady({
-    host: "smtp.gmail.com",
-    user: "info@healthexps.com",
-    pass: "app-pass"
-  }), true);
-  assert.equal(
-    isSendGridQuotaError(new Error('SendGrid request failed with HTTP 401: {"errors":[{"message":"Maximum credits exceeded"}]}')),
-    true
-  );
-});
-
-function sendgridQuotaFetch() {
-  return async () => ({
-    ok: false,
-    status: 401,
-    headers: { get: () => null },
-    text: async () => JSON.stringify({ errors: [{ message: "Maximum credits exceeded", field: null, help: null }] })
+test("SMTP defaults FROM_EMAIL to info@healthexps.com", () => {
+  const config = smtpConfig({
+    SMTP_HOST: "smtp.gmail.com",
+    SMTP_USER: "info@healthexps.com",
+    SMTP_PASS: "app-pass"
   });
-}
+  assert.equal(config.fromEmail, "info@healthexps.com");
+  assert.equal(config.sendgridApiKey, undefined);
+  assert.doesNotThrow(() => validateSmtpConfig(config));
+  assert.equal(smtpConfig({ SENDGRID_API_KEY: "sg.test" }).fromEmail, undefined);
+});
 
-test("falls back to SMTP from info@ when SendGrid credits are exhausted", async () => {
+test("sends Pulse from info@ over SMTP and ignores a leftover SendGrid key", async () => {
   const sent = [];
+  let fetched = false;
   const result = await sendEmail({
-    config: {
-      fromEmail: "info@healthexps.com",
-      sendgridApiKey: "sg.test",
-      host: "smtp.gmail.com",
-      user: "info@healthexps.com",
-      pass: "app-pass"
-    },
+    config: smtpConfig({
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "app-pass",
+      SENDGRID_API_KEY: "sg-should-be-ignored"
+    }),
     to: "agents@example.com",
     subject: "THE Health Experts Insider — Issue #11",
     text: "Issue #11 body",
-    fetchImpl: sendgridQuotaFetch(),
+    fetchImpl: async () => {
+      fetched = true;
+      throw new Error("must not call SendGrid");
+    },
     transporter: {
       sendMail: async (mail) => {
         sent.push(mail);
@@ -85,76 +77,53 @@ test("falls back to SMTP from info@ when SendGrid credits are exhausted", async 
     }
   });
   assert.equal(result.messageId, "smtp-pulse");
+  assert.equal(fetched, false);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].from, "info@healthexps.com");
   assert.equal(sent[0].to, "agents@example.com");
 });
 
-test("does not call SMTP when SendGrid accepts the message", async () => {
-  let smtpCalled = false;
-  const result = await sendEmail({
-    config: {
-      fromEmail: "info@healthexps.com",
-      sendgridApiKey: "sg.test",
-      host: "smtp.gmail.com",
-      user: "info@healthexps.com",
-      pass: "app-pass"
-    },
-    to: "agents@example.com",
-    subject: "ok",
-    text: "ok",
-    fetchImpl: async () => ({
-      ok: true,
-      status: 202,
-      headers: { get: () => "sg-message-id" }
-    }),
-    transporter: {
-      sendMail: async () => {
-        smtpCalled = true;
-        return { messageId: "should-not-run" };
-      }
-    }
-  });
-  assert.equal(result.messageId, "sg-message-id");
-  assert.equal(smtpCalled, false);
-});
-
-test("fails loud when SendGrid is out of credits and SMTP is not configured", async () => {
+test("fails loud when SMTP is missing even if a SendGrid key is present", async () => {
   await assert.rejects(
     sendEmail({
-      config: {
-        fromEmail: "info@healthexps.com",
-        sendgridApiKey: "sg.test"
-      },
+      config: smtpConfig({
+        FROM_EMAIL: "info@healthexps.com",
+        SENDGRID_API_KEY: "sg.test"
+      }),
       to: "agents@example.com",
       subject: "Issue #11",
-      text: "body",
-      fetchImpl: sendgridQuotaFetch()
+      text: "body"
     }),
-    /SendGrid credits are exhausted.*not Anthropic/
+    /Do not use SendGrid/
   );
 });
 
-test("keeps the SendGrid quota error if SMTP from info@ also fails", async () => {
+test("names Railway Hobby when SMTP from info@ times out", async () => {
   await assert.rejects(
     sendEmail({
-      config: {
-        fromEmail: "info@healthexps.com",
-        sendgridApiKey: "sg.test",
-        host: "smtp.gmail.com",
-        user: "info@healthexps.com",
-        pass: "app-pass"
-      },
+      config: smtpConfig({
+        SMTP_HOST: "smtp.gmail.com",
+        SMTP_USER: "info@healthexps.com",
+        SMTP_PASS: "app-pass"
+      }),
       to: "agents@example.com",
       subject: "Issue #11",
       text: "body",
-      fetchImpl: sendgridQuotaFetch(),
       transporter: {
         sendMail: async () => {
           throw new Error("Connection timeout");
         }
       }
     }),
-    /SendGrid credits are exhausted.*SMTP from info@ also failed.*Railway Hobby/
+    /THEI does not use SendGrid/
   );
+});
+
+test("smtpTransportReady requires host, user, and pass", () => {
+  assert.equal(smtpTransportReady({ host: "smtp.gmail.com" }), false);
+  assert.equal(smtpTransportReady({
+    host: "smtp.gmail.com",
+    user: "info@healthexps.com",
+    pass: "app-pass"
+  }), true);
 });

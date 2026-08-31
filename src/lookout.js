@@ -1,3 +1,5 @@
+import { pulseLookoutFinding } from "./pulse-readiness.js";
+
 export const DEFAULT_FACEBOOK_CAMPAIGN_ID = "120244537840240684";
 export const SITE_UPTIME_REMINDER_MS = 2 * 60 * 60 * 1000;
 export const LOOKOUT_REMINDER_MS = 8 * 60 * 60 * 1000;
@@ -193,7 +195,8 @@ export async function runLookout({
   environment = {},
   fetchImpl = fetch,
   includeFacebook = true,
-  includeSites = true
+  includeSites = true,
+  includePulse = false
 } = {}) {
   const jobs = [];
   if (includeFacebook) jobs.push(probeFacebookAds({ environment, fetchImpl }));
@@ -201,6 +204,10 @@ export async function runLookout({
     jobs.push(...LOOKOUT_SITE_GROUPS.map((group) => probeSiteGroup(group, { fetchImpl })));
   }
   const probes = await Promise.all(jobs);
+  if (includePulse) {
+    const pulse = pulseLookoutFinding(environment);
+    if (pulse) probes.push(pulse);
+  }
   const findings = probes.filter((item) => item.message);
   return {
     probes,

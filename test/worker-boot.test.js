@@ -9,4 +9,6 @@ test("worker.js imports the store and poller it boots with", () => {
   assert.match(src, /import \{ createTaskNotifier, startTaskPoller \} from "\.\/task-runner\.js"/);
   assert.match(src, /createStore\(/);
   assert.match(src, /startTaskPoller\(/);
+  assert.match(src, /pulseReadiness\(/);
+  assert.match(src, /pulseReadinessAlert\(/);
 });

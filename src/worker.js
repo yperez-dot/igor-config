@@ -1,6 +1,7 @@
 import { createStore } from "./store.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
+import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
 import http from "node:http";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -26,6 +27,14 @@ const healthServer = http.createServer((request, response) => {
 healthServer.listen(PORT);
 
 const notify = createTaskNotifier({ store, environment: process.env });
+const pulse = pulseReadiness();
+if (!pulse.ready) {
+  try {
+    await notify(pulseReadinessAlert(pulse));
+  } catch {
+    // Boot must continue even if Telegram is down.
+  }
+}
 let running = true;
 process.once("SIGINT", () => { running = false; });
 process.once("SIGTERM", () => { running = false; });

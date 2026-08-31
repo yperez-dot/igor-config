@@ -3,6 +3,7 @@ import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
 import { scanAllAccounts } from "./imap-accounts.js";
 import { easternMondayIso, publishHubTicker } from "./hub-ticker.js";
+import { assertPulseSendReady } from "./pulse-readiness.js";
 
 const AGENT_PULSE_PROMPT = `You are writing THE Health Experts Insider (Agent Pulse) for contracted Florida Medicare agents at The Health Experts Insurance.
 Write plain text only. Do not use markdown, asterisks, or pound signs except in the issue number.
@@ -106,12 +107,13 @@ export async function runAgentPulseWeekly({
     throw new Error("Agent Pulse mode must be dry-run, test, or send.");
   }
 
+  assertPulseSendReady(environment);
   const apiKey = environment.XAI_API_KEY;
-  if (!apiKey) throw new Error("XAI_API_KEY is required for Agent Pulse.");
 
   const findings = (await scanAllAccounts({
     environment,
     scanOne: scanInbox,
+    role: "pulse",
     options: {
       lookbackMinutes: Number(environment.AGENT_PULSE_LOOKBACK_MINUTES ?? 7 * 24 * 60),
       unseenOnly: false,

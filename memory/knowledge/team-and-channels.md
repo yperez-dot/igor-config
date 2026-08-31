@@ -16,7 +16,7 @@
 
 - Public client: website + WhatsApp 305-464-6888 + 1-800-380-6821.
 - Team / Igor: Telegram @Igor_theibot.
-- Email from info@healthexps.com via SendGrid. Standing-approved recipient: yperez@healthexps.com.
+- Email from info@healthexps.com via Gmail SMTP. Standing-approved recipient: yperez@healthexps.com.
 - GHL SMS number to configure: 754-342-0444.
 
 ## Facebook ads

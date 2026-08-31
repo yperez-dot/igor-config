@@ -13,6 +13,7 @@ import {
   unseenMailFindings
 } from "../src/mail-alerts.js";
 import { classifyMessage, runHeartbeat } from "../src/heartbeat.js";
+import { PULSE_READY_ENV } from "./pulse-ready-env.js";
 
 function okFetch() {
   return async () => ({
@@ -48,6 +49,7 @@ test("parses subjects out of a Heads-up mail alert", () => {
 test("heartbeat never pages Humana statement-ready mail", async () => {
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"
@@ -77,6 +79,7 @@ test("same unread mail item is not re-paged on the next heartbeat", async () => 
   };
   const first = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"
@@ -90,6 +93,7 @@ test("same unread mail item is not re-paged on the next heartbeat", async () => 
 
   const second = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"
@@ -125,6 +129,7 @@ test("a new mail item pages only itself, not already-seen unread mail", async ()
 
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"
@@ -143,6 +148,7 @@ test("a new mail item pages only itself, not already-seen unread mail", async ()
 test("user dismissals suppress matching mail even if it is still unread", async () => {
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret"
@@ -165,6 +171,7 @@ test("user dismissals suppress matching mail even if it is still unread", async 
 test("IMAP day-granularity leftovers older than lookback are dropped", async () => {
   const result = await runHeartbeat({
     environment: {
+      ...PULSE_READY_ENV,
       HEARTBEAT_MODE: "report-only",
       HEARTBEAT_IMAP_USER: "info@example.com",
       HEARTBEAT_IMAP_PASS: "secret",

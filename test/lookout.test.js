@@ -174,3 +174,16 @@ test("site uptime pages through quiet hours and does not spam every 5 minutes", 
   assert.equal(recovered.shouldNotify, true);
   assert.match(recovered.alert, /website is answering/);
 });
+
+test("lookout can include Pulse send-path blockers without treating them as site downtime", async () => {
+  const result = await runLookout({
+    environment: {},
+    includeFacebook: false,
+    includeSites: false,
+    includePulse: true,
+    fetchImpl: async () => jsonResponse(200, {})
+  });
+  assert.match(result.fingerprint, /pulse:XAI_API_KEY\+PULSE_IMAP_PASS\+SMTP\+AGENT_PULSE_RECIPIENTS/);
+  assert.equal(result.urgent, false);
+  assert.match(result.alert, /not send-ready/);
+});
