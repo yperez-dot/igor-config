@@ -65,7 +65,9 @@ export function agentPulseIssueNumber({ environment = process.env, now = new Dat
 
 export function agentPulseSubject({ now = new Date(), environment = process.env } = {}) {
   const issue = agentPulseIssueNumber({ environment, now });
-  return `THE Health Experts Insider — Issue #${issue} — Week of ${easternMondayLabel(now)}`;
+  const note = String(environment.AGENT_PULSE_SUBJECT_NOTE ?? "").trim();
+  const base = `THE Health Experts Insider — Issue #${issue} — Week of ${easternMondayLabel(now)}`;
+  return note ? `${base} — ${note}` : base;
 }
 
 export function formatInboxBrief(findings = []) {
@@ -136,6 +138,7 @@ export async function runAgentPulseWeekly({
       unseenOnly: false,
       includeBodies: true,
       maxMessages: Number(environment.AGENT_PULSE_IMAP_MAX ?? 250),
+      deadlineMs: Number(environment.AGENT_PULSE_IMAP_DEADLINE_MS ?? 90_000),
       now
     }
   })).findings;
@@ -157,7 +160,8 @@ export async function runAgentPulseWeekly({
     issueNumber: issue,
     weekLabel,
     emptyScan: findings.length === 0,
-    logoSrc: logo ? `cid:${PULSE_LOGO_CID}` : PULSE_LOGO_URL
+    logoSrc: logo ? `cid:${PULSE_LOGO_CID}` : PULSE_LOGO_URL,
+    correctionNote: environment.AGENT_PULSE_CORRECTION_NOTE
   });
   if (edition.text.length < 150) {
     throw new Error("Agent Pulse digest failed validation: output too short.");
