@@ -178,9 +178,17 @@ export function renderInsiderEmail({
   issueNumber,
   weekLabel,
   parsed,
-  logoSrc = PULSE_LOGO_URL
+  logoSrc = PULSE_LOGO_URL,
+  correctionNote = ""
 } = {}) {
   const introHtml = parsed.intro.map((line) => `<p>${richText(line)}</p>`).join("");
+  const correctionRow = String(correctionNote ?? "").trim()
+    ? `<tr>
+          <td style="background:#D6006C;padding:16px 36px;font-family:Helvetica,Arial,sans-serif;font-size:15px;color:#FFFFFF;line-height:1.5;font-weight:700;">
+            ${escapeHtml(correctionNote)}
+          </td>
+        </tr>`
+    : "";
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -198,6 +206,7 @@ export function renderInsiderEmail({
             <img src="${escapeHtml(logoSrc)}" alt="The Health Experts Insurance" width="360" style="display:block;width:360px;max-width:100%;height:auto;border:0;outline:none;">
           </td>
         </tr>
+        ${correctionRow}
         <tr>
           <td style="background:#FBEFC8;padding:14px 36px;font-family:Georgia,'Times New Roman',serif;font-size:14px;color:#3D1560;line-height:1.5;">
             📬 Reading THE Health Experts Insider? If a colleague would benefit, please forward it on!
@@ -306,17 +315,23 @@ export function buildInsiderEdition({
   weekLabel,
   emptyScan = false,
   logoSrc = PULSE_LOGO_URL,
-  hubLogoSrc = "/thei-logo.png"
+  hubLogoSrc = "/thei-logo.png",
+  correctionNote = ""
 } = {}) {
   const parsed = parseInsiderIssue(raw, { emptyScan });
-  const html = renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc });
+  const note = String(correctionNote ?? "").trim();
+  if (note && !parsed.intro.some((line) => /corrected version/i.test(line))) {
+    const insertAt = /happy monday|hey team/i.test(parsed.intro[0] ?? "") ? 1 : 0;
+    parsed.intro.splice(insertAt, 0, note);
+  }
+  const html = renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc, correctionNote: note });
   return {
     parsed,
     text: insiderPlainText(parsed),
     html,
     hubHtml: wrapHubPulsePage({
       weekLabel,
-      innerHtml: renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc: hubLogoSrc })
+      innerHtml: renderInsiderEmail({ issueNumber, weekLabel, parsed, logoSrc: hubLogoSrc, correctionNote: note })
     }),
     headline: parsed.preheader
   };

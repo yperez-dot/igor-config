@@ -37,6 +37,13 @@ test("numbers Agent Pulse from the July 13 Issue #4 epoch", () => {
     agentPulseSubject({ now: new Date("2026-08-31T14:00:00.000Z") }),
     /Issue #11 — Week of August 31/
   );
+  assert.match(
+    agentPulseSubject({
+      now: new Date("2026-08-31T14:00:00.000Z"),
+      environment: { AGENT_PULSE_SUBJECT_NOTE: "CORRECTED" }
+    }),
+    /Issue #11 — Week of August 31, 2026 — CORRECTED/
+  );
 });
 
 test("refuses to invent carrier items when the inbox scan is empty", () => {

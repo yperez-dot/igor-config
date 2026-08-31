@@ -42,6 +42,31 @@ test("renders the branded Week in Medicare shell from Grok JSON", () => {
   assert.match(edition.text, /What this means for you/);
 });
 
+test("correction resend shows a pink Corrected version banner", () => {
+  const edition = buildInsiderEdition({
+    raw: JSON.stringify({
+      preheader: "Corrected Issue #11",
+      intro: ["Happy Monday, team! 👋", "— Yahoska & Katy"],
+      items: [{
+        flag: "FYI",
+        beat: "OPS",
+        headline: "theiagentpulse had no carrier or urgent items this week",
+        minutes: 1,
+        body: "Format correction only.",
+        meaning: "Use this email.",
+        source: "format proof"
+      }],
+      sources: "theiagentpulse inbox scan"
+    }),
+    issueNumber: 11,
+    weekLabel: "August 31, 2026",
+    correctionNote: "Corrected version — this morning's Issue #11 went out in the wrong format. Please use this email and ignore the earlier one."
+  });
+  assert.match(edition.html, /Corrected version/);
+  assert.match(edition.html, /background:#D6006C/);
+  assert.match(edition.text, /Corrected version/);
+});
+
 test("empty scan still uses the Insider shell and does not invent carrier news", () => {
   const parsed = parseInsiderIssue("not json", { emptyScan: true });
   assert.equal(parsed.items[0].beat, "OPS");

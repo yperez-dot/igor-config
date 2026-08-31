@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { capUidList, classifyMessage, extractMailText, imapClientTimeouts, isQuietHours, mailboxSearchQuery, runHeartbeat, scanMailbox } from "../src/heartbeat.js";
+import { capUidList, classifyMessage, extractMailText, imapClientTimeouts, isQuietHours, mailboxSearchQuery, newestSequenceRange, runHeartbeat, scanMailbox } from "../src/heartbeat.js";
 import { PULSE_READY_ENV } from "./pulse-ready-env.js";
 
 
@@ -25,7 +25,83 @@ test("searches recent seen mail when unseenOnly is false", () => {
 test("caps a huge UID list to the newest messages", () => {
   assert.deepEqual(capUidList([1, 2, 3, 4, 5], 3), [3, 4, 5]);
   assert.deepEqual(capUidList([9, 10], 50), [9, 10]);
+  assert.equal(newestSequenceRange(10, 2), "9:10");
+  assert.equal(newestSequenceRange(10, 50), "1:10");
+  assert.equal(newestSequenceRange(0, 250), null);
   assert.equal(imapClientTimeouts({ includeBodies: true }).socketTimeout, 120_000);
+});
+
+test("fetches the newest sequence tail without SEARCH when exists is known", async () => {
+  const searches = [];
+  const fetches = [];
+  const findings = await scanMailbox({
+    user: "theiagentpulse@gmail.com",
+    pass: "secret",
+    lookbackMinutes: 7 * 24 * 60,
+    unseenOnly: false,
+    maxMessages: 2,
+    now: new Date("2026-08-31T16:00:00.000Z"),
+    imapFactory: () => ({
+      mailbox: { exists: 10 },
+      async connect() {},
+      async logout() {},
+      async getMailboxLock() {
+        return { release() {} };
+      },
+      async search(...args) {
+        searches.push(args);
+        return [1, 2, 3];
+      },
+      async *fetch(range) {
+        fetches.push(range);
+        yield {
+          uid: 9,
+          envelope: {
+            from: [{ address: "alerts@uhc.com" }],
+            subject: "Too old",
+            date: new Date("2026-08-20T12:00:00.000Z")
+          }
+        };
+        yield {
+          uid: 10,
+          envelope: {
+            from: [{ address: "alerts@uhc.com" }],
+            subject: "Network update",
+            date: new Date("2026-08-28T12:00:00.000Z")
+          }
+        };
+      }
+    })
+  });
+  assert.equal(searches.length, 0);
+  assert.equal(fetches[0], "9:10");
+  assert.equal(findings.length, 1);
+  assert.equal(findings[0].subject, "Network update");
+});
+
+test("aborts a hung mailbox scan when the deadline elapses", async () => {
+  const closed = [];
+  await assert.rejects(
+    scanMailbox({
+      user: "theiagentpulse@gmail.com",
+      pass: "secret",
+      deadlineMs: 20,
+      imapFactory: () => ({
+        close() {
+          closed.push(true);
+        },
+        async connect() {
+          await new Promise(() => {});
+        },
+        async logout() {},
+        async getMailboxLock() {
+          return { release() {} };
+        }
+      })
+    }),
+    /aborted due to timeout/
+  );
+  assert.equal(closed.length, 1);
 });
 
 test("searches then fetches a capped UID list instead of the whole week", async () => {
@@ -85,6 +161,8 @@ test("reads carrier notice bodies after classifying the envelope", async () => {
     user: "info@example.com",
     pass: "secret",
     includeBodies: true,
+    lookbackMinutes: 7 * 24 * 60,
+    now: new Date("2026-08-31T16:00:00.000Z"),
     imapFactory: () => ({
       async connect() {},
       async logout() {},
