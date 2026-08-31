@@ -80,7 +80,7 @@ export function pulseHeadline(digest, findings = []) {
   const lines = String(digest ?? "")
     .split("\n")
     .map((line) => line.replace(/^[🚨📋📰🌴]\s*/u, "").trim())
-    .filter((line) => line.length > 20 && !/^sources\b/i.test(line));
+    .filter((line) => line.length > 20 && !/^sources\b/i.test(line) && !/^— the week/i.test(line));
   if (lines[1]) return lines[1].slice(0, 160);
   if (findings.length) return findings.slice(0, 3).map((item) => item.subject).filter(Boolean).join(" · ").slice(0, 160);
   return "Weekly Agent Pulse";
@@ -89,6 +89,7 @@ export function pulseHeadline(digest, findings = []) {
 export function mergeHubFeed(feed, {
   findings = [],
   digest,
+  headline,
   weekLabel,
   mondayIso,
   now = new Date(),
@@ -118,7 +119,7 @@ export function mergeHubFeed(feed, {
     next.weekly_pulses.unshift({
       week: weekLabel ? `Week of ${weekLabel}` : `Week of ${mondayIso}`,
       date: `${months[month - 1]} ${day}, ${year}`,
-      headline: pulseHeadline(digest, findings),
+      headline: String(headline ?? "").trim() || pulseHeadline(digest, findings),
       link,
       tag: "Latest"
     });
@@ -127,7 +128,8 @@ export function mergeHubFeed(feed, {
   return { feed: next, addedAlerts: incoming.length };
 }
 
-export function pulseEditionHtml({ weekLabel, digest }) {
+export function pulseEditionHtml({ weekLabel, digest, editionHtml }) {
+  if (editionHtml) return String(editionHtml);
   const title = `THEI Agent Pulse — Week of ${weekLabel}`;
   const body = String(digest ?? "")
     .replace(/&/g, "&amp;")
@@ -261,6 +263,8 @@ export async function publishHubTicker({
   environment = process.env,
   findings = [],
   digest,
+  editionHtml,
+  headline,
   weekLabel,
   mondayIso,
   now = new Date(),
@@ -284,6 +288,7 @@ export async function publishHubTicker({
   const { feed, addedAlerts } = mergeHubFeed(current, {
     findings,
     digest,
+    headline,
     weekLabel,
     mondayIso,
     now,
@@ -324,7 +329,7 @@ export async function publishHubTicker({
       token,
       repo,
       path: editionPath,
-      content: pulseEditionHtml({ weekLabel: weekLabel ?? mondayIso, digest }),
+      content: pulseEditionHtml({ weekLabel: weekLabel ?? mondayIso, digest, editionHtml }),
       message: `Agent Pulse edition ${mondayIso}`,
       sha: existing.sha,
       fetchImpl

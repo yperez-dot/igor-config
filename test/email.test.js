@@ -83,6 +83,29 @@ test("sends Pulse from info@ over SMTP and ignores a leftover SendGrid key", asy
   assert.equal(sent[0].to, "agents@example.com");
 });
 
+test("sends Pulse as provided Insider HTML instead of a pre dump", async () => {
+  const sent = [];
+  await sendEmail({
+    config: smtpConfig({
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "app-pass"
+    }),
+    to: "agents@example.com",
+    subject: "THE Health Experts Insider — Issue #11",
+    text: "plain fallback",
+    html: "<table><tr><td>The Week in Medicare</td></tr></table>",
+    transporter: {
+      sendMail: async (mail) => {
+        sent.push(mail);
+        return { messageId: "html-pulse" };
+      }
+    }
+  });
+  assert.match(sent[0].html, /The Week in Medicare/);
+  assert.equal(sent[0].html.includes("<pre"), false);
+});
+
 test("fails loud when SMTP is missing even if a SendGrid key is present", async () => {
   await assert.rejects(
     sendEmail({

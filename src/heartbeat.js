@@ -96,6 +96,14 @@ export function capUidList(uids, max = 0) {
   return list.slice(-max);
 }
 
+export function newestSequenceRange(exists, max) {
+  const total = Number(exists) || 0;
+  const cap = Number(max) || 0;
+  if (!total || !cap) return null;
+  const start = Math.max(1, total - cap + 1);
+  return `${start}:${total}`;
+}
+
 export function imapClientTimeouts({ lookbackMinutes = 35, includeBodies = false } = {}) {
   const long = includeBodies || Number(lookbackMinutes) > 60;
   return {
@@ -103,6 +111,21 @@ export function imapClientTimeouts({ lookbackMinutes = 35, includeBodies = false
     greetingTimeout: long ? 60_000 : 20_000,
     socketTimeout: long ? 120_000 : 30_000
   };
+}
+
+function withinLookback(dateValue, since) {
+  if (!since) return true;
+  const date = dateValue instanceof Date ? dateValue : new Date(dateValue ?? 0);
+  if (!date.getTime()) return true;
+  return date.getTime() >= since.getTime();
+}
+
+function closeImap(client) {
+  try {
+    if (typeof client.close === "function") client.close();
+  } catch {
+    // Socket close is best-effort after a deadline.
+  }
 }
 
 export async function scanMailbox({
@@ -113,6 +136,7 @@ export async function scanMailbox({
   unseenOnly = true,
   includeBodies = false,
   maxMessages = 0,
+  deadlineMs = 0,
   now = new Date(),
   imapFactory = (options) => new ImapFlow(options)
 } = {}) {
@@ -125,59 +149,90 @@ export async function scanMailbox({
     ...imapClientTimeouts({ lookbackMinutes, includeBodies })
   });
 
-  await client.connect();
-  const findings = [];
+  const scan = async () => {
+    await client.connect();
+    const findings = [];
+    const since = new Date(now.getTime() - Number(lookbackMinutes) * 60 * 1000);
 
-  try {
-    const lock = await client.getMailboxLock("INBOX");
     try {
-      const query = mailboxSearchQuery({ lookbackMinutes, now, unseenOnly });
-      let range = query;
-      const fetchOptions = {};
-      if (typeof client.search === "function") {
-        const found = await client.search(query, { uid: true });
-        const uids = capUidList(Array.isArray(found) ? found : [], maxMessages);
-        if (!uids.length) {
-          return findings;
+      const lock = await client.getMailboxLock("INBOX");
+      try {
+        const query = mailboxSearchQuery({ lookbackMinutes, now, unseenOnly });
+        let range = query;
+        const fetchOptions = {};
+        // Gmail SEARCH over a huge mailbox hangs the worker. When we already
+        // know exists + max, fetch the newest sequence tail instead.
+        const sequence = newestSequenceRange(client.mailbox?.exists, maxMessages);
+        if (sequence) {
+          range = sequence;
+        } else if (typeof client.search === "function") {
+          const found = await client.search(query, { uid: true });
+          const uids = capUidList(Array.isArray(found) ? found : [], maxMessages);
+          if (!uids.length) {
+            return findings;
+          }
+          range = uids;
+          fetchOptions.uid = true;
         }
-        range = uids;
-        fetchOptions.uid = true;
-      }
 
-      for await (const message of client.fetch(range, { envelope: true, uid: true }, fetchOptions)) {
-        const from = message.envelope.from?.map((entry) => entry.address).join(", ") ?? "";
-        const subject = message.envelope.subject ?? "";
-        const kind = classifyMessage({ from, subject });
-        if (kind) {
-          findings.push({
-            uid: message.uid,
-            kind,
-            from,
-            subject,
-            date: message.envelope.date?.toISOString?.() ?? null,
-            messageId: message.envelope.messageId ?? null
-          });
-        }
-      }
-
-      if (includeBodies) {
-        for (const finding of findings.slice(0, 40)) {
-          if (finding.uid == null) continue;
-          try {
-            finding.snippet = extractMailText(await readMessageSource(client, finding.uid));
-          } catch {
-            // Subject-only is still useful if the body cannot be read.
+        for await (const message of client.fetch(range, { envelope: true, uid: true, flags: unseenOnly }, fetchOptions)) {
+          if (unseenOnly && message.flags?.has("\\Seen")) continue;
+          if (!withinLookback(message.envelope?.date, since)) continue;
+          const from = message.envelope.from?.map((entry) => entry.address).join(", ") ?? "";
+          const subject = message.envelope.subject ?? "";
+          const kind = classifyMessage({ from, subject });
+          if (kind) {
+            findings.push({
+              uid: message.uid,
+              kind,
+              from,
+              subject,
+              date: message.envelope.date?.toISOString?.() ?? null,
+              messageId: message.envelope.messageId ?? null
+            });
           }
         }
+
+        if (includeBodies) {
+          for (const finding of findings.slice(0, 40)) {
+            if (finding.uid == null) continue;
+            try {
+              finding.snippet = extractMailText(await readMessageSource(client, finding.uid));
+            } catch {
+              // Subject-only is still useful if the body cannot be read.
+            }
+          }
+        }
+      } finally {
+        lock.release();
       }
     } finally {
-      lock.release();
+      await client.logout();
     }
-  } finally {
-    await client.logout();
-  }
 
-  return findings;
+    return findings;
+  };
+
+  if (!deadlineMs) return scan();
+  let timer;
+  let timedOut = false;
+  try {
+    return await Promise.race([
+      scan().catch((error) => {
+        if (timedOut) return undefined;
+        throw error;
+      }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          closeImap(client);
+          reject(new Error("The operation was aborted due to timeout"));
+        }, deadlineMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function runHeartbeat({
