@@ -1,7 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { calendarConfig, listUpcomingEvents } from "./calendar.js";
 import { formatLookoutAlert, runLookout, shouldNotifyLookout } from "./lookout.js";
-import { filterMailFindings, isMailNoise, mailFingerprint } from "./mail-alerts.js";
+import { filterMailFindings, isMailNoise, mailFingerprint, unseenMailFindings } from "./mail-alerts.js";
 
 const CARRIER_HINTS = [
   "uhc", "unitedhealth", "humana", "aetna", "wellcare", "centene", "careplus",
@@ -181,9 +181,9 @@ export async function runHeartbeat({
   };
   if (calendarError) result.calendarError = calendarError;
 
-  const mailIsNew = findings.length > 0 && currentMailFingerprint !== (lastMailFingerprint || "clear");
-  const mailBit = mailIsNew
-    ? `${findings.length} carrier/urgent mail item(s): ${findings.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
+  const unseen = unseenMailFindings(findings, lastMailFingerprint);
+  const mailBit = unseen.length
+    ? `${unseen.length} carrier/urgent mail item(s): ${unseen.slice(0, 3).map((item) => `[${item.kind}] ${item.subject}`).join(" | ")}`
     : null;
   const calBit = imminentCalendar.length
     ? `${imminentCalendar.length} event(s) in the next 4 hours: ${imminentCalendar.slice(0, 3).map((event) => `${event.summary} ${event.start}`).join(" | ")}`
