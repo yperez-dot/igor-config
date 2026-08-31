@@ -30,6 +30,8 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /update_hub_sneak_peeks/);
   assert.match(SYSTEM_PROMPT, /info@/);
   assert.match(SYSTEM_PROMPT, /run_agent_pulse/);
+  assert.match(SYSTEM_PROMPT, /Maximum credits exceeded/);
+  assert.match(SYSTEM_PROMPT, /not Anthropic/);
   assert.match(SYSTEM_PROMPT, /Queued with no send confirmation is not proof/);
   assert.match(SYSTEM_PROMPT, /never have to ask/);
   assert.match(SYSTEM_PROMPT, /healthexps.com/);

@@ -18,7 +18,7 @@ Issue numbers increment from the Hub baseline: July 13, 2026 Issue #4. Monday Au
 1. IMAP scan of `theiagentpulse@gmail.com` for the last 7 days (that inbox gets Yahoska’s other emails forwarded in). Carrier and urgent mail is opened (subject + body), because broker notices are often not public. Send-from stays `info@healthexps.com`.
 2. Grok writes the issue from those notices. If the scan is empty, the issue must say so. Igor does not invent carrier operational news from the public web.
 3. Update the Agent Hub live ticker (`files/pulse-feed.json` alerts) and the weekly archive, then deploy the Hub. Hector / BSI / upline items never go on the Hub.
-4. SMTP send. Failures Telegram-alert Yahoska. Same-day carrier notices also update the ticker (daily digest), not only Mondays.
+4. Send from `info@healthexps.com`. SendGrid is tried first when `SENDGRID_API_KEY` is set; if SendGrid returns `Maximum credits exceeded` (HTTP 401), fall back to Gmail SMTP (`SMTP_HOST` / `SMTP_USER` / `SMTP_PASS`). Failures Telegram-alert Yahoska. Same-day carrier notices also update the ticker (daily digest), not only Mondays.
 
 Compliance stays: no plan recommendations, no PHI, no Hector / BSI / upline.
 

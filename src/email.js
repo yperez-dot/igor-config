@@ -53,14 +53,30 @@ export async function sendOpsAlert({
   return { status: "sent", messageId: result.messageId, recipientCount: recipients.length };
 }
 
+export function smtpTransportReady(config) {
+  return Boolean(
+    String(config?.host ?? "").trim()
+    && String(config?.user ?? "").trim()
+    && String(config?.pass ?? "").trim()
+  );
+}
+
 export function validateSmtpConfig(config) {
   if (!config.fromEmail) {
     throw new Error("FROM_EMAIL is required for email delivery.");
   }
   if (config.sendgridApiKey) return;
-  if (!config.host || !config.user || !config.pass) {
+  if (!smtpTransportReady(config)) {
     throw new Error("SMTP is not fully configured.");
   }
+}
+
+export function isSendGridQuotaError(error) {
+  return /maximum credits exceeded|credits exceeded/i.test(String(error?.message ?? error ?? ""));
+}
+
+function sendGridQuotaMessage(extra = "") {
+  return `SendGrid credits are exhausted (Maximum credits exceeded). Send-from stays info@healthexps.com — set SMTP_HOST/SMTP_USER/SMTP_PASS (Gmail app password for info@) on the worker if they are missing. This is not Anthropic and not a missing Pulse handler.${extra}`;
 }
 
 function escapeHtml(text) {
@@ -125,6 +141,7 @@ async function sendViaSmtp({
   bcc = [],
   subject,
   text,
+  attachments = [],
   transporter = nodemailer.createTransport({
     host: config.host,
     port: config.port,
@@ -135,14 +152,37 @@ async function sendViaSmtp({
     socketTimeout: 15_000
   })
 }) {
-  return transporter.sendMail({
+  const mail = {
     from: config.fromName ? `"${config.fromName}" <${config.fromEmail}>` : config.fromEmail,
     to: to ?? config.fromEmail,
     bcc: bcc.length ? bcc : undefined,
     subject,
     text,
     html: `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${escapeHtml(text)}</pre>`
-  });
+  };
+  if (attachments.length) {
+    mail.attachments = attachments.map((file) => ({
+      filename: file.filename,
+      content: file.content,
+      contentType: file.type ?? "text/csv"
+    }));
+  }
+  return transporter.sendMail(mail);
+}
+
+async function trySmtp({ config, to, bcc, subject, text, attachments, transporter }) {
+  try {
+    const options = { config, to, bcc, subject, text, attachments };
+    if (transporter) options.transporter = transporter;
+    return await sendViaSmtp(options);
+  } catch (error) {
+    if (/timeout|ETIMEDOUT|ECONNREFUSED|Connection timeout/i.test(String(error.message))) {
+      throw new Error(
+        "SMTP connection failed. Railway Hobby blocks outbound SMTP; set SENDGRID_API_KEY or upgrade to Railway Pro."
+      );
+    }
+    throw error;
+  }
 }
 
 export async function sendEmail({
@@ -159,28 +199,45 @@ export async function sendEmail({
   const recipients = [...new Set([to, ...bcc].filter(Boolean))];
   if (!recipients.length) throw new Error("At least one email recipient is required.");
 
+  const smtpReady = smtpTransportReady(config);
+  const sendgridArgs = {
+    apiKey: config.sendgridApiKey,
+    fromEmail: config.fromEmail,
+    fromName: config.fromName,
+    to: recipients[0],
+    bcc: recipients.slice(1),
+    subject,
+    text,
+    attachments,
+    fetchImpl
+  };
+  const smtpArgs = {
+    config,
+    to: recipients[0],
+    bcc: recipients.slice(1),
+    subject,
+    text,
+    attachments,
+    transporter
+  };
+
   if (config.sendgridApiKey) {
-    return sendViaSendGrid({
-      apiKey: config.sendgridApiKey,
-      fromEmail: config.fromEmail,
-      fromName: config.fromName,
-      to: recipients[0],
-      bcc: recipients.slice(1),
-      subject,
-      text,
-      attachments,
-      fetchImpl
-    });
+    try {
+      return await sendViaSendGrid(sendgridArgs);
+    } catch (error) {
+      if (isSendGridQuotaError(error) && smtpReady) {
+        try {
+          return await trySmtp(smtpArgs);
+        } catch (smtpError) {
+          throw new Error(sendGridQuotaMessage(` SMTP from info@ also failed: ${smtpError.message}`));
+        }
+      }
+      if (isSendGridQuotaError(error)) {
+        throw new Error(sendGridQuotaMessage());
+      }
+      throw error;
+    }
   }
 
-  try {
-    return sendViaSmtp({ config, to: recipients[0], bcc: recipients.slice(1), subject, text, transporter });
-  } catch (error) {
-    if (/timeout|ETIMEDOUT|ECONNREFUSED|Connection timeout/i.test(String(error.message))) {
-      throw new Error(
-        "SMTP connection failed. Railway Hobby blocks outbound SMTP; set SENDGRID_API_KEY or upgrade to Railway Pro."
-      );
-    }
-    throw error;
-  }
+  return trySmtp(smtpArgs);
 }
