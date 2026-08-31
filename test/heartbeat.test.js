@@ -14,6 +14,10 @@ test("classifies carrier and urgent messages", () => {
   assert.equal(classifyMessage({ from: "alerts@uhc.com", subject: "Network update" }), "carrier");
   assert.equal(classifyMessage({ from: "ops@example.com", subject: "URGENT action required" }), "urgent");
   assert.equal(classifyMessage({ from: "newsletter@example.com", subject: "Hello" }), null);
+  assert.equal(classifyMessage({
+    from: "noreply@humana.com",
+    subject: "[carrier] Statement is Ready for Viewing via www.humana.com"
+  }), null);
 });
 
 test("skips quiet hours for a dead ads token", async () => {

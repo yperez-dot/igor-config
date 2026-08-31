@@ -58,6 +58,32 @@ test("processes industry pulse weekly tasks", async () => {
   assert.match(notifications[0], /Industry Pulse completed/);
 });
 
+test("heartbeat worker loads dismissals and mail fingerprints before paging", async () => {
+  const received = [];
+  await processTask(
+    { payload: { workflow: "igor_heartbeat" } },
+    {
+      environment: { HEARTBEAT_MODE: "report-only" },
+      runHeartbeatFn: async (args) => {
+        received.push(args);
+        return { status: "clear", shouldNotify: false, fingerprint: "clear", mailFingerprint: "clear" };
+      },
+      store: {
+        async latestEvent() {
+          return { detail: { fingerprint: "clear", mailFingerprint: "id:<old@uhc.com>" }, createdAt: new Date() };
+        },
+        async listAlertSuppressions() {
+          return [{ pattern: "statement is ready" }];
+        },
+        async record() {}
+      },
+      notify: async () => {}
+    }
+  );
+  assert.deepEqual(received[0].suppressions, ["statement is ready"]);
+  assert.equal(received[0].lastMailFingerprint, "id:<old@uhc.com>");
+});
+
 test("heartbeat lookout pings Telegram instead of waiting for a diagnose command", async () => {
   const notifications = [];
   const events = [];

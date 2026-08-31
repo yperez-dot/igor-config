@@ -1,5 +1,13 @@
 import { resolveInboundUserText } from "./inbound-file.js";
 import { systemPromptFor } from "./identity.js";
+import {
+  findLatestMailAlert,
+  formatDismissReply,
+  isDismissRequest,
+  persistMailDismissals,
+  subjectsFromAlert,
+  suppressionPatternsFrom
+} from "./mail-alerts.js";
 import { downloadTelegramFile } from "./telegram.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
@@ -68,6 +76,43 @@ export async function handleTelegramChat({
   });
   const hasMedia = Array.isArray(inbound.media) && inbound.media.length > 0;
   const userText = withReplyContext(inbound.text, message.replyTo, { hasMedia });
+
+  if (isDismissRequest(message.text) || isDismissRequest(inbound.text)) {
+    const quoted = message.replyTo?.text;
+    const alertText = findLatestMailAlert({ quoted, history });
+    const subjects = subjectsFromAlert(alertText);
+    let patterns = suppressionPatternsFrom({
+      subjects,
+      quoted: alertText,
+      userText: inbound.text
+    });
+    if (!patterns.length) {
+      patterns = ["statement is ready", "ready for viewing"];
+    }
+    await persistMailDismissals({
+      store,
+      patterns,
+      source: message.senderId ? `telegram:${message.senderId}` : "telegram",
+      reason: "user_dismiss"
+    });
+    const reply = formatDismissReply(subjects.length ? subjects : patterns);
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: reply
+    });
+    return reply;
+  }
+
   const toolRunner = (name, args) => executeTool(name, args, {
     environment,
     chatId: message.chatId,
