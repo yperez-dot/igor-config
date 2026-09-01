@@ -199,7 +199,7 @@ export async function runHeartbeat({
   const lookout = await runLookout({ environment, fetchImpl, includeSites: false, includePulse: true });
   const recovered = Boolean(lastFingerprint && lastFingerprint !== "clear" && lookout.fingerprint === "clear");
   const lookoutAlert = recovered
-    ? formatLookoutAlert([], { recovered: true })
+    ? formatLookoutAlert([], { recovered: true, lastFingerprint })
     : lookout.alert;
   const lookoutShouldNotify = shouldNotifyLookout({
     fingerprint: lookout.fingerprint,

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   facebookTokenDead,
   formatLookoutAlert,
+  formatRecoveryAlert,
   lookoutFingerprint,
   runLookout,
   runSiteLookout,
@@ -143,6 +144,17 @@ test("dedupes lookout alerts except for new issues, recovery, and reminders", ()
   }), true);
   assert.equal(lookoutFingerprint([{ id: "facebook", status: "token_dead" }]), "facebook:token_dead");
   assert.match(formatLookoutAlert([], { recovered: true, sitesOnly: true }), /website is answering/);
+  assert.match(
+    formatLookoutAlert([], { recovered: true, lastFingerprint: "facebook:error" }),
+    /Facebook ads is answering again/
+  );
+  assert.doesNotMatch(
+    formatLookoutAlert([], { recovered: true, lastFingerprint: "facebook:error" }),
+    /the thing that was broken/
+  );
+  assert.match(formatRecoveryAlert("facebook:token_dead"), /Facebook ads token is working again/);
+  assert.match(formatRecoveryAlert("healthexps:down|hub:down"), /healthexps.com is answering again/);
+  assert.match(formatRecoveryAlert("healthexps:down|hub:down"), /agentmedicarehub.com is answering again/);
 });
 
 test("site uptime pages through quiet hours and does not spam every 5 minutes", async () => {
@@ -172,7 +184,26 @@ test("site uptime pages through quiet hours and does not spam every 5 minutes", 
     fetchImpl: async () => jsonResponse(200, {})
   });
   assert.equal(recovered.shouldNotify, true);
-  assert.match(recovered.alert, /website is answering/);
+  assert.match(recovered.alert, /healthexps.com is answering again/);
+  assert.doesNotMatch(recovered.alert, /the thing that was broken/);
+});
+
+test("Facebook ads timeout is a blip, not a Telegram finding", async () => {
+  const result = await runLookout({
+    environment: { FACEBOOK_ACCESS_TOKEN: "ok" },
+    fetchImpl: async (url) => {
+      if (String(url).includes("graph.facebook.com")) {
+        const error = new Error("The operation was aborted due to timeout");
+        error.name = "TimeoutError";
+        throw error;
+      }
+      return jsonResponse(200, {});
+    }
+  });
+  assert.equal(result.fingerprint, "clear");
+  assert.equal(result.alert, null);
+  assert.equal(result.findings.length, 0);
+  assert.equal(result.probes.find((item) => item.id === "facebook")?.status, "timeout");
 });
 
 test("lookout can include Pulse send-path blockers without treating them as site downtime", async () => {

@@ -176,6 +176,43 @@ test("looks out even when IMAP is not configured", async () => {
   assert.match(ads.alert, /Facebook ads token is dead/);
 });
 
+test("names the recovered ads check instead of saying the thing", async () => {
+  const recovered = await runHeartbeat({
+    environment: {
+      ...PULSE_READY_ENV,
+      HEARTBEAT_MODE: "report-only",
+      FACEBOOK_ACCESS_TOKEN: "ok"
+    },
+    now: new Date("2026-08-26T16:00:00.000Z"),
+    lastFingerprint: "facebook:error",
+    fetchImpl: okFetch()
+  });
+  assert.equal(recovered.shouldNotify, true);
+  assert.match(recovered.alert, /Facebook ads is answering again/);
+  assert.doesNotMatch(recovered.alert, /the thing that was broken/);
+});
+
+test("does not page on a Facebook ads timeout", async () => {
+  const result = await runHeartbeat({
+    environment: {
+      ...PULSE_READY_ENV,
+      HEARTBEAT_MODE: "report-only",
+      FACEBOOK_ACCESS_TOKEN: "ok"
+    },
+    now: new Date("2026-08-26T16:00:00.000Z"),
+    fetchImpl: async (url) => {
+      if (String(url).includes("graph.facebook.com")) {
+        const error = new Error("The operation was aborted due to timeout");
+        error.name = "TimeoutError";
+        throw error;
+      }
+      return { ok: true, status: 200, json: async () => ({ status: "ok", db: "ok" }) };
+    }
+  });
+  assert.equal(result.shouldNotify, false);
+  assert.equal(result.fingerprint, "clear");
+});
+
 test("alerts on actionable mail findings", async () => {
   const result = await runHeartbeat({
     environment: {
