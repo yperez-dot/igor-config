@@ -390,6 +390,34 @@ function calendarPath(calendarId, suffix = "") {
   return `/calendars/${encodeURIComponent(calendarId)}${suffix}`;
 }
 
+export async function probeTeamCalendarAccess({ environment = process.env, fetchImpl = fetch } = {}) {
+  const rows = [];
+  for (const team of teamCalendars(environment)) {
+    if (!team.ready || !team.calendarId) {
+      rows.push({ role: team.role, reachable: false });
+      continue;
+    }
+    const config = calendarConfig(environment, { owner: team.role });
+    if (!config.connected) {
+      rows.push({ role: team.role, reachable: false });
+      continue;
+    }
+    try {
+      const listed = await listEvents({
+        config,
+        timeMin: new Date().toISOString(),
+        timeMax: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+        maxResults: 1,
+        fetchImpl
+      });
+      rows.push({ role: team.role, reachable: !listed.error });
+    } catch {
+      rows.push({ role: team.role, reachable: false });
+    }
+  }
+  return rows;
+}
+
 export async function listEvents({
   config,
   timeMin,

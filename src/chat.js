@@ -8,7 +8,7 @@ import {
   subjectsFromAlert,
   suppressionPatternsFrom
 } from "./mail-alerts.js";
-import { bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
+import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
 import { downloadTelegramFile } from "./telegram.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
@@ -191,8 +191,9 @@ export async function handleTelegramChat({
         conversationId: message.chatId
       })
       : unavailableMessage(userText);
+  const safeReply = blockYahoskaOnlyRefusal(reply, speaker);
 
-  await sendTelegramMessage({ botToken, chatId: message.chatId, text: reply });
+  await sendTelegramMessage({ botToken, chatId: message.chatId, text: safeReply });
   await store.appendChatTurn({
     chatId: message.chatId,
     senderId: message.senderId,
@@ -204,7 +205,7 @@ export async function handleTelegramChat({
     chatId: message.chatId,
     senderId: "igor",
     role: "assistant",
-    content: reply
+    content: safeReply
   });
-  return reply;
+  return safeReply;
 }
