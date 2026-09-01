@@ -88,6 +88,7 @@ test("system prompt treats Katy as a standing email recipient", () => {
   assert.match(prompt, /same as Yahoska/);
   assert.match(prompt, /Do not ask Yahoska first/);
   assert.match(prompt, /Default calendar is Katy/);
+  assert.match(SYSTEM_PROMPT, /Katy already shares her calendar/);
 });
 
 test("system prompt treats Carolina as an assistant with her own calendar", () => {
