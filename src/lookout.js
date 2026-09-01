@@ -28,6 +28,48 @@ export const LOOKOUT_SITES = LOOKOUT_SITE_GROUPS.flatMap((group) => (
 ));
 
 const LOOKOUT_TIMEOUT_MS = 8_000;
+const FACEBOOK_TIMEOUT_MS = 20_000;
+
+const LOOKOUT_RECOVERY_COPY = {
+  "facebook:token_dead": "Facebook ads token is working again",
+  "facebook:error": "Facebook ads is answering again",
+  "healthexps:down": "healthexps.com is answering again",
+  "hub:down": "agentmedicarehub.com is answering again"
+};
+
+function isTimeoutError(error) {
+  const name = String(error?.name ?? "");
+  const message = String(error?.message ?? "");
+  return name === "TimeoutError" || name === "AbortError" || /timeout|aborted/i.test(message);
+}
+
+function recoveryLine(key) {
+  if (LOOKOUT_RECOVERY_COPY[key]) return LOOKOUT_RECOVERY_COPY[key];
+  const [id] = String(key).split(":");
+  if (id === "facebook") return "Facebook ads is answering again";
+  if (id === "healthexps") return "healthexps.com is answering again";
+  if (id === "hub") return "agentmedicarehub.com is answering again";
+  if (id === "pulse") return "Agent Pulse send-path looks clear";
+  if (id) return `${id} looks clear`;
+  return null;
+}
+
+export function formatRecoveryAlert(lastFingerprint, { sitesOnly = false } = {}) {
+  const lines = String(lastFingerprint || "")
+    .split("|")
+    .map((key) => key.trim())
+    .filter((key) => key && key !== "clear")
+    .map(recoveryLine)
+    .filter(Boolean);
+  const unique = [...new Set(lines)];
+  if (!unique.length) {
+    return sitesOnly
+      ? "Good news — the website is answering again."
+      : "Good news — the last check I flagged looks clear now.";
+  }
+  if (unique.length === 1) return `Good news — ${unique[0]}.`;
+  return `Good news — ${unique[0]}. Also, ${unique.slice(1).join(". Also, ")}.`;
+}
 
 async function readJson(response) {
   if (typeof response.json === "function") {
@@ -77,7 +119,7 @@ export async function probeFacebookAds({ environment = {}, fetchImpl = fetch } =
   try {
     const result = await getJson(
       `https://graph.facebook.com/v22.0/${encodeURIComponent(objectId)}?fields=id,name`,
-      { fetchImpl, headers: { Authorization: `Bearer ${token}` } }
+      { fetchImpl, headers: { Authorization: `Bearer ${token}` }, timeoutMs: FACEBOOK_TIMEOUT_MS }
     );
     if (facebookTokenDead(result.body, result.status)) {
       return {
@@ -97,6 +139,9 @@ export async function probeFacebookAds({ environment = {}, fetchImpl = fetch } =
     }
     return { id: "facebook", status: "ok", httpStatus: result.status };
   } catch (error) {
+    if (isTimeoutError(error)) {
+      return { id: "facebook", status: "timeout" };
+    }
     return {
       id: "facebook",
       status: "error",
@@ -163,11 +208,9 @@ export function lookoutFingerprint(findings) {
   return keys.join("|") || "clear";
 }
 
-export function formatLookoutAlert(findings, { recovered = false, sitesOnly = false } = {}) {
+export function formatLookoutAlert(findings, { recovered = false, sitesOnly = false, lastFingerprint } = {}) {
   if (recovered && !findings.length) {
-    return sitesOnly
-      ? "Good news — the website is answering again."
-      : "Good news — the thing that was broken looks clear now.";
+    return formatRecoveryAlert(lastFingerprint, { sitesOnly });
   }
   const lines = findings.map((item) => item.message).filter(Boolean);
   if (!lines.length) return null;
@@ -233,7 +276,7 @@ export async function runSiteLookout({
   });
   const recovered = Boolean(lastFingerprint && lastFingerprint !== "clear" && lookout.fingerprint === "clear");
   const alert = recovered
-    ? formatLookoutAlert([], { recovered: true, sitesOnly: true })
+    ? formatLookoutAlert([], { recovered: true, sitesOnly: true, lastFingerprint })
     : lookout.alert;
   const shouldNotify = Boolean(
     alert
