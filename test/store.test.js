@@ -236,3 +236,14 @@ test("ensureInactiveSchedule turns a live job back off", async () => {
 
   await store.close();
 });
+
+test("remembers an inferred Telegram speaker so later turns stay on their calendar", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+  assert.equal(await store.getTelegramSpeaker("999"), null);
+  await store.rememberTelegramSpeaker("999", "katy", "inferred");
+  assert.equal(await store.getTelegramSpeaker("999"), "katy");
+  await store.close();
+});

@@ -121,6 +121,21 @@ function speakerRecord(id, role) {
   return null;
 }
 
+export function wantsOwnTeamCalendar(text) {
+  const raw = String(text ?? "");
+  if (!raw.trim()) return null;
+  if (/\bcarolina\b/i.test(raw)) return "carolina";
+  if (
+    /\bput it on mine\b/i.test(raw)
+    || /\bon mine\b/i.test(raw)
+    || /\bmy calendar\b/i.test(raw)
+    || /\bnot (ok )?yahoska/i.test(raw)
+  ) {
+    return "katy";
+  }
+  return null;
+}
+
 export function roleFromTelegramProfile(profile = {}) {
   const blob = [profile.firstName, profile.lastName, profile.username, profile.name]
     .map((value) => String(value ?? "").trim().toLowerCase())
@@ -148,6 +163,10 @@ export function telegramSpeaker(environment = {}, senderId, profile = {}) {
   }
   const hinted = speakerRecord(id, roleFromTelegramProfile(profile));
   if (hinted) return hinted;
+  const remembered = speakerRecord(id, String(profile.rememberedRole ?? "").trim().toLowerCase());
+  if (remembered) return remembered;
+  const intended = speakerRecord(id, wantsOwnTeamCalendar(profile.text));
+  if (intended) return intended;
   return { id: id || null, role: "allowlisted", name: "an authorized Telegram user", ownsCalendar: false, canOperate: false };
 }
 

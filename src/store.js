@@ -55,6 +55,12 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       source TEXT NOT NULL DEFAULT 'telegram',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS telegram_speakers (
+      sender_id TEXT PRIMARY KEY,
+      role TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'inferred',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
@@ -252,6 +258,30 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       );
       await record("alert.suppressed", suppressionId, { pattern: normalized });
       return { saved: true, id: suppressionId, pattern: normalized, reason: reason ?? null };
+    },
+    async rememberTelegramSpeaker(senderId, role, source = "inferred") {
+      const id = String(senderId ?? "").trim();
+      const nextRole = String(role ?? "").trim().toLowerCase();
+      if (!id || !["katy", "carolina", "yahoska"].includes(nextRole)) return { saved: false };
+      await pool.query(
+        `INSERT INTO telegram_speakers (sender_id, role, source, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (sender_id) DO UPDATE SET
+           role = EXCLUDED.role,
+           source = EXCLUDED.source,
+           updated_at = NOW()`,
+        [id, nextRole, String(source ?? "inferred")]
+      );
+      return { saved: true, senderId: id, role: nextRole };
+    },
+    async getTelegramSpeaker(senderId) {
+      const id = String(senderId ?? "").trim();
+      if (!id) return null;
+      const { rows } = await pool.query(
+        "SELECT role FROM telegram_speakers WHERE sender_id = $1",
+        [id]
+      );
+      return rows[0]?.role ?? null;
     },
     async listAlertSuppressions() {
       const { rows } = await pool.query(

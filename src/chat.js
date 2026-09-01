@@ -1,5 +1,5 @@
 import { resolveInboundUserText } from "./inbound-file.js";
-import { systemPromptFor } from "./identity.js";
+import { systemPromptFor, telegramSpeaker } from "./identity.js";
 import {
   findLatestMailAlert,
   formatDismissReply,
@@ -68,9 +68,24 @@ export async function handleTelegramChat({
   downloadFile = downloadTelegramFile
 }) {
   const history = await store.recentChatTurns(message.chatId);
+  const rememberedRole = typeof store.getTelegramSpeaker === "function"
+    ? await store.getTelegramSpeaker(message.senderId)
+    : null;
+  const senderProfile = {
+    ...message,
+    rememberedRole,
+    text: message.text
+  };
+  const speaker = telegramSpeaker(environment, message.senderId, senderProfile);
+  if (
+    (speaker.role === "katy" || speaker.role === "carolina")
+    && typeof store.rememberTelegramSpeaker === "function"
+  ) {
+    await store.rememberTelegramSpeaker(message.senderId, speaker.role, "inferred");
+  }
   const prompt = systemPrompt ?? systemPromptFor(environment, {
     senderId: message.senderId,
-    senderProfile: message
+    senderProfile
   });
   const inbound = await resolveInboundUserText({
     message,
@@ -121,7 +136,7 @@ export async function handleTelegramChat({
     chatId: message.chatId,
     botToken,
     senderId: message.senderId,
-    senderProfile: message,
+    senderProfile,
     store,
     pendingAttachment: inbound.attachment
   });

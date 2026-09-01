@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SYSTEM_PROMPT, floridaClock, systemPromptFor, telegramSpeaker } from "../src/identity.js";
+import { SYSTEM_PROMPT, floridaClock, systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "../src/identity.js";
 
 test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /The Health Experts Insurance/);
@@ -91,6 +91,14 @@ test("system prompt treats Katy as a standing email recipient", () => {
   assert.match(SYSTEM_PROMPT, /Katy already shares her calendar/);
   assert.match(SYSTEM_PROMPT, /Never say you are only connected to Yahoska/);
   assert.match(SYSTEM_PROMPT, /put it on mine/);
+});
+
+test("put it on mine / not Yahoska’s identifies Katy without a Telegram id", () => {
+  assert.equal(wantsOwnTeamCalendar("Yes for today at 6:40 but not ok Yahoska’s calendar . Put it on mine"), "katy");
+  const speaker = telegramSpeaker({}, "999", {
+    text: "Yes for today at 6:40 but not ok Yahoska’s calendar . Put it on mine"
+  });
+  assert.equal(speaker.role, "katy");
 });
 
 test("Telegram first name identifies Katy without TELEGRAM_KATY_USER_ID", () => {
