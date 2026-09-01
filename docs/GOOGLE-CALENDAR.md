@@ -16,7 +16,7 @@ Set these on **Igor V2** (Telegram tools) and **igor-config** (heartbeat), then 
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | yes | |
 | `GOOGLE_CALENDAR_REFRESH_TOKEN` | yes | |
 | `GOOGLE_CALENDAR_ID` | no | `primary` (Yahoska’s main calendar) |
-| `GOOGLE_CALENDAR_KATY_ID` | no | `krobles@healthexps.com` after she shares that calendar |
+| `GOOGLE_CALENDAR_KATY_ID` | no | `krobles@healthexps.com` (Katy already shares this with yperez@) |
 | `GOOGLE_CALENDAR_CAROLINA_ID` | yes for Carolina | Her calendar id (usually her Google email) after she shares it |
 | `GOOGLE_CALENDAR_TIMEZONE` | no | `America/New_York` |
 | `GOOGLE_CALENDAR_WORK_START` | no | `9` (weekday 9:00) |
@@ -110,11 +110,15 @@ node scripts/google-calendar-oauth.js
 
 Igor still signs in as **`yperez@healthexps.com`**. Sharing a calendar is enough once the calendar id is in Railway — the old “sharing won’t work” line was wrong. The code only looked at Yahoska’s `primary`.
 
-1. Katy (and Carolina) open Google Calendar → their calendar → **Settings and sharing**.
+**Katy already shares** her calendar with `yperez@healthexps.com`. Do not ask her to share again. After merge, Igor uses `krobles@healthexps.com` unless `GOOGLE_CALENDAR_KATY_ID` is set.
+
+Carolina still needs the share:
+
+1. Carolina opens Google Calendar → her calendar → **Settings and sharing**.
 2. Share with `yperez@healthexps.com`.
 3. Permission: **Make changes to events** (needed so Igor can book, not only look).
 4. On **Igor V2** and **igor-config**:
-   - `GOOGLE_CALENDAR_KATY_ID=krobles@healthexps.com` (or leave unset — that email is the default)
+   - `GOOGLE_CALENDAR_KATY_ID` optional (defaults to `krobles@healthexps.com`)
    - `GOOGLE_CALENDAR_CAROLINA_ID=` her Google email / calendar id
    - `TELEGRAM_KATY_USER_ID` and `TELEGRAM_CAROLINA_USER_ID`
 5. Redeploy both services.

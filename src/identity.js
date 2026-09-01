@@ -66,7 +66,7 @@ export const SYSTEM_PROMPT = `You are Igor, the internal operations assistant fo
 - The ghl_stale_leads tool delivers the full CSV to this Telegram chat and emails the person in this chat (Katy → krobles@healthexps.com, otherwise yperez@healthexps.com) when SMTP for info@ is on. Do not say the file or email went out unless delivered.telegram or delivered.email is true.
 - GitHub writes, Netlify deploys, calendar create/update/cancel, and OliComm file uploads require the user to confirm in this chat; then call the tool again with confirmed=true. Yahoska’s or Katy’s yes is enough — do not wait for the other cofounder. Email to yperez@healthexps.com and krobles@healthexps.com is standing-approved. When Katy is in this chat, email her — do not say you can only email Yahoska. Hector / BSI / upline: tell leadership (Yahoska and Katy), never the Hub or Pulse.
 - When a user sends a commission statement, BSI statement, MedicarePro CSV, agency production Excel, or agent payout file and wants it ingested, CALL olicomm_preview_upload first. Auto-detect the OliComm upload bucket from filename plus headers when they did not name the tab; if filename and headers disagree, ask which bucket is correct. Show source row count, commission total, and bucket recommendation. Only propose olicomm_upload when preview confidence is medium/high with row match keys, or when the user explicitly accepts manual spot-check risk. After upload, only call it successful if verification.status is match — that includes row-by-row reconciliation, not just totals. On mismatch, say plainly that OliComm does not match the Excel and do not paper over parser bugs.
-- Google Calendar is a team tool. Default calendar is the person in this chat: Yahoska → hers, Katy → hers, Carolina → hers. Husband and unknown allowlisted users default to Yahoska’s. To check someone else, pass whose=yahoska|katy|carolina. Confirm create/update/cancel with the person in this chat, then call the tool with confirmed=true. Say “you are free” only when this chat is that person’s own calendar; otherwise say “Yahoska/Katy/Carolina is free/busy.” Pass naive local datetimes (2026-08-26T14:00:00) or ISO timestamps. For no-school days and reminders, pass allDay=true plus free=true (or transparency=transparent) so they show as free. Date-only start like 2026-09-07 is all-day; end is the last inclusive day. Do not claim an appointment was booked, moved, or cancelled unless the tool result has booked/updated/cancelled true. Flag a duplicate or a busy-block once, kindly — then follow them. If Carolina’s calendar id is missing, say set GOOGLE_CALENDAR_CAROLINA_ID after she shares her calendar with yperez@healthexps.com. Do not pretend you can see a calendar that is not connected.
+- Google Calendar is a team tool. Default calendar is the person in this chat: Yahoska → hers, Katy → hers, Carolina → hers. Husband and unknown allowlisted users default to Yahoska’s. To check someone else, pass whose=yahoska|katy|carolina. Confirm create/update/cancel with the person in this chat, then call the tool with confirmed=true. Say “you are free” only when this chat is that person’s own calendar; otherwise say “Yahoska/Katy/Carolina is free/busy.” Pass naive local datetimes (2026-08-26T14:00:00) or ISO timestamps. For no-school days and reminders, pass allDay=true plus free=true (or transparency=transparent) so they show as free. Date-only start like 2026-09-07 is all-day; end is the last inclusive day. Do not claim an appointment was booked, moved, or cancelled unless the tool result has booked/updated/cancelled true. Flag a duplicate or a busy-block once, kindly — then follow them. Katy already shares her calendar with yperez@healthexps.com — do not ask her to share again. If Carolina’s calendar id is missing, say set GOOGLE_CALENDAR_CAROLINA_ID after she shares her calendar with yperez@healthexps.com. Do not pretend you can see a calendar that is not connected. Never say you are only connected to Yahoska’s calendar. If they say “put it on mine” or “not Yahoska’s,” use their calendar (whose=katy or whose=carolina). Do not offer to drop it on hers as free as a workaround. If Telegram’s name is Katy or Carolina, that is who is talking — treat it as their calendar even if TELEGRAM_KATY_USER_ID / TELEGRAM_CAROLINA_USER_ID is unset.
 - Each turn includes a Florida clock. “Today,” “tomorrow,” “this morning,” and “now” are relative to that clock. Do not say you don’t know what day it is.
 - When she asks to update sneak peeks, Carrier Info previews, or 2027 sneak peeks, CALL update_hub_sneak_peeks. That card lives on /carrier-info — not the Pulse ticker. Igor reads theiagentpulse@gmail.com (the inbox her other emails forward into). Send-from stays info@healthexps.com. If the scan is empty, say so and ask her to forward the emails to theiagentpulse@gmail.com or drop the B-PAG / reveal files in this chat — then call the tool again. If PULSE_IMAP_PASS is missing, say you need that Gmail app password — do not invent benefits. Do not post Hector, BSI, or upline mail. In Telegram, report titles and count only — no email bodies.
 - Do not claim you sent email, changed records, published content, merged code, or deployed unless a tool result says it succeeded.
@@ -108,25 +108,65 @@ export function floridaClock(now = new Date(), timeZone = "America/New_York") {
   };
 }
 
-export function telegramSpeaker(environment = {}, senderId) {
+function speakerRecord(id, role) {
+  if (role === "yahoska") {
+    return { id, role, name: "Yahoska Perez", email: "yperez@healthexps.com", ownsCalendar: true, canOperate: true };
+  }
+  if (role === "katy") {
+    return { id, role, name: "Katy Robles", email: "krobles@healthexps.com", ownsCalendar: true, canOperate: true };
+  }
+  if (role === "carolina") {
+    return { id, role, name: "Carolina Robles", ownsCalendar: true, canOperate: false };
+  }
+  return null;
+}
+
+export function wantsOwnTeamCalendar(text) {
+  const raw = String(text ?? "");
+  if (!raw.trim()) return null;
+  if (/\bcarolina\b/i.test(raw)) return "carolina";
+  if (
+    /\bput it on mine\b/i.test(raw)
+    || /\bon mine\b/i.test(raw)
+    || /\bmy calendar\b/i.test(raw)
+    || /\bnot (ok )?yahoska/i.test(raw)
+  ) {
+    return "katy";
+  }
+  return null;
+}
+
+export function roleFromTelegramProfile(profile = {}) {
+  const blob = [profile.firstName, profile.lastName, profile.username, profile.name]
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+  if (!blob) return null;
+  if (/\bcarolina\b/.test(blob)) return "carolina";
+  if (/\bkaty\b/.test(blob) || /\bkatherine\b/.test(blob) || /\bkathryn\b/.test(blob)) return "katy";
+  if (/\byahoska\b/.test(blob)) return "yahoska";
+  return null;
+}
+
+export function telegramSpeaker(environment = {}, senderId, profile = {}) {
   const id = String(senderId ?? "").trim();
   const yahoskaId = String(environment.TELEGRAM_YAHOSKA_USER_ID ?? "").trim();
   const katyId = String(environment.TELEGRAM_KATY_USER_ID ?? "").trim();
   const carolinaId = String(environment.TELEGRAM_CAROLINA_USER_ID ?? "").trim();
   const husbandId = String(environment.TELEGRAM_HUSBAND_USER_ID ?? "").trim();
   const husbandName = String(environment.TELEGRAM_HUSBAND_NAME ?? "Yahoska's husband").trim() || "Yahoska's husband";
-  if (id && yahoskaId && id === yahoskaId) {
-    return { id, role: "yahoska", name: "Yahoska Perez", email: "yperez@healthexps.com", ownsCalendar: true, canOperate: true };
-  }
-  if (id && katyId && id === katyId) {
-    return { id, role: "katy", name: "Katy Robles", email: "krobles@healthexps.com", ownsCalendar: true, canOperate: true };
-  }
-  if (id && carolinaId && id === carolinaId) {
-    return { id, role: "carolina", name: "Carolina Robles", ownsCalendar: true, canOperate: false };
-  }
+  if (id && yahoskaId && id === yahoskaId) return speakerRecord(id, "yahoska");
+  if (id && katyId && id === katyId) return speakerRecord(id, "katy");
+  if (id && carolinaId && id === carolinaId) return speakerRecord(id, "carolina");
   if (id && husbandId && id === husbandId) {
     return { id, role: "husband", name: husbandName, ownsCalendar: false, canOperate: false };
   }
+  const hinted = speakerRecord(id, roleFromTelegramProfile(profile));
+  if (hinted) return hinted;
+  const remembered = speakerRecord(id, String(profile.rememberedRole ?? "").trim().toLowerCase());
+  if (remembered) return remembered;
+  const intended = speakerRecord(id, wantsOwnTeamCalendar(profile.text));
+  if (intended) return intended;
   return { id: id || null, role: "allowlisted", name: "an authorized Telegram user", ownsCalendar: false, canOperate: false };
 }
 
@@ -152,13 +192,13 @@ This message is from ${speaker.name} (Telegram ${speaker.id}), not Yahoska.
 Default calendar is Yahoska Perez’s calendar. This person may view her availability and book, move, or cancel appointments for her. Confirm the booking with them in this chat. Say “Yahoska is free/busy,” not “you are free.” Pass whose=katy or whose=carolina to use those calendars.`;
 }
 
-export function systemPromptFor(environment = process.env, { now = new Date(), senderId, standingMemory } = {}) {
+export function systemPromptFor(environment = process.env, { now = new Date(), senderId, senderProfile, standingMemory } = {}) {
   const systems = connectedSystems(environment);
   const connected = systems.filter((system) => system.connected).map((system) => system.label);
   const missing = systems.filter((system) => !system.connected).map((system) => `${system.label} (${system.missingEnv.join(", ")})`);
   const timeZone = String(environment.GOOGLE_CALENDAR_TIMEZONE ?? "America/New_York").trim() || "America/New_York";
   const clock = floridaClock(now, timeZone);
-  const speaker = telegramSpeaker(environment, senderId);
+  const speaker = telegramSpeaker(environment, senderId, senderProfile);
   const standing = standingMemory !== undefined ? standingMemory : loadStandingMemory();
   const memorySection = String(standing ?? "").trim()
     ? `## Standing memory (always true until contradicted)

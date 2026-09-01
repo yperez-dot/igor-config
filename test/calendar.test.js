@@ -235,6 +235,50 @@ test("list events uses the Calendar API", async () => {
   assert.equal(result.events[0].start, "2026-08-26T15:00:00");
 });
 
+test("put it on mine from an allowlisted chat opens Katy’s calendar", async () => {
+  resetCalendarTokenCache();
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    return jsonResponse({ items: [] });
+  };
+  await executeTool("calendar_list_events", {
+    timeMin: "2026-08-26T00:00:00",
+    timeMax: "2026-08-27T00:00:00"
+  }, {
+    environment: calendarEnv,
+    senderId: "999",
+    senderProfile: { text: "Put it on mine, not Yahoska’s calendar" },
+    fetchImpl
+  });
+  assert.equal(urls.some((url) => url.includes("calendars/krobles%40healthexps.com/events")), true);
+});
+
+test("Katy’s Telegram name opens her calendar without TELEGRAM_KATY_USER_ID", async () => {
+  resetCalendarTokenCache();
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    return jsonResponse({ items: [] });
+  };
+  await executeTool("calendar_list_events", {
+    timeMin: "2026-08-26T00:00:00",
+    timeMax: "2026-08-27T00:00:00"
+  }, {
+    environment: calendarEnv,
+    senderId: "999",
+    senderProfile: { firstName: "Katy" },
+    fetchImpl
+  });
+  assert.equal(urls.some((url) => url.includes("calendars/krobles%40healthexps.com/events")), true);
+});
+
 test("Katy’s chat reads her calendar, not Yahoska’s primary", async () => {
   resetCalendarTokenCache();
   const urls = [];

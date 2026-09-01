@@ -3,7 +3,7 @@
 ## Team (no personal cells)
 
 - Yahoska Perez — COO. yperez@healthexps.com. Telegram id `8882265752`.
-- Katy Robles — CGO. krobles@healthexps.com. Full control of Igor, same as Yahoska. Telegram OK; do not use the old shared WhatsApp to message her. Email her documents at krobles@healthexps.com. Set `TELEGRAM_KATY_USER_ID` so Igor recognizes her chat and pages her. Calendar: share with yperez@ (Make changes to events); `GOOGLE_CALENDAR_KATY_ID` defaults to krobles@healthexps.com.
+- Katy Robles — CGO. krobles@healthexps.com. Full control of Igor, same as Yahoska. Telegram OK; do not use the old shared WhatsApp to message her. Email her documents at krobles@healthexps.com. Already writing to Igor on Telegram (Yahoska 2026-09-01). Calendar already shared with yperez@. `GOOGLE_CALENDAR_KATY_ID` defaults to krobles@healthexps.com. `TELEGRAM_KATY_USER_ID` is the name tag (not the door) so he opens her calendar.
 - Carolina Robles — lead agent / contracting. Telegram OK. Igor is her assistant. Calendar: share with yperez@ and set `GOOGLE_CALENDAR_CAROLINA_ID` + `TELEGRAM_CAROLINA_USER_ID`.
 - Sabri Perez — ACA / subsidy. sperez@healthexps.com.
 - Yensa — Medicaid / Golden Years.
