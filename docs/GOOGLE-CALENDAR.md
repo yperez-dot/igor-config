@@ -100,7 +100,7 @@ node scripts/google-calendar-oauth.js
 - **View:** list events in a window (default next 7 days).
 - **Availability:** busy blocks plus open Mon–Fri slots between 9:00 and 18:00 Florida time. Default slot length is 30 minutes.
 - **Book / move / cancel:** Igor proposes the title, Florida time, and invitees. After the person in this chat confirms, Google sends calendar invites. This is always Yahoska’s calendar — her husband or another allowlisted user can book for her.
-- **Free / all-day:** No-school days, holidays, and reminders can be all-day and marked free (`transparency=transparent`) so they show on the calendar without blocking time. He should add those when you ask — not refuse because they would make you look busy.
+- **Free / all-day:** No-school days, holidays, and reminders can be all-day and marked free (`transparency=transparent`) so they show on the calendar without blocking time. If a day is already on there, he should say so once and mention the busy/free catch — then follow you if you still want it added as free.
 - Overlapping times return a conflict unless you tell him to overlay, or unless the new event is marked free.
 - Heartbeat does **not** text upcoming events (that was repeating every 30 minutes). Chat view/book is unchanged. To turn reminder texts back on, set `HEARTBEAT_CALENDAR_ALERTS=true` on **igor-config**.
 

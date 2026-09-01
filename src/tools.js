@@ -318,7 +318,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Add an event on Yahoska Perez’s Google Calendar (including when her husband or another allowlisted user is booking for her). Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free — do not refuse those. If it is already on the calendar, say so kindly and list it; if she still wants it added or marked free, do that.", {
+      functionTool("calendar_create_event", "Add an event on Yahoska Perez’s Google Calendar (including when her husband or another allowlisted user is booking for her). Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free. If it is already on the calendar, say so kindly, mention the busy/free catch, and follow her if she still wants it added as free.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title." },
