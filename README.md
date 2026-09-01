@@ -52,4 +52,4 @@ See [the standing-approval policy](docs/AUTONOMY-POLICY.md) for the difference b
 
 - All non-health endpoints require `Authorization: Bearer <IGOR_API_KEY>` when the key is set; production refuses to start without it.
 - Task and schedule audit events record task type/status metadata; task payloads are persisted separately in PostgreSQL. Keep PHI/PII out of payloads and configure the host's storage encryption and access controls.
-- This starter can reply through an authorized Telegram bot. Live system adapters run from Railway secrets listed in [docs/SYSTEMS.md](docs/SYSTEMS.md). Email, GitHub writes, Netlify deploys, and calendar bookings still require in-chat confirmation.
+- This starter can reply through an authorized Telegram bot. Live system adapters run from Railway secrets listed in [docs/SYSTEMS.md](docs/SYSTEMS.md). Email to Yahoska and Katy is standing-approved. GitHub writes, Netlify deploys, and calendar bookings still require in-chat confirmation.

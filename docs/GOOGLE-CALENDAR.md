@@ -16,6 +16,8 @@ Set these on **Igor V2** (Telegram tools) and **igor-config** (heartbeat), then 
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | yes | |
 | `GOOGLE_CALENDAR_REFRESH_TOKEN` | yes | |
 | `GOOGLE_CALENDAR_ID` | no | `primary` (Yahoska’s main calendar) |
+| `GOOGLE_CALENDAR_KATY_ID` | no | `krobles@healthexps.com` after she shares that calendar |
+| `GOOGLE_CALENDAR_CAROLINA_ID` | yes for Carolina | Her calendar id (usually her Google email) after she shares it |
 | `GOOGLE_CALENDAR_TIMEZONE` | no | `America/New_York` |
 | `GOOGLE_CALENDAR_WORK_START` | no | `9` (weekday 9:00) |
 | `GOOGLE_CALENDAR_WORK_END` | no | `18` (weekday 18:00) |
@@ -99,10 +101,25 @@ node scripts/google-calendar-oauth.js
 
 - **View:** list events in a window (default next 7 days).
 - **Availability:** busy blocks plus open Mon–Fri slots between 9:00 and 18:00 Florida time. Default slot length is 30 minutes.
-- **Book / move / cancel:** Igor proposes the title, Florida time, and invitees. After the person in this chat confirms, Google sends calendar invites. This is always Yahoska’s calendar — her husband or another allowlisted user can book for her.
+- **Book / move / cancel:** Igor proposes the title, Florida time, and invitees. After the person in this chat confirms, Google sends calendar invites. Default calendar is the person chatting (Yahoska, Katy, or Carolina). Husband defaults to Yahoska’s. Pass `whose` to look at someone else.
 - **Free / all-day:** No-school days, holidays, and reminders can be all-day and marked free (`transparency=transparent`) so they show on the calendar without blocking time. If a day is already on there, he should say so once and mention the busy/free catch — then follow you if you still want it added as free.
 - Overlapping times return a conflict unless you tell him to overlay, or unless the new event is marked free.
 - Heartbeat does **not** text upcoming events (that was repeating every 30 minutes). Chat view/book is unchanged. To turn reminder texts back on, set `HEARTBEAT_CALENDAR_ALERTS=true` on **igor-config**.
+
+## Katy and Carolina calendars
+
+Igor still signs in as **`yperez@healthexps.com`**. Sharing a calendar is enough once the calendar id is in Railway — the old “sharing won’t work” line was wrong. The code only looked at Yahoska’s `primary`.
+
+1. Katy (and Carolina) open Google Calendar → their calendar → **Settings and sharing**.
+2. Share with `yperez@healthexps.com`.
+3. Permission: **Make changes to events** (needed so Igor can book, not only look).
+4. On **Igor V2** and **igor-config**:
+   - `GOOGLE_CALENDAR_KATY_ID=krobles@healthexps.com` (or leave unset — that email is the default)
+   - `GOOGLE_CALENDAR_CAROLINA_ID=` her Google email / calendar id
+   - `TELEGRAM_KATY_USER_ID` and `TELEGRAM_CAROLINA_USER_ID`
+5. Redeploy both services.
+
+If a calendar is not shared, Google returns an error. Igor should say share it — he must not silently use Yahoska’s calendar instead.
 
 ## Husband / family access
 

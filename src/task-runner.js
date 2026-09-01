@@ -1,8 +1,20 @@
 import { processTask } from "./worker-core.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 
+export function alertChatIds(environment = process.env) {
+  return [...new Set(
+    [
+      environment.TELEGRAM_ALERT_CHAT_ID,
+      environment.TELEGRAM_YAHOSKA_USER_ID,
+      environment.TELEGRAM_KATY_USER_ID
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+  )];
+}
+
 export function alertChatId(environment = process.env) {
-  return String(environment.TELEGRAM_ALERT_CHAT_ID ?? environment.TELEGRAM_YAHOSKA_USER_ID ?? "").trim() || null;
+  return alertChatIds(environment)[0] ?? null;
 }
 
 export function createTaskNotifier({
@@ -12,24 +24,26 @@ export function createTaskNotifier({
 } = {}) {
   const telegram = telegramConfig(environment);
   return async function notify(text) {
-    const chatId = alertChatId(environment);
-    if (!telegram.botToken || !chatId) return;
-    await sendTelegram({
-      botToken: telegram.botToken,
-      chatId,
-      text
-    });
-    if (!store?.appendChatTurn) return;
-    try {
-      await store.appendChatTurn({
+    const chatIds = alertChatIds(environment);
+    if (!telegram.botToken || !chatIds.length) return;
+    for (const chatId of chatIds) {
+      await sendTelegram({
+        botToken: telegram.botToken,
         chatId,
-        senderId: "igor",
-        role: "assistant",
-        content: text,
-        maxChars: 4000
+        text
       });
-    } catch {
-      // Delivery already succeeded; history is best-effort.
+      if (!store?.appendChatTurn) continue;
+      try {
+        await store.appendChatTurn({
+          chatId,
+          senderId: "igor",
+          role: "assistant",
+          content: text,
+          maxChars: 4000
+        });
+      } catch {
+        // Delivery already succeeded; history is best-effort.
+      }
     }
   };
 }

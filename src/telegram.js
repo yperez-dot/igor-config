@@ -9,6 +9,10 @@ export function telegramConfig(environment = process.env) {
       .map((value) => value.trim())
       .filter(Boolean)
   );
+  for (const key of ["TELEGRAM_YAHOSKA_USER_ID", "TELEGRAM_KATY_USER_ID", "TELEGRAM_CAROLINA_USER_ID"]) {
+    const id = String(environment[key] ?? "").trim();
+    if (id) allowedUserIds.add(id);
+  }
   return {
     botToken: environment.TELEGRAM_BOT_TOKEN,
     webhookSecret: environment.TELEGRAM_WEBHOOK_SECRET,

@@ -57,7 +57,7 @@ export const SYSTEM_IDS = [
   },
   {
     id: "calendar",
-    label: "Google Calendar (Yahoska)",
+    label: "Google Calendar (Yahoska, Katy, Carolina)",
     env: ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_CALENDAR_REFRESH_TOKEN"]
   },
   {

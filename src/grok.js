@@ -19,8 +19,8 @@ export function isSpanish(text) {
 
 export function unavailableMessage(text) {
   return isSpanish(text)
-    ? "Igor v2 está configurado, pero la conexión con Grok aún no está activa. Avísale a Yahoska para completar la configuración."
-    : "Igor v2 is configured, but the Grok connection is not active yet. Ask Yahoska to complete the setup.";
+    ? "Igor v2 está configurado, pero la conexión con Grok aún no está activa. Avísale a Yahoska o a Katy para completar la configuración."
+    : "Igor v2 is configured, but the Grok connection is not active yet. Ask Yahoska or Katy to complete the setup.";
 }
 
 export function isPlanRecommendationRequest(text) {
