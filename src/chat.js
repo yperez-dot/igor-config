@@ -8,6 +8,7 @@ import {
   subjectsFromAlert,
   suppressionPatternsFrom
 } from "./mail-alerts.js";
+import { bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
 import { downloadTelegramFile } from "./telegram.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
@@ -134,6 +135,38 @@ export async function handleTelegramChat({
     return reply;
   }
 
+  const ownBooking = await bookOwnCalendarIfRequested({
+    text: senderProfile.text,
+    history,
+    speaker,
+    executeTool,
+    toolContext: {
+      environment,
+      chatId: message.chatId,
+      botToken,
+      senderId: message.senderId,
+      senderProfile,
+      store
+    }
+  });
+  if (ownBooking) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: ownBooking.reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: ownBooking.reply
+    });
+    return ownBooking.reply;
+  }
+
   const toolRunner = (name, args) => executeTool(name, args, {
     environment,
     chatId: message.chatId,
@@ -151,7 +184,7 @@ export async function handleTelegramChat({
         model,
         text: userText,
         media: inbound.media,
-        history,
+        history: sanitizeOwnCalendarHistory(history),
         systemPrompt: prompt,
         tools,
         executeTool: toolRunner,
