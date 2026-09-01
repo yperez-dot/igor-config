@@ -413,8 +413,8 @@ function parseArgs(raw) {
   return JSON.parse(raw);
 }
 
-function calendarRequest({ environment, senderId, whose }) {
-  const speaker = telegramSpeaker(environment, senderId);
+function calendarRequest({ environment, senderId, senderProfile, whose }) {
+  const speaker = telegramSpeaker(environment, senderId, senderProfile);
   const owner = resolveCalendarRole({ speaker, whose });
   const config = calendarConfig(environment, { owner });
   return { speaker, owner, config, missing: missingTeamCalendar(config) };
@@ -494,6 +494,7 @@ export async function executeTool(name, rawArgs, {
   chatId,
   botToken,
   senderId,
+  senderProfile,
   store,
   pendingAttachment,
   transporter
@@ -617,7 +618,7 @@ export async function executeTool(name, rawArgs, {
         }
       }
 
-      const speaker = telegramSpeaker(environment, senderId);
+      const speaker = telegramSpeaker(environment, senderId, senderProfile);
       const emailTo = args.emailTo ?? defaultDocumentRecipient({ speaker });
       const mailConfig = smtpConfig(environment);
       if (args.email !== false && smtpTransportReady(mailConfig) && allowedEmail(environment, emailTo)) {
@@ -1006,7 +1007,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_list_events") {
-      const { config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      const { config, missing } = calendarRequest({ environment, senderId, senderProfile, whose: args.whose });
       if (missing) return missing;
       const window = defaultTimeWindow(args, config);
       if (window.error) return window;
@@ -1021,7 +1022,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_availability") {
-      const { config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      const { config, missing } = calendarRequest({ environment, senderId, senderProfile, whose: args.whose });
       if (missing) return missing;
       const window = defaultTimeWindow(args, config);
       if (window.error) return window;
@@ -1035,7 +1036,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_create_event") {
-      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, senderProfile, whose: args.whose });
       if (missing) return missing;
       const proposed = proposedEvent(args, config);
       const conflicts = await conflictsFor({
@@ -1071,7 +1072,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_update_event") {
-      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, senderProfile, whose: args.whose });
       if (missing) return missing;
       const proposed = { eventId: args.eventId, ...proposedEvent(args, config) };
       if (blocked) {
@@ -1092,7 +1093,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_delete_event") {
-      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, senderProfile, whose: args.whose });
       if (missing) return missing;
       if (blocked) {
         return { ...blocked, proposed: { eventId: args.eventId } };

@@ -24,6 +24,21 @@ test("cofounder Telegram ids are always allowlisted", () => {
   assert.equal(config.allowedUserIds.has("444"), true);
 });
 
+test("Telegram first_name is kept so Igor can recognize Katy", () => {
+  const parsed = supportedMessage({
+    update_id: 47,
+    message: {
+      text: "Put it on mine",
+      from: { id: 999, first_name: "Katy", last_name: "Robles", username: "katyrobles" },
+      chat: { id: 888 }
+    }
+  }, new Set(["999"]));
+  assert.equal(parsed.senderId, "999");
+  assert.equal(parsed.firstName, "Katy");
+  assert.equal(parsed.lastName, "Robles");
+  assert.equal(parsed.username, "katyrobles");
+});
+
 test("only allowlisted text messages are accepted", () => {
   const update = {
     update_id: 42,
@@ -33,6 +48,9 @@ test("only allowlisted text messages are accepted", () => {
     updateId: 42,
     chatId: 999,
     senderId: "111",
+    firstName: null,
+    lastName: null,
+    username: null,
     text: "Check carrier updates",
     document: null,
     video: null,
@@ -85,6 +103,9 @@ test("allowlisted document-only messages are accepted", () => {
     updateId: 43,
     chatId: 999,
     senderId: "111",
+    firstName: null,
+    lastName: null,
+    username: null,
     text: "",
     document: {
       fileId: "file-1",

@@ -68,7 +68,10 @@ export async function handleTelegramChat({
   downloadFile = downloadTelegramFile
 }) {
   const history = await store.recentChatTurns(message.chatId);
-  const prompt = systemPrompt ?? systemPromptFor(environment, { senderId: message.senderId });
+  const prompt = systemPrompt ?? systemPromptFor(environment, {
+    senderId: message.senderId,
+    senderProfile: message
+  });
   const inbound = await resolveInboundUserText({
     message,
     botToken,
@@ -118,6 +121,7 @@ export async function handleTelegramChat({
     chatId: message.chatId,
     botToken,
     senderId: message.senderId,
+    senderProfile: message,
     store,
     pendingAttachment: inbound.attachment
   });
