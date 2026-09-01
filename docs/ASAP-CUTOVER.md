@@ -35,7 +35,8 @@ Set or update:
 | `TELEGRAM_BOT_TOKEN` | **Production** Igor bot token (replace the test-bot token) |
 | `TELEGRAM_WEBHOOK_SECRET` | Alphanumeric secret only (`A-Z`, `a-z`, `0-9`, `-`, `_`) |
 | `TELEGRAM_WEBHOOK_URL` | `https://igor-v2-production.up.railway.app/v1/telegram/webhook` |
-| `TELEGRAM_ALLOWED_USER_IDS` | Your Telegram numeric ID (add Katy/Carolina when ready) |
+| `TELEGRAM_ALLOWED_USER_IDS` | Your Telegram numeric ID plus Katy’s (and Carolina when ready) |
+| `TELEGRAM_KATY_USER_ID` | Katy’s numeric Telegram ID so documents email `krobles@healthexps.com` |
 | `XAI_API_KEY` | Already set |
 
 Redeploy until **Active**.

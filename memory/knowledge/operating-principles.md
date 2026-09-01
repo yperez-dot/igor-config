@@ -37,7 +37,7 @@ Any task with 3+ large files: write one → save → confirm → next. Do not sp
 
 ## External actions
 
-Preview → confirm in chat → then do it. Email to yperez@healthexps.com is standing-approved. GitHub writes, Netlify deploys, and calendar writes need `confirmed=true`.
+Preview → confirm in chat → then do it. Email to yperez@healthexps.com and krobles@healthexps.com is standing-approved. GitHub writes, Netlify deploys, and calendar writes need `confirmed=true`.
 
 ## Cost / blast radius (v2)
 

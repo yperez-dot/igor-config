@@ -7,6 +7,8 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /Yahoska Perez/);
   assert.match(SYSTEM_PROMPT, /husband/);
   assert.match(SYSTEM_PROMPT, /Katy Robles/);
+  assert.match(SYSTEM_PROMPT, /krobles@healthexps.com/);
+  assert.match(SYSTEM_PROMPT, /do not say you can only email Yahoska/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
   assert.match(SYSTEM_PROMPT, /Google Calendar/);
@@ -72,6 +74,17 @@ test("system prompt includes a Florida clock for today", () => {
   const prompt = systemPromptFor({}, { now });
   assert.match(prompt, /Wednesday, August 26, 2026/);
   assert.match(prompt, /Today is 2026-08-26/);
+});
+
+test("system prompt treats Katy as a standing email recipient", () => {
+  const prompt = systemPromptFor({
+    TELEGRAM_YAHOSKA_USER_ID: "111",
+    TELEGRAM_KATY_USER_ID: "333"
+  }, { senderId: "333" });
+  assert.match(prompt, /This message is from Katy Robles/);
+  assert.match(prompt, /krobles@healthexps.com/);
+  assert.match(prompt, /same access as Yahoska/);
+  assert.match(prompt, /Yahoska Perez’s calendar|still Yahoska Perez/);
 });
 
 test("system prompt treats husband as a calendar delegate for Yahoska", () => {

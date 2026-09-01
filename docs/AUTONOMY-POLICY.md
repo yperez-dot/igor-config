@@ -23,6 +23,8 @@ For a standing-approved job, Igor runs it, records the result, and alerts the te
 
 Connecting Google Calendar was approved so Igor can view Yahoska’s availability and book appointments. Each create, reschedule, or cancel still needs an in-chat confirmation before it writes to the calendar.
 
+Email to Yahoska (`yperez@healthexps.com`) and Katy (`krobles@healthexps.com`) is standing-approved (Yahoska 2026-09-01). Send documents to the cofounder in the chat. Hector / BSI / upline stays Yahoska-only. Calendar is still Yahoska’s.
+
 ## Channel and input parity
 
 Igor has to take the full range of work the team already sends him. Text-only shortcuts are a regression.

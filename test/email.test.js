@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  DEFAULT_EMAIL_ALLOWLIST,
+  KATY_EMAIL,
+  YAHOSKA_EMAIL,
+  defaultDocumentRecipient,
+  emailAllowlist,
+  isAllowedEmail,
   opsAlertRecipients,
   parseRecipientList,
   sendEmail,
@@ -14,6 +20,23 @@ test("parses comma-separated recipient lists", () => {
     "a@example.com",
     "b@example.com"
   ]);
+});
+
+test("Katy stays on the email allowlist even if Railway lists only Yahoska", () => {
+  assert.ok(DEFAULT_EMAIL_ALLOWLIST.includes(KATY_EMAIL));
+  const allow = emailAllowlist({ EMAIL_ALLOWED_RECIPIENTS: YAHOSKA_EMAIL });
+  assert.ok(allow.includes(YAHOSKA_EMAIL));
+  assert.ok(allow.includes(KATY_EMAIL));
+  assert.equal(isAllowedEmail({}, KATY_EMAIL), true);
+  assert.equal(isAllowedEmail({ EMAIL_ALLOWED_RECIPIENTS: YAHOSKA_EMAIL }, KATY_EMAIL), true);
+  assert.equal(isAllowedEmail({}, "random@example.com"), false);
+});
+
+test("document emails go to the cofounder in the chat", () => {
+  assert.equal(defaultDocumentRecipient({ speaker: { role: "katy" } }), KATY_EMAIL);
+  assert.equal(defaultDocumentRecipient({ speaker: { role: "yahoska" } }), YAHOSKA_EMAIL);
+  assert.equal(defaultDocumentRecipient({ speaker: { role: "allowlisted" } }), YAHOSKA_EMAIL);
+  assert.equal(defaultDocumentRecipient({}), YAHOSKA_EMAIL);
 });
 
 test("requires Gmail SMTP, not SendGrid", () => {

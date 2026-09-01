@@ -1,6 +1,12 @@
 import nodemailer from "nodemailer";
 
-const DEFAULT_FROM_EMAIL = "info@healthexps.com";
+export const YAHOSKA_EMAIL = "yperez@healthexps.com";
+export const KATY_EMAIL = "krobles@healthexps.com";
+export const INFO_EMAIL = "info@healthexps.com";
+export const LEADERSHIP_EMAILS = [YAHOSKA_EMAIL, KATY_EMAIL];
+export const DEFAULT_EMAIL_ALLOWLIST = [YAHOSKA_EMAIL, KATY_EMAIL, INFO_EMAIL];
+
+const DEFAULT_FROM_EMAIL = INFO_EMAIL;
 
 export function smtpConfig(environment = process.env) {
   const host = environment.SMTP_HOST;
@@ -22,6 +28,20 @@ export function parseRecipientList(value) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+export function emailAllowlist(environment = process.env) {
+  const extra = parseRecipientList(environment.EMAIL_ALLOWED_RECIPIENTS);
+  return [...new Set([...DEFAULT_EMAIL_ALLOWLIST, ...extra].map((entry) => entry.toLowerCase()))];
+}
+
+export function isAllowedEmail(environment, email) {
+  return emailAllowlist(environment).includes(String(email ?? "").trim().toLowerCase());
+}
+
+export function defaultDocumentRecipient({ speaker } = {}) {
+  if (speaker?.role === "katy") return KATY_EMAIL;
+  return YAHOSKA_EMAIL;
 }
 
 export function opsAlertRecipients(environment = process.env) {

@@ -3,7 +3,7 @@
 ## Team (no personal cells)
 
 - Yahoska Perez — COO. yperez@healthexps.com. Telegram id `8882265752`.
-- Katy Robles — CGO. krobles@healthexps.com. Telegram OK; do not use the old shared WhatsApp to message her.
+- Katy Robles — CGO. krobles@healthexps.com. Telegram OK; do not use the old shared WhatsApp to message her. Same standing email access as Yahoska — email her documents at krobles@healthexps.com. Set `TELEGRAM_KATY_USER_ID` so Igor recognizes her chat.
 - Carolina Robles — lead agent / contracting. Telegram OK.
 - Sabri Perez — ACA / subsidy. sperez@healthexps.com.
 - Yensa — Medicaid / Golden Years.
@@ -16,7 +16,7 @@
 
 - Public client: website + WhatsApp 305-464-6888 + 1-800-380-6821.
 - Team / Igor: Telegram @Igor_theibot.
-- Email from info@healthexps.com via Gmail SMTP. Standing-approved recipient: yperez@healthexps.com.
+- Email from info@healthexps.com via Gmail SMTP. Standing-approved recipients: yperez@healthexps.com and krobles@healthexps.com. Email the person in the chat. Hector / BSI / upline stays Yahoska-only.
 - GHL SMS number to configure: 754-342-0444.
 
 ## Facebook ads

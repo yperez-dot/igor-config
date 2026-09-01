@@ -21,6 +21,7 @@ On the `igor-v2` service, add:
 | `TELEGRAM_WEBHOOK_SECRET` | Fresh random secret, at least 32 characters |
 | `TELEGRAM_WEBHOOK_URL` | Public service URL ending in `/v1/telegram/webhook` |
 | `TELEGRAM_ALLOWED_USER_IDS` | Comma-separated Telegram numeric IDs for authorized team members |
+| `TELEGRAM_KATY_USER_ID` | Katy’s numeric Telegram ID (standing email to `krobles@healthexps.com`) |
 | `XAI_API_KEY` | xAI API key |
 | `XAI_MODEL` | `grok-4.6` |
 

@@ -10,7 +10,13 @@ import {
   proposedEvent,
   updateEvent
 } from "./calendar.js";
-import { sendEmail, smtpConfig, smtpTransportReady } from "./email.js";
+import {
+  defaultDocumentRecipient,
+  isAllowedEmail,
+  sendEmail,
+  smtpConfig,
+  smtpTransportReady
+} from "./email.js";
 import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
 import {
@@ -46,7 +52,6 @@ const WRITE_TOOLS = new Set([
   "calendar_delete_event",
   "olicomm_upload"
 ]);
-const DEFAULT_EMAIL_ALLOWLIST = ["yperez@healthexps.com", "info@healthexps.com"];
 const DEFAULT_GITHUB_OWNERS = ["yperez-dot"];
 
 function functionTool(name, description, parameters) {
@@ -118,14 +123,14 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("ghl")) {
     tools.push(
-      functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails yperez@healthexps.com when SMTP for info@ is configured.", {
+      functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails the person in this chat (Katy → krobles@healthexps.com, otherwise yperez@healthexps.com) when SMTP for info@ is configured.", {
         type: "object",
         properties: {
           staleDays: { type: "integer", description: "Days without opportunity activity. Default 14." },
           status: { type: "string", description: "Opportunity status filter. Default open." },
           pipelineId: { type: "string" },
           limit: { type: "integer", description: "Max masked preview rows in the chat summary. Default 12." },
-          emailTo: { type: "string", description: "Allowlisted recipient. Default yperez@healthexps.com." },
+          emailTo: { type: "string", description: "Allowlisted recipient. Default is the speaker: Katy → krobles@, otherwise yperez@." },
           email: { type: "boolean", description: "Set false to skip email. Default true." }
         },
         additionalProperties: false
@@ -276,7 +281,7 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("email")) {
-    tools.push(functionTool("send_internal_email", "Send email from the approved THEI sender to an allowlisted recipient. Email to yperez@healthexps.com is standing-approved.", {
+    tools.push(functionTool("send_internal_email", "Send email from the approved THEI sender to an allowlisted recipient. Email to yperez@healthexps.com and krobles@healthexps.com is standing-approved. When Katy is chatting, email her.", {
       type: "object",
       properties: {
         to: { type: "string" },
@@ -430,11 +435,7 @@ function needsConfirmation(name, args, environment) {
 }
 
 function allowedEmail(environment, email) {
-  const allow = String(environment.EMAIL_ALLOWED_RECIPIENTS ?? DEFAULT_EMAIL_ALLOWLIST.join(","))
-    .split(",")
-    .map((value) => value.trim().toLowerCase())
-    .filter(Boolean);
-  return allow.includes(String(email ?? "").trim().toLowerCase());
+  return isAllowedEmail(environment, email);
 }
 
 function allowedGithubPath(environment, path) {
@@ -600,7 +601,8 @@ export async function executeTool(name, rawArgs, {
         }
       }
 
-      const emailTo = args.emailTo ?? "yperez@healthexps.com";
+      const speaker = telegramSpeaker(environment, senderId);
+      const emailTo = args.emailTo ?? defaultDocumentRecipient({ speaker });
       const mailConfig = smtpConfig(environment);
       if (args.email !== false && smtpTransportReady(mailConfig) && allowedEmail(environment, emailTo)) {
         try {

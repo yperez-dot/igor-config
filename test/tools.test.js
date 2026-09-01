@@ -209,6 +209,66 @@ test("email to Yahoska is standing-approved", async () => {
   assert.equal(sent.from, "info@healthexps.com");
 });
 
+test("email to Katy is standing-approved like Yahoska", async () => {
+  let sent;
+  const result = await executeTool("send_internal_email", {
+    to: "krobles@healthexps.com",
+    subject: "test",
+    text: "hello Katy"
+  }, {
+    environment: {
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "app-pass",
+      EMAIL_ALLOWED_RECIPIENTS: "yperez@healthexps.com"
+    },
+    transporter: {
+      sendMail: async (mail) => {
+        sent = mail;
+        return { messageId: "smtp-katy" };
+      }
+    }
+  });
+  assert.equal(result.needsConfirmation, undefined);
+  assert.equal(result.sent, true);
+  assert.equal(result.to, "krobles@healthexps.com");
+  assert.equal(sent.to, "krobles@healthexps.com");
+});
+
+test("stale-leads emails Katy when she is the Telegram speaker", async () => {
+  const result = await executeTool("ghl_stale_leads", { staleDays: 14 }, {
+    environment: {
+      GHL_API_TOKEN: "token",
+      GHL_LOCATION_ID: "loc",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "app-pass",
+      TELEGRAM_KATY_USER_ID: "333"
+    },
+    senderId: "333",
+    fetchImpl: async (url) => {
+      if (String(url).includes("/pipelines")) {
+        return { ok: true, json: async () => ({ pipelines: [{ id: "p1", name: "Medicare", stages: [{ id: "s1", name: "No Answer" }] }] }) };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          opportunities: [],
+          meta: {}
+        })
+      };
+    },
+    transporter: {
+      sendMail: async (mail) => {
+        assert.equal(mail.to, "krobles@healthexps.com");
+        return { messageId: "stale-katy" };
+      }
+    }
+  });
+  assert.equal(result.delivered.email, true);
+  assert.equal(result.delivered.emailedTo, "krobles@healthexps.com");
+});
+
 test("GHL stale leads mask contact identity", async () => {
   const result = await executeTool("ghl_stale_leads", { staleDays: 14, limit: 10 }, {
     environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc" },
