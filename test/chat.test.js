@@ -22,6 +22,46 @@ function memoryStore() {
   };
 }
 
+test("own-calendar wording books Katy without asking Grok", async () => {
+  const store = memoryStore();
+  store.turns.push({
+    role: "user",
+    content: "Yes for today at 6:40 but not ok Yahoska’s calendar . Put it on mine"
+  });
+  store.turns.push({
+    role: "assistant",
+    content: "I can’t put it on yours. I only have Yahoska’s calendar."
+  });
+  const toolCalls = [];
+  let grokCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    message: { chatId: 99, senderId: "999", text: "Put it on mine — today 6:40, not Yahoska’s calendar" },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { booked: true, event: { summary: "Reminder" } };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls[0].name, "calendar_create_event");
+  assert.equal(toolCalls[0].args.whose, "katy");
+  assert.equal(toolCalls[0].args.confirmed, true);
+  assert.match(reply, /your calendar/);
+  assert.match(sent[0], /your calendar/);
+});
+
 test("Put mine after a not-Yahoska ask treats the chat as Katy", async () => {
   const store = memoryStore();
   store.turns.push({
