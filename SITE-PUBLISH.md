@@ -10,14 +10,9 @@ Igor posts blogs and site changes **in that repo**, not in `igor-config`. This f
 
 ## Access (required)
 
-Cursor Cloud Agents can only clone, push, and open PRs on repos attached to **both**:
+See [IGOR-ACCESS.md](IGOR-ACCESS.md). Short version: start (or attach) Igor on an environment that **includes** `healthexps-www`. A chat started only on `igor-config` cannot push the site — `cursor[bot]` will 403 even though the same bot pushed `healthexps-www` the day before from a website-repo agent.
 
-1. The **Cursor GitHub App** (Integrations → GitHub → include `healthexps-www`)
-2. The **Cloud Agent environment** (select `igor-config` **and** `healthexps-www` when creating the environment)
-
-A `GH_TOKEN` secret does **not** add the website to the workspace. If `git push` to `healthexps-www` returns 403 for `cursor[bot]`, this access is still missing — stop and tell Yahoska. Do not dump the article into `igor-config` and call it live.
-
-Environment dashboard: [0322be6f-9d95-11f1-a7d1-d6b4613131ce](https://cursor.com/dashboard/cloud-agents/environments/e/0322be6f-9d95-11f1-a7d1-d6b4613131ce)
+Do not dump the article into `igor-config` and call it live.
 
 ---
 
