@@ -8,6 +8,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /husband/);
   assert.match(SYSTEM_PROMPT, /Katy Robles/);
   assert.match(SYSTEM_PROMPT, /krobles@healthexps.com/);
+  assert.match(SYSTEM_PROMPT, /full control of Igor/);
   assert.match(SYSTEM_PROMPT, /do not say you can only email Yahoska/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
@@ -83,7 +84,9 @@ test("system prompt treats Katy as a standing email recipient", () => {
   }, { senderId: "333" });
   assert.match(prompt, /This message is from Katy Robles/);
   assert.match(prompt, /krobles@healthexps.com/);
-  assert.match(prompt, /same access as Yahoska/);
+  assert.match(prompt, /full control of Igor/);
+  assert.match(prompt, /same as Yahoska/);
+  assert.match(prompt, /Do not ask Yahoska first/);
   assert.match(prompt, /Yahoska Perez’s calendar|still Yahoska Perez/);
 });
 

@@ -1,10 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { alertChatId, isStaleScheduledTask, runClaimedTask } from "../src/task-runner.js";
+import { alertChatId, alertChatIds, createTaskNotifier, isStaleScheduledTask, runClaimedTask } from "../src/task-runner.js";
 
 test("falls back to Yahoska's Telegram id for worker alerts", () => {
   assert.equal(alertChatId({ TELEGRAM_YAHOSKA_USER_ID: "12345" }), "12345");
   assert.equal(alertChatId({ TELEGRAM_ALERT_CHAT_ID: "99", TELEGRAM_YAHOSKA_USER_ID: "12345" }), "99");
+});
+
+test("worker alerts page Yahoska and Katy", () => {
+  assert.deepEqual(
+    alertChatIds({
+      TELEGRAM_YAHOSKA_USER_ID: "111",
+      TELEGRAM_KATY_USER_ID: "333"
+    }),
+    ["111", "333"]
+  );
+});
+
+test("notifier fans out worker alerts to both cofounders", async () => {
+  const sent = [];
+  const notify = createTaskNotifier({
+    environment: {
+      TELEGRAM_BOT_TOKEN: "bot",
+      TELEGRAM_YAHOSKA_USER_ID: "111",
+      TELEGRAM_KATY_USER_ID: "333"
+    },
+    sendTelegram: async ({ chatId, text }) => {
+      sent.push({ chatId, text });
+    }
+  });
+  await notify("site is down");
+  assert.deepEqual(sent, [
+    { chatId: "111", text: "site is down" },
+    { chatId: "333", text: "site is down" }
+  ]);
 });
 
 test("drops stale heartbeat and pulse tasks instead of replaying them", () => {

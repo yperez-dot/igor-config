@@ -78,7 +78,7 @@ export function grokTools(environment = process.env) {
       required: ["query"],
       additionalProperties: false
     }),
-    functionTool("memory_remember", "Save a settled THEI fact so later sessions can find it. Use when Yahoska says remember this. Do not save secrets, tokens, SSN/MBI, or client PHI.", {
+    functionTool("memory_remember", "Save a settled THEI fact so later sessions can find it. Use when Yahoska or Katy says remember this. Do not save secrets, tokens, SSN/MBI, or client PHI.", {
       type: "object",
       properties: {
         content: { type: "string", description: "The fact to remember, in one short paragraph." },
@@ -105,7 +105,7 @@ export function grokTools(environment = process.env) {
       properties: {},
       additionalProperties: false
     }),
-    functionTool("run_sales_tracker_sync", "Queue the Railway sales tracker sync (Google Sheets → Notion). Deterministic, no Anthropic/Claude. Standing-approved. Use when Yahoska asks to run the sales sync, or when an old OpenClaw/Anthropic cron alert fires.", {
+    functionTool("run_sales_tracker_sync", "Queue the Railway sales tracker sync (Google Sheets → Notion). Deterministic, no Anthropic/Claude. Standing-approved. Use when Yahoska or Katy asks to run the sales sync, or when an old OpenClaw/Anthropic cron alert fires.", {
       type: "object",
       properties: {
         mode: { type: "string", description: "apply (default, writes Notion) or dry-run." }
@@ -389,7 +389,7 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("imap") && connected.has("github")) {
-    tools.push(functionTool("update_hub_sneak_peeks", "Publish broker sneak peeks to the Agent Hub Carrier Info card. Scans info@ for sneak-peek / B-PAG / benefits-reveal mail. If this turn has a Telegram file (xlsx/pdf/jpg), upload that instead. Does not invent benefits. Does not dump email bodies. Standing-approved when Yahoska asks to update sneak peeks.", {
+    tools.push(functionTool("update_hub_sneak_peeks", "Publish broker sneak peeks to the Agent Hub Carrier Info card. Scans info@ for sneak-peek / B-PAG / benefits-reveal mail. If this turn has a Telegram file (xlsx/pdf/jpg), upload that instead. Does not invent benefits. Does not dump email bodies. Standing-approved when Yahoska or Katy asks to update sneak peeks.", {
       type: "object",
       properties: {},
       additionalProperties: false

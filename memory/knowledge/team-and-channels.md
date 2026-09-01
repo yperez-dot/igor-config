@@ -3,20 +3,20 @@
 ## Team (no personal cells)
 
 - Yahoska Perez — COO. yperez@healthexps.com. Telegram id `8882265752`.
-- Katy Robles — CGO. krobles@healthexps.com. Telegram OK; do not use the old shared WhatsApp to message her. Same standing email access as Yahoska — email her documents at krobles@healthexps.com. Set `TELEGRAM_KATY_USER_ID` so Igor recognizes her chat.
+- Katy Robles — CGO. krobles@healthexps.com. Full control of Igor, same as Yahoska. Telegram OK; do not use the old shared WhatsApp to message her. Email her documents at krobles@healthexps.com. Set `TELEGRAM_KATY_USER_ID` so Igor recognizes her chat and pages her.
 - Carolina Robles — lead agent / contracting. Telegram OK.
 - Sabri Perez — ACA / subsidy. sperez@healthexps.com.
 - Yensa — Medicaid / Golden Years.
 - Ivan Santiago — all life-insurance leads.
 - Agents: Yessika Rodriguez, Niurllys Carrera, Alan Elchami, Paulette Rostran, Jill Taylor, Christian Munoz, Marianne Edwards, Richard Sett.
 - Gina Berenguer — renewals only, not an active producer.
-- Upline Hector Marmol (Brokers Society / NHP). Override agencies BSI and NHP. Upline traffic is private to Yahoska.
+- Upline Hector Marmol (Brokers Society / NHP). Override agencies BSI and NHP. Upline traffic is private to leadership (Yahoska and Katy) — never the Hub.
 
 ## Channels
 
 - Public client: website + WhatsApp 305-464-6888 + 1-800-380-6821.
 - Team / Igor: Telegram @Igor_theibot.
-- Email from info@healthexps.com via Gmail SMTP. Standing-approved recipients: yperez@healthexps.com and krobles@healthexps.com. Email the person in the chat. Hector / BSI / upline stays Yahoska-only.
+- Email from info@healthexps.com via Gmail SMTP. Standing-approved recipients: yperez@healthexps.com and krobles@healthexps.com. Email the person in the chat. Hector / BSI / upline stays leadership-only (Yahoska and Katy).
 - GHL SMS number to configure: 754-342-0444.
 
 ## Facebook ads
