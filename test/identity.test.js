@@ -91,14 +91,17 @@ test("system prompt treats Katy as a standing email recipient", () => {
   assert.match(SYSTEM_PROMPT, /Katy already shares her calendar/);
   assert.match(SYSTEM_PROMPT, /Never say you are only connected to Yahoska/);
   assert.match(SYSTEM_PROMPT, /put it on mine/);
+  assert.match(SYSTEM_PROMPT, /put mine/);
 });
 
 test("put it on mine / not Yahoska’s identifies Katy without a Telegram id", () => {
   assert.equal(wantsOwnTeamCalendar("Yes for today at 6:40 but not ok Yahoska’s calendar . Put it on mine"), "katy");
+  assert.equal(wantsOwnTeamCalendar("Put mine"), "katy");
   const speaker = telegramSpeaker({}, "999", {
     text: "Yes for today at 6:40 but not ok Yahoska’s calendar . Put it on mine"
   });
   assert.equal(speaker.role, "katy");
+  assert.equal(telegramSpeaker({}, "999", { text: "Put mine" }).role, "katy");
 });
 
 test("Telegram first name identifies Katy without TELEGRAM_KATY_USER_ID", () => {

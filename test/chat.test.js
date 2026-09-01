@@ -22,6 +22,36 @@ function memoryStore() {
   };
 }
 
+test("Put mine after a not-Yahoska ask treats the chat as Katy", async () => {
+  const store = memoryStore();
+  store.turns.push({
+    role: "user",
+    content: "Yes for today at 6:40 but not ok Yahoska’s calendar . Put it on mine"
+  });
+  store.turns.push({
+    role: "assistant",
+    content: "I can’t — I don’t have your calendar, only Yahoska’s."
+  });
+  let prompt = "";
+  await handleTelegramChat({
+    store,
+    message: { chatId: 99, senderId: "999", text: "Put mine" },
+    askGrok: async (request) => {
+      prompt = request.systemPrompt;
+      return "On it — adding it to yours.";
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.match(prompt, /This message is from Katy Robles/);
+  assert.match(prompt, /Default calendar is Katy/);
+});
+
 test("second Telegram message includes the first exchange for Grok", async () => {
   const store = memoryStore();
   const grokCalls = [];

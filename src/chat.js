@@ -1,5 +1,5 @@
 import { resolveInboundUserText } from "./inbound-file.js";
-import { systemPromptFor, telegramSpeaker } from "./identity.js";
+import { systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "./identity.js";
 import {
   findLatestMailAlert,
   formatDismissReply,
@@ -71,10 +71,13 @@ export async function handleTelegramChat({
   const rememberedRole = typeof store.getTelegramSpeaker === "function"
     ? await store.getTelegramSpeaker(message.senderId)
     : null;
+  const historyIntent = wantsOwnTeamCalendar(
+    history.map((turn) => turn.content).join("\n")
+  );
   const senderProfile = {
     ...message,
-    rememberedRole,
-    text: message.text
+    rememberedRole: rememberedRole || historyIntent,
+    text: [message.text, ...history.map((turn) => turn.content)].filter(Boolean).join("\n")
   };
   const speaker = telegramSpeaker(environment, message.senderId, senderProfile);
   if (
