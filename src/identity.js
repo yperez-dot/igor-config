@@ -149,7 +149,7 @@ This message is from Carolina Robles. Igor is her assistant. Default calendar is
   }
   return `## Who is in this chat
 This message is from ${speaker.name} (Telegram ${speaker.id}), not Yahoska.
-Default calendar is Yahoska Perez’s. This person may view her availability and book, move, or cancel appointments for her. Confirm the booking with them in this chat. Say “Yahoska is free/busy,” not “you are free.” Pass whose=katy or whose=carolina to use those calendars.`;
+Default calendar is Yahoska Perez’s calendar. This person may view her availability and book, move, or cancel appointments for her. Confirm the booking with them in this chat. Say “Yahoska is free/busy,” not “you are free.” Pass whose=katy or whose=carolina to use those calendars.`;
 }
 
 export function systemPromptFor(environment = process.env, { now = new Date(), senderId, standingMemory } = {}) {
