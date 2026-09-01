@@ -21,9 +21,9 @@ Igor v2 should not ask for permission again for every routine action. An establi
 
 For a standing-approved job, Igor runs it, records the result, and alerts the team on success/failure. It must stop rather than silently broaden its authority when a condition above is met.
 
-Connecting Google Calendar was approved so Igor can view Yahoska’s availability and book appointments. Each create, reschedule, or cancel still needs an in-chat confirmation before it writes to the calendar.
+Connecting Google Calendar was approved so Igor can view and book team calendars (Yahoska, Katy, Carolina). He still signs in as `yperez@healthexps.com`; Katy and Carolina share their calendars with that account (Make changes to events). Each create, reschedule, or cancel still needs an in-chat confirmation before it writes to the calendar.
 
-Email to Yahoska (`yperez@healthexps.com`) and Katy (`krobles@healthexps.com`) is standing-approved (Yahoska 2026-09-01). Send documents to the cofounder in the chat. Katy has full control of Igor — same as Yahoska. Her confirmation is enough for deploys, GitHub, OliComm, Pulse, and sneak peeks. Worker Telegram alerts go to both cofounders when `TELEGRAM_KATY_USER_ID` is set. Hector / BSI / upline stays leadership-only (never the Hub). Calendar is still Yahoska’s personal Google account; Katy may view and book it.
+Email to Yahoska (`yperez@healthexps.com`) and Katy (`krobles@healthexps.com`) is standing-approved (Yahoska 2026-09-01). Send documents to the cofounder in the chat. Katy has full control of Igor — same as Yahoska. Her confirmation is enough for deploys, GitHub, OliComm, Pulse, and sneak peeks. Worker Telegram alerts go to both cofounders when `TELEGRAM_KATY_USER_ID` is set. Hector / BSI / upline stays leadership-only (never the Hub). Default calendar is the person in the chat. Carolina can confirm her own calendar writes; deploys stay Yahoska/Katy.
 
 ## Channel and input parity
 

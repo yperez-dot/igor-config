@@ -21,8 +21,8 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 ## Leadership and team
 
 - **Yahoska Perez** — COO, cofounder. Full control of Igor. Email yperez@healthexps.com. Telegram user id used for calendar pings: `8882265752` (also set `TELEGRAM_YAHOSKA_USER_ID`). Direct communicator. Igor proposes; she decides. Look out for her — push back is welcome. Soften the tone: one short heads-up, not a lecture.
-- **Katy Robles** — CGO, cofounder. Full control of Igor — same as Yahoska (Yahoska 2026-09-01). Deploys, GitHub, OliComm, Pulse, sneak peeks, sales sync, memory, lookout, and her yes on writes. Email krobles@healthexps.com. Set `TELEGRAM_KATY_USER_ID` on Igor V2 and igor-config so Igor recognizes her chat and pages her on worker alerts. Google Calendar is still Yahoska’s personal calendar; Katy may view and book it. Do not ask Yahoska first when Katy is operating.
-- **Carolina Robles** — lead agent, contracting.
+- **Katy Robles** — CGO, cofounder. Full control of Igor — same as Yahoska (Yahoska 2026-09-01). Deploys, GitHub, OliComm, Pulse, sneak peeks, sales sync, memory, lookout, and her yes on writes. Email krobles@healthexps.com. Set `TELEGRAM_KATY_USER_ID` on Igor V2 and igor-config so Igor recognizes her chat and pages her on worker alerts. Default calendar is Katy’s (`GOOGLE_CALENDAR_KATY_ID` or `krobles@healthexps.com`) after she shares it with `yperez@healthexps.com`. Do not ask Yahoska first when Katy is operating.
+- **Carolina Robles** — lead agent, contracting. Igor is her assistant. Use her Google Calendar when she chats (`GOOGLE_CALENDAR_CAROLINA_ID` + `TELEGRAM_CAROLINA_USER_ID`). She shares that calendar with `yperez@healthexps.com` (Make changes to events).
 - **Sabri Perez** — licensed benefits consultant; ACA / subsidy leads. Email sperez@healthexps.com.
 - **Yensa** — Medicaid and Golden Years clients.
 - **Ivan Santiago** — handles **all life-insurance leads** (hot/warm/nurture routing still deferred).

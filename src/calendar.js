@@ -24,19 +24,75 @@ function trim(value) {
   return String(value ?? "").trim();
 }
 
-export function calendarConfig(environment = process.env) {
+export const KATY_CALENDAR_DEFAULT = "krobles@healthexps.com";
+
+export function teamCalendars(environment = process.env) {
+  const carolinaId = trim(environment.GOOGLE_CALENDAR_CAROLINA_ID);
+  return [
+    {
+      role: "yahoska",
+      name: "Yahoska Perez",
+      email: "yperez@healthexps.com",
+      calendarId: trim(environment.GOOGLE_CALENDAR_ID) || DEFAULT_CALENDAR_ID,
+      idEnv: "GOOGLE_CALENDAR_ID",
+      telegramUserId: trim(environment.TELEGRAM_YAHOSKA_USER_ID),
+      ready: true
+    },
+    {
+      role: "katy",
+      name: "Katy Robles",
+      email: "krobles@healthexps.com",
+      calendarId: trim(environment.GOOGLE_CALENDAR_KATY_ID) || KATY_CALENDAR_DEFAULT,
+      idEnv: "GOOGLE_CALENDAR_KATY_ID",
+      telegramUserId: trim(environment.TELEGRAM_KATY_USER_ID),
+      ready: true
+    },
+    {
+      role: "carolina",
+      name: "Carolina Robles",
+      email: carolinaId.includes("@") ? carolinaId : "",
+      calendarId: carolinaId,
+      idEnv: "GOOGLE_CALENDAR_CAROLINA_ID",
+      telegramUserId: trim(environment.TELEGRAM_CAROLINA_USER_ID),
+      ready: Boolean(carolinaId)
+    }
+  ];
+}
+
+export function resolveCalendarRole({ speaker, whose } = {}) {
+  const requested = String(whose ?? "me").trim().toLowerCase();
+  if (requested === "yahoska" || requested === "katy" || requested === "carolina") return requested;
+  if (speaker?.role === "katy" || speaker?.role === "carolina" || speaker?.role === "yahoska") {
+    return speaker.role;
+  }
+  return "yahoska";
+}
+
+export function missingTeamCalendar(config) {
+  if (config?.owner?.ready && config.calendarId) return null;
+  const name = config?.owner?.name || "That teammate";
+  const envName = config?.owner?.idEnv || "GOOGLE_CALENDAR_*_ID";
+  return {
+    error: `${name}’s calendar is not connected. Share that Google Calendar with yperez@healthexps.com (permission: Make changes to events), then set ${envName} on Igor V2 and igor-config to the calendar id (usually their healthexps.com email).`
+  };
+}
+
+export function calendarConfig(environment = process.env, { owner } = {}) {
   const clientId = trim(environment.GOOGLE_CALENDAR_CLIENT_ID);
   const clientSecret = trim(environment.GOOGLE_CALENDAR_CLIENT_SECRET);
   const refreshToken = trim(environment.GOOGLE_CALENDAR_REFRESH_TOKEN);
+  const role = owner || "yahoska";
+  const team = teamCalendars(environment).find((row) => row.role === role) ?? teamCalendars(environment)[0];
   return {
     connected: Boolean(clientId && clientSecret && refreshToken),
     clientId,
     clientSecret,
     refreshToken,
-    calendarId: trim(environment.GOOGLE_CALENDAR_ID) || DEFAULT_CALENDAR_ID,
+    calendarId: team.calendarId || (team.ready ? DEFAULT_CALENDAR_ID : ""),
     timeZone: trim(environment.GOOGLE_CALENDAR_TIMEZONE) || DEFAULT_TIMEZONE,
     workStart: Number(environment.GOOGLE_CALENDAR_WORK_START ?? DEFAULT_WORK_START),
-    workEnd: Number(environment.GOOGLE_CALENDAR_WORK_END ?? DEFAULT_WORK_END)
+    workEnd: Number(environment.GOOGLE_CALENDAR_WORK_END ?? DEFAULT_WORK_END),
+    owner: team
   };
 }
 

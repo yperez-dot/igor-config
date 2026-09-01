@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   calendarConfig,
   freeSlots,
+  missingTeamCalendar,
   parseWhen,
   proposedEvent,
   resetCalendarTokenCache,
+  resolveCalendarRole,
   resolveTransparency,
   toZonedDateTime,
   zonedUtcMs
@@ -51,6 +53,20 @@ test("freeSlots skips weekends, busy time, and the past", () => {
   assert.equal(slots[0].start, "2026-08-26T09:30:00");
   assert.equal(slots.some((slot) => slot.start === "2026-08-26T09:00:00"), false);
   assert.equal(slots.some((slot) => slot.start.startsWith("2026-08-29")), false);
+});
+
+test("team calendars default Katy to her work email and require Carolina’s id", () => {
+  assert.equal(calendarConfig(calendarEnv, { owner: "katy" }).calendarId, "krobles@healthexps.com");
+  assert.equal(calendarConfig({
+    ...calendarEnv,
+    GOOGLE_CALENDAR_KATY_ID: "katy-cal"
+  }, { owner: "katy" }).calendarId, "katy-cal");
+  const carolina = calendarConfig(calendarEnv, { owner: "carolina" });
+  assert.equal(carolina.owner.ready, false);
+  assert.match(missingTeamCalendar(carolina).error, /GOOGLE_CALENDAR_CAROLINA_ID/);
+  assert.equal(resolveCalendarRole({ speaker: { role: "katy" }, whose: "me" }), "katy");
+  assert.equal(resolveCalendarRole({ speaker: { role: "husband" }, whose: "me" }), "yahoska");
+  assert.equal(resolveCalendarRole({ speaker: { role: "katy" }, whose: "carolina" }), "carolina");
 });
 
 test("calendar tools appear only when OAuth secrets are set", () => {
@@ -217,6 +233,135 @@ test("list events uses the Calendar API", async () => {
   }, { environment: calendarEnv, fetchImpl });
   assert.equal(result.events[0].summary, "Carrier call");
   assert.equal(result.events[0].start, "2026-08-26T15:00:00");
+});
+
+test("Katy’s chat reads her calendar, not Yahoska’s primary", async () => {
+  resetCalendarTokenCache();
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    return jsonResponse({ items: [] });
+  };
+  await executeTool("calendar_list_events", {
+    timeMin: "2026-08-26T00:00:00",
+    timeMax: "2026-08-27T00:00:00"
+  }, {
+    environment: {
+      ...calendarEnv,
+      TELEGRAM_KATY_USER_ID: "333"
+    },
+    senderId: "333",
+    fetchImpl
+  });
+  assert.equal(urls.some((url) => url.includes("calendars/krobles%40healthexps.com/events")), true);
+});
+
+test("Carolina’s calendar refuses until GOOGLE_CALENDAR_CAROLINA_ID is set", async () => {
+  const result = await executeTool("calendar_list_events", { whose: "carolina" }, {
+    environment: calendarEnv
+  });
+  assert.match(result.error, /GOOGLE_CALENDAR_CAROLINA_ID/);
+});
+
+test("Yahoska can open Katy’s calendar with whose=katy", async () => {
+  resetCalendarTokenCache();
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    return jsonResponse({ items: [] });
+  };
+  await executeTool("calendar_list_events", {
+    whose: "katy",
+    timeMin: "2026-08-26T00:00:00",
+    timeMax: "2026-08-27T00:00:00"
+  }, {
+    environment: {
+      ...calendarEnv,
+      TELEGRAM_YAHOSKA_USER_ID: "111"
+    },
+    senderId: "111",
+    fetchImpl
+  });
+  assert.equal(urls.some((url) => url.includes("calendars/krobles%40healthexps.com/events")), true);
+});
+
+test("Carolina’s chat uses her calendar id when it is set", async () => {
+  resetCalendarTokenCache();
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(String(url));
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    return jsonResponse({ items: [] });
+  };
+  await executeTool("calendar_list_events", {
+    timeMin: "2026-08-26T00:00:00",
+    timeMax: "2026-08-27T00:00:00"
+  }, {
+    environment: {
+      ...calendarEnv,
+      TELEGRAM_CAROLINA_USER_ID: "444",
+      GOOGLE_CALENDAR_CAROLINA_ID: "carolina@healthexps.com"
+    },
+    senderId: "444",
+    fetchImpl
+  });
+  assert.equal(urls.some((url) => url.includes("calendars/carolina%40healthexps.com/events")), true);
+});
+
+test("booking Katy’s calendar from Yahoska’s chat pings Katy", async () => {
+  resetCalendarTokenCache();
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options?.method ?? "GET", body: options?.body });
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    if (String(url).includes("/freeBusy")) {
+      return jsonResponse({ calendars: { "krobles@healthexps.com": { busy: [] } } });
+    }
+    if (String(url).includes("/events") && options?.method === "POST") {
+      return jsonResponse({
+        id: "evt-katy",
+        summary: "CGO block",
+        start: { dateTime: "2026-08-28T15:00:00-04:00" },
+        end: { dateTime: "2026-08-28T15:30:00-04:00" }
+      });
+    }
+    if (String(url).includes("sendMessage")) {
+      return jsonResponse({});
+    }
+    return jsonResponse({ items: [] });
+  };
+  const result = await executeTool("calendar_create_event", {
+    whose: "katy",
+    summary: "CGO block",
+    start: "2026-08-28T15:00:00",
+    confirmed: true
+  }, {
+    environment: {
+      ...calendarEnv,
+      TELEGRAM_YAHOSKA_USER_ID: "111",
+      TELEGRAM_KATY_USER_ID: "333"
+    },
+    senderId: "111",
+    botToken: "bot",
+    fetchImpl
+  });
+  assert.equal(result.booked, true);
+  assert.equal(result.whose, "katy");
+  assert.equal(result.notified, true);
+  const ping = calls.find((call) => call.url.includes("sendMessage"));
+  assert.equal(Boolean(ping), true);
+  assert.match(String(ping.body), /333/);
+  assert.match(String(ping.body), /CGO block/);
 });
 
 function lookoutOkFetch() {

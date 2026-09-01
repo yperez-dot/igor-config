@@ -16,10 +16,12 @@ test("cofounder Telegram ids are always allowlisted", () => {
   const config = telegramConfig({
     TELEGRAM_ALLOWED_USER_IDS: "111",
     TELEGRAM_YAHOSKA_USER_ID: "111",
-    TELEGRAM_KATY_USER_ID: "333"
+    TELEGRAM_KATY_USER_ID: "333",
+    TELEGRAM_CAROLINA_USER_ID: "444"
   });
   assert.equal(config.allowedUserIds.has("111"), true);
   assert.equal(config.allowedUserIds.has("333"), true);
+  assert.equal(config.allowedUserIds.has("444"), true);
 });
 
 test("only allowlisted text messages are accepted", () => {

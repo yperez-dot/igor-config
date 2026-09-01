@@ -7,7 +7,10 @@ import {
   defaultTimeWindow,
   deleteEvent,
   listEvents,
+  missingTeamCalendar,
   proposedEvent,
+  resolveCalendarRole,
+  teamCalendars,
   updateEvent
 } from "./calendar.js";
 import {
@@ -304,9 +307,10 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("calendar")) {
     tools.push(
-      functionTool("calendar_list_events", "List events on Yahoska Perez’s Google Calendar (Florida / America/New_York). Use this for Yahoska or for her husband/other allowlisted users booking for her.", {
+      functionTool("calendar_list_events", "List events on a team Google Calendar (Florida / America/New_York). Default is the person in this chat: Katy → Katy’s calendar, Carolina → Carolina’s, otherwise Yahoska’s. Husband still uses Yahoska’s. Pass whose to look at someone else.", {
         type: "object",
         properties: {
+          whose: { type: "string", enum: ["me", "yahoska", "katy", "carolina"], description: "Which teammate’s calendar. Default me (the speaker, or Yahoska if unknown)." },
           timeMin: { type: "string", description: "ISO start. Default now." },
           timeMax: { type: "string", description: "ISO end. Default now + 7 days." },
           maxResults: { type: "integer", description: "Default 20." },
@@ -314,16 +318,17 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_availability", "Return busy blocks and open weekday slots on Yahoska Perez’s calendar. Default work hours 9:00–18:00 America/New_York, Monday–Friday. Use this when her husband or anyone allowlisted asks if she is free.", {
+      functionTool("calendar_availability", "Return busy blocks and open weekday slots on a team calendar. Default work hours 9:00–18:00 America/New_York, Monday–Friday. Default calendar is the person in this chat.", {
         type: "object",
         properties: {
+          whose: { type: "string", enum: ["me", "yahoska", "katy", "carolina"], description: "Which teammate’s calendar. Default me." },
           timeMin: { type: "string", description: "ISO start. Default now." },
           timeMax: { type: "string", description: "ISO end. Default now + 7 days." },
           durationMinutes: { type: "integer", description: "Slot length. Default 30." }
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Add an event on Yahoska Perez’s Google Calendar (including when her husband or another allowlisted user is booking for her). Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free. If it is already on the calendar, say so kindly, mention the busy/free catch, and follow her if she still wants it added as free.", {
+      functionTool("calendar_create_event", "Add an event on a team Google Calendar. Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title." },
@@ -341,6 +346,7 @@ export function grokTools(environment = process.env) {
             description: "Invitee emails."
           },
           sendUpdates: { type: "string", enum: ["all", "none"] },
+          whose: { type: "string", enum: ["me", "yahoska", "katy", "carolina"], description: "Which teammate’s calendar. Default me." },
           force: { type: "boolean", description: "Book even if the slot overlaps an existing event. Not needed when free=true." },
           confirmed: { type: "boolean" }
         },
@@ -350,6 +356,7 @@ export function grokTools(environment = process.env) {
       functionTool("calendar_update_event", "Reschedule, retitle, or change free/busy on an existing calendar event. Requires confirmed=true after the user approves. Use free=true / transparency=transparent to mark an event free instead of deleting it.", {
         type: "object",
         properties: {
+          whose: { type: "string", enum: ["me", "yahoska", "katy", "carolina"], description: "Which teammate’s calendar. Default me." },
           eventId: { type: "string" },
           summary: { type: "string" },
           start: { type: "string" },
@@ -370,6 +377,7 @@ export function grokTools(environment = process.env) {
       functionTool("calendar_delete_event", "Cancel an event and notify attendees. Requires confirmed=true after the user approves.", {
         type: "object",
         properties: {
+          whose: { type: "string", enum: ["me", "yahoska", "katy", "carolina"], description: "Which teammate’s calendar. Default me." },
           eventId: { type: "string" },
           sendUpdates: { type: "string", enum: ["all", "none"] },
           confirmed: { type: "boolean" }
@@ -405,8 +413,16 @@ function parseArgs(raw) {
   return JSON.parse(raw);
 }
 
-async function notifyCalendarOwner({ environment, senderId, botToken, fetchImpl, text }) {
-  const ownerId = String(environment.TELEGRAM_YAHOSKA_USER_ID ?? "").trim();
+function calendarRequest({ environment, senderId, whose }) {
+  const speaker = telegramSpeaker(environment, senderId);
+  const owner = resolveCalendarRole({ speaker, whose });
+  const config = calendarConfig(environment, { owner });
+  return { speaker, owner, config, missing: missingTeamCalendar(config) };
+}
+
+async function notifyCalendarOwner({ environment, senderId, ownerRole, botToken, fetchImpl, text }) {
+  const owner = teamCalendars(environment).find((row) => row.role === ownerRole);
+  const ownerId = String(owner?.telegramUserId ?? "").trim();
   if (!ownerId || !botToken || !text) return { notified: false };
   if (String(senderId ?? "").trim() === ownerId) return { notified: false };
   try {
@@ -990,7 +1006,8 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_list_events") {
-      const config = calendarConfig(environment);
+      const { config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      if (missing) return missing;
       const window = defaultTimeWindow(args, config);
       if (window.error) return window;
       return listEvents({
@@ -1004,7 +1021,8 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_availability") {
-      const config = calendarConfig(environment);
+      const { config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      if (missing) return missing;
       const window = defaultTimeWindow(args, config);
       if (window.error) return window;
       return calendarAvailability({
@@ -1017,7 +1035,8 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "calendar_create_event") {
-      const config = calendarConfig(environment);
+      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      if (missing) return missing;
       const proposed = proposedEvent(args, config);
       const conflicts = await conflictsFor({
         config,
@@ -1027,7 +1046,7 @@ export async function executeTool(name, rawArgs, {
       });
       if (conflicts.error) return conflicts;
       if (blocked) {
-        return { ...blocked, proposed, conflicts, timeZone: config.timeZone };
+        return { ...blocked, proposed, conflicts, timeZone: config.timeZone, whose: owner };
       }
       if (conflicts.length && args.force !== true && proposed.transparency !== "transparent") {
         return {
@@ -1039,53 +1058,56 @@ export async function executeTool(name, rawArgs, {
       }
       return createEvent({ config, args, fetchImpl }).then(async (result) => {
         if (!result.booked) return result;
-        const speaker = telegramSpeaker(environment, senderId);
         const notice = await notifyCalendarOwner({
           environment,
           senderId,
+          ownerRole: owner,
           botToken,
           fetchImpl,
           text: calendarNotifyLine("booked", result.event, speaker)
         });
-        return { ...result, ...notice };
+        return { ...result, whose: owner, ...notice };
       });
     }
 
     if (name === "calendar_update_event") {
-      const config = calendarConfig(environment);
+      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      if (missing) return missing;
       const proposed = { eventId: args.eventId, ...proposedEvent(args, config) };
       if (blocked) {
         return { ...blocked, proposed };
       }
       return updateEvent({ config, args, fetchImpl }).then(async (result) => {
         if (!result.updated) return result;
-        const speaker = telegramSpeaker(environment, senderId);
         const notice = await notifyCalendarOwner({
           environment,
           senderId,
+          ownerRole: owner,
           botToken,
           fetchImpl,
           text: calendarNotifyLine("updated", result.event, speaker)
         });
-        return { ...result, ...notice };
+        return { ...result, whose: owner, ...notice };
       });
     }
 
     if (name === "calendar_delete_event") {
+      const { speaker, owner, config, missing } = calendarRequest({ environment, senderId, whose: args.whose });
+      if (missing) return missing;
       if (blocked) {
         return { ...blocked, proposed: { eventId: args.eventId } };
       }
-      return deleteEvent({ config: calendarConfig(environment), args, fetchImpl }).then(async (result) => {
+      return deleteEvent({ config, args, fetchImpl }).then(async (result) => {
         if (!result.cancelled) return result;
-        const speaker = telegramSpeaker(environment, senderId);
         const notice = await notifyCalendarOwner({
           environment,
           senderId,
+          ownerRole: owner,
           botToken,
           fetchImpl,
           text: calendarNotifyLine("cancelled", { summary: args.eventId }, speaker)
         });
-        return { ...result, ...notice };
+        return { ...result, whose: owner, ...notice };
       });
     }
 

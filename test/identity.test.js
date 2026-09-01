@@ -87,7 +87,17 @@ test("system prompt treats Katy as a standing email recipient", () => {
   assert.match(prompt, /full control of Igor/i);
   assert.match(prompt, /same as Yahoska/);
   assert.match(prompt, /Do not ask Yahoska first/);
-  assert.match(prompt, /Yahoska Perez’s calendar|still Yahoska Perez/);
+  assert.match(prompt, /Default calendar is Katy/);
+});
+
+test("system prompt treats Carolina as an assistant with her own calendar", () => {
+  const prompt = systemPromptFor({
+    TELEGRAM_YAHOSKA_USER_ID: "111",
+    TELEGRAM_CAROLINA_USER_ID: "444"
+  }, { senderId: "444" });
+  assert.match(prompt, /This message is from Carolina Robles/);
+  assert.match(prompt, /Default calendar is Carolina/);
+  assert.match(prompt, /do not use Yahoska’s calendar as a stand-in/i);
 });
 
 test("system prompt treats husband as a calendar delegate for Yahoska", () => {
