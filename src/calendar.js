@@ -120,14 +120,21 @@ export function summarizeEvent(event, timeZone = DEFAULT_TIMEZONE) {
   const startMs = eventStartMs(event);
   const endMs = eventEndMs(event);
   const allDay = Boolean(event.start?.date && !event.start?.dateTime);
+  const transparency = event.transparency === "transparent" ? "transparent" : "opaque";
   return {
     id: event.id ?? null,
     summary: event.summary || "(No title)",
-    start: Number.isNaN(startMs) ? event.start?.dateTime || event.start?.date || null : toZonedDateTime(startMs, timeZone),
-    end: Number.isNaN(endMs) ? event.end?.dateTime || event.end?.date || null : toZonedDateTime(endMs, timeZone),
+    start: allDay
+      ? event.start?.date || null
+      : Number.isNaN(startMs) ? event.start?.dateTime || event.start?.date || null : toZonedDateTime(startMs, timeZone),
+    end: allDay
+      ? event.end?.date || null
+      : Number.isNaN(endMs) ? event.end?.dateTime || event.end?.date || null : toZonedDateTime(endMs, timeZone),
     startMs: Number.isNaN(startMs) ? null : startMs,
     endMs: Number.isNaN(endMs) ? null : endMs,
     allDay,
+    transparency,
+    free: transparency === "transparent",
     timeZone,
     location: event.location || null,
     htmlLink: event.htmlLink || null,
@@ -173,6 +180,37 @@ function addLocalDays(year, month, day, days) {
     month: date.getUTCMonth() + 1,
     day: date.getUTCDate()
   };
+}
+
+export function parseDateOnly(value) {
+  const match = String(value ?? "").trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+export function formatDateOnly({ year, month, day }) {
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+function dateFromMs(ms, timeZone) {
+  const part = formatParts(new Date(ms), timeZone);
+  return { year: part.year, month: part.month, day: part.day };
+}
+
+export function resolveAllDay(args = {}) {
+  if (args.allDay === true) return true;
+  if (args.allDay === false) return false;
+  return Boolean(parseDateOnly(args.start));
+}
+
+export function resolveTransparency(args = {}) {
+  const raw = String(args.transparency ?? args.showAs ?? "").trim().toLowerCase();
+  if (["transparent", "free"].includes(raw)) return "transparent";
+  if (["opaque", "busy"].includes(raw)) return "opaque";
+  if (args.free === true || args.showAsFree === true) return "transparent";
+  if (args.free === false || args.showAsFree === false) return "opaque";
+  return "opaque";
 }
 
 export function freeSlots({
@@ -380,43 +418,96 @@ export async function availability({
   };
 }
 
-export function proposedEvent(args, config) {
-  const startMs = parseWhen(args.start, config.timeZone);
-  const durationMinutes = Number(args.durationMinutes ?? 30);
-  const endMs = args.end
-    ? parseWhen(args.end, config.timeZone)
-    : (startMs == null ? null : startMs + durationMinutes * 60 * 1000);
+function proposedAttendees(args) {
   const rawAttendees = Array.isArray(args.attendees)
     ? args.attendees
     : String(args.attendees ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean);
-  const attendees = rawAttendees.map((value) => {
+  return rawAttendees.map((value) => {
     if (typeof value === "string") return value.trim().toLowerCase();
     return String(value?.email ?? "").trim().toLowerCase();
   }).filter(Boolean);
+}
 
-  return {
+export function proposedEvent(args, config) {
+  const attendees = proposedAttendees(args);
+  const transparency = resolveTransparency(args);
+  const allDay = resolveAllDay(args);
+  const base = {
     summary: trim(args.summary) || "THEI appointment",
-    start: startMs == null ? null : toZonedDateTime(startMs, config.timeZone),
-    end: endMs == null ? null : toZonedDateTime(endMs, config.timeZone),
-    startMs,
-    endMs,
     timeZone: trim(args.timeZone) || config.timeZone,
     location: trim(args.location) || null,
     description: trim(args.description) || null,
     attendees,
-    sendUpdates: args.sendUpdates === "none" ? "none" : "all"
+    sendUpdates: args.sendUpdates === "none" ? "none" : "all",
+    allDay,
+    transparency,
+    free: transparency === "transparent"
+  };
+
+  if (allDay) {
+    const startDate = parseDateOnly(args.start)
+      || (parseWhen(args.start, config.timeZone) != null
+        ? dateFromMs(parseWhen(args.start, config.timeZone), config.timeZone)
+        : null);
+    let inclusiveEnd = null;
+    if (args.end) {
+      inclusiveEnd = parseDateOnly(args.end)
+        || (parseWhen(args.end, config.timeZone) != null
+          ? dateFromMs(parseWhen(args.end, config.timeZone), config.timeZone)
+          : null);
+    }
+    if (!inclusiveEnd && startDate) inclusiveEnd = { ...startDate };
+    const exclusiveEnd = inclusiveEnd
+      ? addLocalDays(inclusiveEnd.year, inclusiveEnd.month, inclusiveEnd.day, 1)
+      : null;
+    const startMs = startDate
+      ? zonedUtcMs(startDate.year, startDate.month, startDate.day, 0, 0, config.timeZone)
+      : null;
+    const endMs = exclusiveEnd
+      ? zonedUtcMs(exclusiveEnd.year, exclusiveEnd.month, exclusiveEnd.day, 0, 0, config.timeZone)
+      : null;
+    return {
+      ...base,
+      start: startDate ? formatDateOnly(startDate) : null,
+      end: inclusiveEnd ? formatDateOnly(inclusiveEnd) : null,
+      startDate: startDate ? formatDateOnly(startDate) : null,
+      endDate: exclusiveEnd ? formatDateOnly(exclusiveEnd) : null,
+      endDateInclusive: inclusiveEnd ? formatDateOnly(inclusiveEnd) : null,
+      startMs,
+      endMs
+    };
+  }
+
+  const startMs = parseWhen(args.start, config.timeZone);
+  const durationMinutes = Number(args.durationMinutes ?? 30);
+  const endMs = args.end
+    ? parseWhen(args.end, config.timeZone)
+    : (startMs == null ? null : startMs + durationMinutes * 60 * 1000);
+
+  return {
+    ...base,
+    start: startMs == null ? null : toZonedDateTime(startMs, config.timeZone),
+    end: endMs == null ? null : toZonedDateTime(endMs, config.timeZone),
+    startMs,
+    endMs
   };
 }
 
 function eventBody(proposed) {
   const body = {
     summary: proposed.summary,
-    start: { dateTime: proposed.start, timeZone: proposed.timeZone },
-    end: { dateTime: proposed.end, timeZone: proposed.timeZone }
+    transparency: proposed.transparency || "opaque"
   };
+  if (proposed.allDay) {
+    body.start = { date: proposed.startDate };
+    body.end = { date: proposed.endDate };
+  } else {
+    body.start = { dateTime: proposed.start, timeZone: proposed.timeZone };
+    body.end = { dateTime: proposed.end, timeZone: proposed.timeZone };
+  }
   if (proposed.location) body.location = proposed.location;
   if (proposed.description) body.description = proposed.description;
   if (proposed.attendees.length) body.attendees = proposed.attendees.map((email) => ({ email }));
@@ -426,7 +517,9 @@ function eventBody(proposed) {
 export async function createEvent({ config, args, fetchImpl = fetch }) {
   const proposed = proposedEvent(args, config);
   if (proposed.startMs == null || proposed.endMs == null) {
-    return { error: "start and end (or durationMinutes) are required as ISO datetimes." };
+    return { error: proposed.allDay
+      ? "all-day events need a start date (YYYY-MM-DD). End date is the last inclusive day."
+      : "start and end (or durationMinutes) are required as ISO datetimes." };
   }
   if (proposed.endMs <= proposed.startMs) {
     return { error: "end must be after start." };
@@ -448,11 +541,16 @@ export async function updateEvent({ config, args, fetchImpl = fetch }) {
   const proposed = proposedEvent(args, config);
   const body = {};
   if (trim(args.summary)) body.summary = proposed.summary;
-  if (proposed.startMs != null) body.start = { dateTime: proposed.start, timeZone: proposed.timeZone };
-  if (proposed.endMs != null) body.end = { dateTime: proposed.end, timeZone: proposed.timeZone };
+  if (proposed.allDay && proposed.startDate) body.start = { date: proposed.startDate };
+  else if (!proposed.allDay && proposed.startMs != null) body.start = { dateTime: proposed.start, timeZone: proposed.timeZone };
+  if (proposed.allDay && proposed.endDate) body.end = { date: proposed.endDate };
+  else if (!proposed.allDay && proposed.endMs != null) body.end = { dateTime: proposed.end, timeZone: proposed.timeZone };
   if (args.location !== undefined) body.location = proposed.location;
   if (args.description !== undefined) body.description = proposed.description;
   if (args.attendees !== undefined) body.attendees = proposed.attendees.map((email) => ({ email }));
+  if (args.transparency !== undefined || args.free !== undefined || args.showAs !== undefined || args.showAsFree !== undefined) {
+    body.transparency = proposed.transparency;
+  }
   if (!Object.keys(body).length) return { error: "No event fields to update." };
 
   const updated = await calendarFetch(config, `${calendarPath(config.calendarId)}/events/${encodeURIComponent(eventId)}`, {

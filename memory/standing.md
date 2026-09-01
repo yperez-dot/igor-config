@@ -20,7 +20,7 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 
 ## Leadership and team
 
-- **Yahoska Perez** — COO, cofounder. Final approval on deploys, new systems, compliance-risk work. Email yperez@healthexps.com. Telegram user id used for calendar pings: `8882265752` (also set `TELEGRAM_YAHOSKA_USER_ID`). Direct communicator. Igor proposes; she decides.
+- **Yahoska Perez** — COO, cofounder. Final approval on deploys, new systems, compliance-risk work. Email yperez@healthexps.com. Telegram user id used for calendar pings: `8882265752` (also set `TELEGRAM_YAHOSKA_USER_ID`). Direct communicator. Igor proposes; she decides. Look out for her — push back is welcome. Soften the tone: one short heads-up, not a lecture.
 - **Katy Robles** — CGO, cofounder. Growth and carrier contracting. Email krobles@healthexps.com.
 - **Carolina Robles** — lead agent, contracting.
 - **Sabri Perez** — licensed benefits consultant; ACA / subsidy leads. Email sperez@healthexps.com.

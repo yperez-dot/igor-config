@@ -4,7 +4,9 @@ import {
   calendarConfig,
   freeSlots,
   parseWhen,
+  proposedEvent,
   resetCalendarTokenCache,
+  resolveTransparency,
   toZonedDateTime,
   zonedUtcMs
 } from "../src/calendar.js";
@@ -104,6 +106,73 @@ test("booking requires confirmed=true and then creates the event", async () => {
   assert.equal(booked.booked, true);
   assert.equal(booked.event.id, "evt-1");
   assert.equal(calls.some((call) => call.method === "POST" && call.url.includes("/events")), true);
+});
+
+test("no-school days can be all-day and free", () => {
+  const config = calendarConfig(calendarEnv);
+  const proposed = proposedEvent({
+    summary: "No School, Labor Day",
+    start: "2026-09-07",
+    free: true
+  }, config);
+  assert.equal(proposed.allDay, true);
+  assert.equal(proposed.free, true);
+  assert.equal(proposed.transparency, "transparent");
+  assert.equal(proposed.start, "2026-09-07");
+  assert.equal(proposed.end, "2026-09-07");
+  assert.equal(proposed.endDate, "2026-09-08");
+  assert.equal(resolveTransparency({ transparency: "transparent" }), "transparent");
+  const week = proposedEvent({
+    summary: "Start With Hello Week",
+    start: "2026-09-21",
+    end: "2026-09-25",
+    allDay: true,
+    free: true
+  }, config);
+  assert.equal(week.startDate, "2026-09-21");
+  assert.equal(week.endDate, "2026-09-26");
+  assert.equal(week.endDateInclusive, "2026-09-25");
+});
+
+test("free events skip busy conflicts and POST as transparent", async () => {
+  resetCalendarTokenCache();
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options?.method ?? "GET", body: options?.body });
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    if (String(url).includes("/freeBusy")) {
+      return jsonResponse({
+        calendars: { primary: { busy: [{ start: "2026-09-07T04:00:00.000Z", end: "2026-09-08T04:00:00.000Z" }] } }
+      });
+    }
+    if (String(url).includes("/events") && options?.method === "POST") {
+      return jsonResponse({
+        id: "evt-free",
+        summary: "No School, Labor Day",
+        start: { date: "2026-09-07" },
+        end: { date: "2026-09-08" },
+        transparency: "transparent"
+      });
+    }
+    return jsonResponse({ items: [] });
+  };
+  const result = await executeTool("calendar_create_event", {
+    summary: "No School, Labor Day",
+    start: "2026-09-07",
+    free: true,
+    confirmed: true
+  }, { environment: calendarEnv, fetchImpl });
+  assert.equal(result.booked, true);
+  assert.equal(result.event.free, true);
+  assert.equal(result.event.allDay, true);
+  const create = calls.find((call) => call.method === "POST" && call.url.includes("/events"));
+  assert.equal(Boolean(create), true);
+  const body = JSON.parse(create.body);
+  assert.equal(body.transparency, "transparent");
+  assert.equal(body.start.date, "2026-09-07");
+  assert.equal(body.end.date, "2026-09-08");
 });
 
 test("create refuses overlapping slots unless force=true", async () => {
