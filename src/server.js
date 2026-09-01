@@ -7,6 +7,7 @@ import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
+import { probeTeamCalendarAccess } from "./calendar.js";
 import { INACTIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
@@ -101,13 +102,23 @@ const inlineWorker = String(process.env.IGOR_INLINE_WORKER ?? "true").toLowerCas
   })
   : null;
 
-app.get("/health", (_request, response) => {
+app.get("/health", async (_request, response) => {
+  let teamCalendars = [];
+  try {
+    teamCalendars = await Promise.race([
+      probeTeamCalendarAccess(),
+      new Promise((resolve) => setTimeout(() => resolve([]), 6_000))
+    ]);
+  } catch {
+    teamCalendars = [];
+  }
   response.json({
     status: "ok",
     service: "igor-v2",
     scheduledJobs: scheduledJobs.size,
     telegramConfigured: Boolean(TELEGRAM.botToken && TELEGRAM.webhookSecret && TELEGRAM.allowedUserIds.size),
     ...runtimeIdentity(),
+    teamCalendars,
     systems: connectedSystems().map((system) => ({
       id: system.id,
       connected: system.connected,

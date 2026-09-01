@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
+import { blockYahoskaOnlyRefusal, ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
 
 test("Put it on mine today 6:40 books Katy at 18:40 Florida time", () => {
   const args = ownCalendarBookingArgs({
@@ -20,6 +20,13 @@ test("sanitize strips the old only-Yahoska refusal from history", () => {
   ]);
   assert.match(cleaned[0].content, /do have your calendar/i);
   assert.doesNotMatch(cleaned[0].content, /only have Yahoska/);
+});
+
+test("Katy never sees a Grok only-Yahoska refusal", () => {
+  assert.match(
+    blockYahoskaOnlyRefusal("I can’t put it on yours. I only have Yahoska’s calendar.", { role: "katy" }),
+    /your calendar/
+  );
 });
 
 test("booked reply says it is on theirs", () => {

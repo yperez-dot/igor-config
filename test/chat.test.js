@@ -62,6 +62,26 @@ test("own-calendar wording books Katy without asking Grok", async () => {
   assert.match(sent[0], /your calendar/);
 });
 
+test("Grok refusal is rewritten so Katy never hears only-Yahoska", async () => {
+  const store = memoryStore();
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    message: { chatId: 99, senderId: "999", firstName: "Katy", text: "thanks" },
+    askGrok: async () => "I can’t — I don’t have your calendar, only Yahoska’s.",
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.doesNotMatch(reply, /only Yahoska/);
+  assert.match(reply, /your calendar/);
+  assert.match(sent[0], /your calendar/);
+});
+
 test("Put mine after a not-Yahoska ask treats the chat as Katy", async () => {
   const store = memoryStore();
   store.turns.push({
