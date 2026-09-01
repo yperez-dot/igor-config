@@ -19,6 +19,10 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /memory_remember/);
   assert.match(SYSTEM_PROMPT, /friend robot|You are Igor|Yahoska’s friend/);
   assert.match(SYSTEM_PROMPT, /Warm, professional/);
+  assert.match(SYSTEM_PROMPT, /you are not her parent/);
+  assert.match(SYSTEM_PROMPT, /I’m not adding them|I'm not adding them/);
+  assert.match(SYSTEM_PROMPT, /mark events free/);
+  assert.match(SYSTEM_PROMPT, /She owns her calendar/);
   assert.match(SYSTEM_PROMPT, /Never use markdown/);
   assert.match(SYSTEM_PROMPT, /No \*\*bold/);
   assert.match(SYSTEM_PROMPT, /Plain English first/);

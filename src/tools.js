@@ -318,13 +318,16 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Book an appointment on Yahoska Perez’s Google Calendar (including when her husband or another allowlisted user is booking for her) and send invites. Requires confirmed=true after the person in this chat approves. Pass Florida local time as ISO without Z (interpreted in America/New_York) or a full ISO timestamp.", {
+      functionTool("calendar_create_event", "Add an event on Yahoska Perez’s Google Calendar (including when her husband or another allowlisted user is booking for her). Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free — do not refuse those. If it is already on the calendar, say so kindly and list it; if she still wants it added or marked free, do that.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title." },
-          start: { type: "string", description: "Start datetime." },
-          end: { type: "string", description: "End datetime. Optional if durationMinutes is set." },
-          durationMinutes: { type: "integer", description: "Used when end is omitted. Default 30." },
+          start: { type: "string", description: "Start datetime, or YYYY-MM-DD for an all-day event." },
+          end: { type: "string", description: "End datetime, or last inclusive day for all-day. Optional if durationMinutes or a single all-day date." },
+          durationMinutes: { type: "integer", description: "Used when end is omitted on timed events. Default 30." },
+          allDay: { type: "boolean", description: "All-day event. Date-only start (2026-09-07) also counts as all-day." },
+          transparency: { type: "string", enum: ["transparent", "opaque"], description: "transparent = free (does not block time). opaque = busy. Default opaque." },
+          free: { type: "boolean", description: "Shortcut for transparency=transparent. Use for no-school days and reminders she wants visible but not busy." },
           location: { type: "string" },
           description: { type: "string" },
           attendees: {
@@ -333,13 +336,13 @@ export function grokTools(environment = process.env) {
             description: "Invitee emails."
           },
           sendUpdates: { type: "string", enum: ["all", "none"] },
-          force: { type: "boolean", description: "Book even if the slot overlaps an existing event." },
+          force: { type: "boolean", description: "Book even if the slot overlaps an existing event. Not needed when free=true." },
           confirmed: { type: "boolean" }
         },
         required: ["summary", "start"],
         additionalProperties: false
       }),
-      functionTool("calendar_update_event", "Reschedule or edit an existing calendar event. Requires confirmed=true after the user approves.", {
+      functionTool("calendar_update_event", "Reschedule, retitle, or change free/busy on an existing calendar event. Requires confirmed=true after the user approves. Use free=true / transparency=transparent to mark an event free instead of deleting it.", {
         type: "object",
         properties: {
           eventId: { type: "string" },
@@ -347,6 +350,9 @@ export function grokTools(environment = process.env) {
           start: { type: "string" },
           end: { type: "string" },
           durationMinutes: { type: "integer" },
+          allDay: { type: "boolean" },
+          transparency: { type: "string", enum: ["transparent", "opaque"] },
+          free: { type: "boolean" },
           location: { type: "string" },
           description: { type: "string" },
           attendees: { type: "array", items: { type: "string" } },
@@ -1021,12 +1027,12 @@ export async function executeTool(name, rawArgs, {
       if (blocked) {
         return { ...blocked, proposed, conflicts, timeZone: config.timeZone };
       }
-      if (conflicts.length && args.force !== true) {
+      if (conflicts.length && args.force !== true && proposed.transparency !== "transparent") {
         return {
           error: "time_conflict",
           proposed,
           conflicts,
-          hint: "That slot overlaps an existing event. Offer another time from calendar_availability, or retry with force=true after the user confirms overlaying."
+          hint: "That slot overlaps an existing event. Offer another time from calendar_availability, retry with force=true after the user confirms overlaying, or add it as free (free=true) if they want it visible without blocking time."
         };
       }
       return createEvent({ config, args, fetchImpl }).then(async (result) => {
