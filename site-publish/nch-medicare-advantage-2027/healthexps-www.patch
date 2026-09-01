@@ -1,0 +1,175 @@
+From 6b0b94f23b7b5bc0fce8480c44598033cee6cab5 Mon Sep 17 00:00:00 2001
+From: Cursor Agent <cursoragent@cursor.com>
+Date: Tue, 1 Sep 2026 10:56:09 +0000
+Subject: [PATCH] Publish NCH dropping Cigna and Wellcare MA plans in 2027
+
+Adds the Naples Comprehensive Health network-change article to the EN and ES blogs so Collier County readers can check 2027 directories before AEP.
+---
+ blog/index.html                               |  7 ++-
+ ...-cigna-wellcare-medicare-advantage-2027.md | 44 +++++++++++++++++++
+ es/blog/index.html                            |  6 +++
+ ...-cigna-wellcare-medicare-advantage-2027.md | 44 +++++++++++++++++++
+ sitemap.xml                                   | 10 +++++
+ 5 files changed, 110 insertions(+), 1 deletion(-)
+ create mode 100644 blog/nch-drops-cigna-wellcare-medicare-advantage-2027.md
+ create mode 100644 es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027.md
+
+diff --git a/blog/index.html b/blog/index.html
+index 721cac9..2ccc749 100644
+--- a/blog/index.html
++++ b/blog/index.html
+@@ -302,7 +302,12 @@ body{font-family:Arial,Helvetica,sans-serif;background:var(--white);line-height:
+ <div class="container">
+ <div class="card-grid" id="blogGrid">
+ 
+-<a class="blog-card" data-category="Private Insurance" href="/blog/private-health-insurance-miami-guide/">
++<a class="blog-card" data-category="Medicare" href="/blog/nch-drops-cigna-wellcare-medicare-advantage-2027/">
++<div class="card-category">Medicare</div>
++<h2 class="card-title">Naples Hospital Drops Two Medicare Advantage Contracts in 2027</h2>
++<p class="card-excerpt">NCH will stop accepting Cigna and Wellcare Medicare Advantage on Jan. 1, 2027. Check your 2027 hospital network before AEP. Licensed agents — we don't pick the plan.</p>
++<div class="card-footer"><span class="card-date">2026-09-01</span><span class="card-read">Read →</span></div>
++</a><a class="blog-card" data-category="Private Insurance" href="/blog/private-health-insurance-miami-guide/">
+ <div class="card-category">Private Insurance</div>
+ <h2 class="card-title">Private Health Insurance in Miami: The Non-ACA Option Explained</h2>
+ <p class="card-excerpt">Not on an ACA plan? Private off-exchange health insurance in Miami may offer more flexibility, wider networks, and lower costs for self-employed Floridians.</p>
+diff --git a/blog/nch-drops-cigna-wellcare-medicare-advantage-2027.md b/blog/nch-drops-cigna-wellcare-medicare-advantage-2027.md
+new file mode 100644
+index 0000000..1666f1b
+--- /dev/null
++++ b/blog/nch-drops-cigna-wellcare-medicare-advantage-2027.md
+@@ -0,0 +1,44 @@
++---
++layout: layouts/blog-post.njk
++category: "Medicare"
++title: "NCH Drops Cigna and Wellcare Medicare Advantage in 2027"
++description: "NCH will drop Cigna and Wellcare Medicare Advantage on Jan. 1, 2027. Check your 2027 network before AEP. Licensed Florida agents — we don't pick the plan."
++date: 2026-09-01T12:00:00.000Z
++lang: en
++hreflang_es: /es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027/
++permalink: /blog/nch-drops-cigna-wellcare-medicare-advantage-2027/
++---
++
++# Naples hospital will drop two Medicare Advantage contracts in 2027
++
++Naples Comprehensive Health told patients on August 26, 2026 that starting January 1, 2027, it will no longer accept Cigna Medicare Advantage plans or Wellcare Medicare Advantage plans.
++
++NCH said people who use that hospital can still get care through Original Medicare, a Medicare Supplement (Medigap) policy, or a Medicare Advantage plan that stays in-network with NCH. Which of those fits someone is a personal decision. A licensed agent has to walk that with the client. We do not pick the plan.
++
++## Why Annual Enrollment Period exists
++
++This is exactly why [Annual Enrollment Period](/medicare-annual-enrollment-2027) exists. AEP runs October 15 through December 7, 2026 — and this year it matters more than most. Even if nothing else about your plan changed, a network change like this one can mean your hospital or doctor is suddenly out of network on January 1. The only way to know is to check now, before AEP, so you're not caught off guard when it opens.
++
++This is a local network change, not a new CMS enrollment rule — but it's a reminder that plans change every year, whether or not you hear about it directly. AEP is your window to review, compare, and switch if you need to.
++
++<div class="inline-cta">
++  <div class="inline-cta-text">
++    <strong>Use NCH and not sure about 2027?</strong>
++    <span>A licensed Florida agent can walk the 2027 directories with you. We do not pick the plan.</span>
++  </div>
++  <a href="/contact" class="inline-cta-btn">Talk to a licensed agent →</a>
++</div>
++
++## If you or someone you help uses NCH
++
++Check whether your 2027 plan still includes that hospital and your doctors. Confirm it in the 2027 provider directory when it's posted — not last year's list. NCH is posting 2027 in-network Medicare Advantage information at [nchmd.org/MAUpdate](https://nchmd.org/MAUpdate).
++
++If you're comparing paths, start with how [Medicare Advantage](/medicare-advantage-miami) and [Medicare Supplement](/medicare-supplement-miami) treat hospital networks differently. Then check the actual 2027 list for NCH — not a 2026 card, not a memory of last year's doctors.
++
++*Source: [Gulf Coast News](https://www.gulfcoastnewsnow.com/article/nch-cigna-wellcare-medicare-advantage-plan-florida/73536502) / NCH, August 26, 2026.*
++
++<div class="bottom-cta">
++  <h3>Have a Medicare network question?</h3>
++  <p>Our licensed bilingual brokers in Florida compare 14+ carriers at no cost — in English and Spanish. We do not pick the plan.</p>
++  <a href="/contact" class="bottom-cta-btn">Get free licensed help →</a>
++</div>
+diff --git a/es/blog/index.html b/es/blog/index.html
+index 0b42cbd..edc6287 100644
+--- a/es/blog/index.html
++++ b/es/blog/index.html
+@@ -190,6 +190,12 @@ body{font-family:Arial,Helvetica,sans-serif;background:var(--white);line-height:
+ <div class="container">
+   <div class="card-grid" id="blogGrid">
+ 
++    <a href="/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027/" class="blog-card" data-category="Medicare">
++      <div class="card-category">Medicare</div>
++      <h2 class="card-title">Hospital de Naples deja dos contratos Medicare Advantage en 2027</h2>
++      <p class="card-excerpt">NCH dejará de aceptar Cigna y Wellcare Medicare Advantage el 1 de enero de 2027. Revise su red 2027 antes del AEP. Agentes licenciados — no elegimos el plan.</p>
++      <div class="card-footer"><span class="card-date">2026-09-01</span><span class="card-read">Leer →</span></div>
++    </a>
+         <a href="/es/blog/alternativas-cobra-miami-ahorra-dinero/" class="blog-card" data-category="COBRA">
+       <div class="card-category">COBRA</div>
+       <h2 class="card-title">Alternativas al COBRA en Miami: Cómo Ahorrar $600+ al Mes</h2>
+diff --git a/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027.md b/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027.md
+new file mode 100644
+index 0000000..fc1e120
+--- /dev/null
++++ b/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027.md
+@@ -0,0 +1,44 @@
++---
++layout: layouts/blog-post-es.njk
++category: "Medicare"
++title: "NCH deja Cigna y Wellcare Medicare Advantage en 2027"
++description: "NCH dejará de aceptar Cigna y Wellcare Medicare Advantage el 1 de enero de 2027. Revise su red 2027 antes del AEP. Agentes licenciados — no elegimos el plan."
++date: 2026-09-01T12:00:00.000Z
++lang: es
++permalink: /es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027/
++hreflang_en: nch-drops-cigna-wellcare-medicare-advantage-2027
++---
++
++# Hospital de Naples dejará dos contratos Medicare Advantage en 2027
++
++Naples Comprehensive Health les dijo a los pacientes el 26 de agosto de 2026 que, a partir del 1 de enero de 2027, ya no aceptará planes Cigna Medicare Advantage ni planes Wellcare Medicare Advantage.
++
++NCH dijo que las personas que usan ese hospital todavía pueden recibir atención a través de Medicare Original, una póliza Medicare Supplement (Medigap) o un plan Medicare Advantage que siga en la red de NCH. Cuál de esas opciones le conviene a alguien es una decisión personal. Un agente licenciado tiene que recorrer eso con el cliente. Nosotros no elegimos el plan.
++
++## Para eso existe el Período de Inscripción Anual
++
++Esto es exactamente por qué existe el [Período de Inscripción Anual](/es/inscripcion-anual-medicare-2027). El AEP corre del 15 de octubre al 7 de diciembre de 2026 — y este año importa más que la mayoría. Aunque nada más de su plan haya cambiado, un cambio de red como este puede dejar su hospital o su médico fuera de red el 1 de enero. La única forma de saberlo es revisar ahora, antes del AEP, para no llevarse la sorpresa cuando abra.
++
++Esto es un cambio de red local, no una regla nueva de inscripción de CMS — pero es un recordatorio de que los planes cambian cada año, se entere usted o no de forma directa. El AEP es su ventana para revisar, comparar y cambiar si lo necesita.
++
++<div class="inline-cta">
++  <div class="inline-cta-text">
++    <strong>¿Usa NCH y no está seguro de 2027?</strong>
++    <span>Un agente licenciado en Florida puede revisar los directorios 2027 con usted. No elegimos el plan.</span>
++  </div>
++  <a href="/es/contacto" class="inline-cta-btn">Hablar con un agente →</a>
++</div>
++
++## Si usted o alguien a quien ayuda usa NCH
++
++Revise si su plan 2027 todavía incluye ese hospital y sus médicos. Confírmelo en el directorio de proveedores 2027 cuando se publique — no en la lista del año pasado. NCH está publicando información de Medicare Advantage en red para 2027 en [nchmd.org/MAUpdate](https://nchmd.org/MAUpdate).
++
++Si está comparando caminos, empiece por cómo [Medicare Advantage](/es/medicare-advantage-miami) y [Medicare Suplementario](/es/medicare-suplementario-miami) tratan de forma distinta las redes hospitalarias. Después revise la lista real de 2027 para NCH — no una tarjeta de 2026, ni el recuerdo de los médicos del año pasado.
++
++*Fuente: [Gulf Coast News](https://www.gulfcoastnewsnow.com/article/nch-cigna-wellcare-medicare-advantage-plan-florida/73536502) / NCH, 26 de agosto de 2026.*
++
++<div class="bottom-cta">
++  <h3>¿Tiene una pregunta sobre su red de Medicare?</h3>
++  <p>Nuestros corredores bilingües licenciados en Florida comparan 14+ aseguradoras sin costo — en inglés y en español. No elegimos el plan.</p>
++  <a href="/es/contacto" class="bottom-cta-btn">Obtener ayuda gratis →</a>
++</div>
+diff --git a/sitemap.xml b/sitemap.xml
+index 938f236..d619675 100644
+--- a/sitemap.xml
++++ b/sitemap.xml
+@@ -767,6 +767,16 @@
+   <xhtml:link rel="alternate" hreflang="en" href="https://www.healthexps.com/life-insurance-calculator"/>
+ </url>
+ 
++<!-- NCH Medicare Advantage network change — published 2026-09-01 -->
++<url><loc>https://www.healthexps.com/blog/nch-drops-cigna-wellcare-medicare-advantage-2027/</loc><lastmod>2026-09-01</lastmod><changefreq>monthly</changefreq><priority>0.7</priority>
++  <xhtml:link rel="alternate" hreflang="en" href="https://www.healthexps.com/blog/nch-drops-cigna-wellcare-medicare-advantage-2027/"/>
++  <xhtml:link rel="alternate" hreflang="es" href="https://www.healthexps.com/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027/"/>
++</url>
++<url><loc>https://www.healthexps.com/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027/</loc><lastmod>2026-09-01</lastmod><changefreq>monthly</changefreq><priority>0.7</priority>
++  <xhtml:link rel="alternate" hreflang="es" href="https://www.healthexps.com/es/blog/nch-deja-cigna-wellcare-medicare-advantage-2027/"/>
++  <xhtml:link rel="alternate" hreflang="en" href="https://www.healthexps.com/blog/nch-drops-cigna-wellcare-medicare-advantage-2027/"/>
++</url>
++
+ <!-- Posts added after the last sitemap pass -->
+ <url><loc>https://www.healthexps.com/blog/medicare-green-card-holders-florida/</loc><lastmod>2026-08-26</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+ <url><loc>https://www.healthexps.com/blog/what-is-life-insurance-florida/</loc><lastmod>2026-08-26</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+-- 
+2.43.0
+
