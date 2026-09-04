@@ -4,7 +4,9 @@ import {
   facebookTokenDead,
   formatLookoutAlert,
   formatRecoveryAlert,
+  holdLookoutFingerprint,
   lookoutFingerprint,
+  lookoutHasTimeout,
   runLookout,
   runSiteLookout,
   shouldNotifyLookout,
@@ -204,6 +206,15 @@ test("Facebook ads timeout is a blip, not a Telegram finding", async () => {
   assert.equal(result.alert, null);
   assert.equal(result.findings.length, 0);
   assert.equal(result.probes.find((item) => item.id === "facebook")?.status, "timeout");
+  assert.equal(lookoutHasTimeout(result.probes), true);
+  assert.equal(
+    holdLookoutFingerprint({
+      fingerprint: result.fingerprint,
+      probes: result.probes,
+      lastFingerprint: "facebook:token_dead"
+    }),
+    "facebook:token_dead"
+  );
 });
 
 test("lookout can include Pulse send-path blockers without treating them as site downtime", async () => {

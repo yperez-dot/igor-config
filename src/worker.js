@@ -1,7 +1,7 @@
 import { createStore } from "./store.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
-import { pulseBootCatchupMessage, queueMissedAgentPulse } from "./pulse-catchup.js";
+import { pulseBootCatchupFailureMessage, pulseBootCatchupMessage, queueMissedAgentPulse } from "./pulse-catchup.js";
 import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
 import http from "node:http";
 
@@ -40,8 +40,12 @@ if (!pulse.ready) {
     const catchup = await queueMissedAgentPulse({ store, environment: process.env });
     const message = pulseBootCatchupMessage(catchup);
     if (message) await notify(message);
-  } catch {
-    // Boot must continue even if the catch-up queue fails.
+  } catch (error) {
+    try {
+      await notify(pulseBootCatchupFailureMessage(error));
+    } catch {
+      // Boot must continue even if Telegram is down.
+    }
   }
 }
 let running = true;

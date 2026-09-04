@@ -1,7 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { calendarConfig, listUpcomingEvents } from "./calendar.js";
 import { scanAllAccounts } from "./imap-accounts.js";
-import { formatLookoutAlert, runLookout, shouldNotifyLookout } from "./lookout.js";
+import { formatLookoutAlert, holdLookoutFingerprint, lookoutHasTimeout, runLookout, shouldNotifyLookout } from "./lookout.js";
 import { filterMailFindings, isMailNoise, mailFingerprint, unseenMailFindings } from "./mail-alerts.js";
 
 const CARRIER_HINTS = [
@@ -197,12 +197,23 @@ export async function runHeartbeat({
   }
 
   const lookout = await runLookout({ environment, fetchImpl, includeSites: false, includePulse: true });
-  const recovered = Boolean(lastFingerprint && lastFingerprint !== "clear" && lookout.fingerprint === "clear");
+  const timedOut = lookoutHasTimeout(lookout.probes);
+  const fingerprint = holdLookoutFingerprint({
+    fingerprint: lookout.fingerprint,
+    probes: lookout.probes,
+    lastFingerprint
+  });
+  const recovered = Boolean(
+    lastFingerprint
+    && lastFingerprint !== "clear"
+    && lookout.fingerprint === "clear"
+    && !timedOut
+  );
   const lookoutAlert = recovered
     ? formatLookoutAlert([], { recovered: true, lastFingerprint })
     : lookout.alert;
   const lookoutShouldNotify = shouldNotifyLookout({
-    fingerprint: lookout.fingerprint,
+    fingerprint,
     lastFingerprint,
     lastAlertAt,
     now,
@@ -215,7 +226,7 @@ export async function runHeartbeat({
       status: "skipped",
       reason: "quiet_hours",
       shouldNotify: false,
-      fingerprint: lookout.fingerprint,
+      fingerprint,
       lookout
     };
   }
@@ -263,7 +274,7 @@ export async function runHeartbeat({
     findingCount: findings.length,
     findings: findings.slice(0, 5),
     lookout,
-    fingerprint: lookout.fingerprint,
+    fingerprint,
     mailFingerprint: currentMailFingerprint,
     shouldNotify: false,
     upcomingCalendar: upcomingCalendar.slice(0, 8).map((event) => ({
