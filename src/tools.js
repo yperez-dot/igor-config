@@ -342,7 +342,7 @@ export function grokTools(environment = process.env) {
           byDay: {
             type: "array",
             items: { type: "string", enum: ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] },
-            description: "Weekdays for a repeating event. Monday school pickup is [MO]. Weekdays are [MO,TU,WE,TH,FR]."
+            description: "Weekdays for a repeating event. Olivia’s school pickup is [TU,TH,FR]. Weekdays are [MO,TU,WE,TH,FR]."
           },
           freq: { type: "string", enum: ["WEEKLY"], description: "Repeat frequency. Default WEEKLY when until is set." },
           rrule: { type: "string", description: "Raw RRULE if until/byDay are not enough." },
