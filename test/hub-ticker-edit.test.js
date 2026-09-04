@@ -45,19 +45,21 @@ test("ticker edit reply names removed items and the new speed", () => {
   assert.match(hubTickerEditReply({ status: "skipped", error: "GITHUB_TOKEN is missing on Igor V2." }), /GITHUB_TOKEN/);
 });
 
-test("only Yahoska and Katy can edit the Hub ticker", () => {
-  assert.equal(canEditHubTicker({ role: "yahoska", canOperate: true }), true);
-  assert.equal(canEditHubTicker({ role: "katy", canOperate: true }), true);
-  assert.equal(canEditHubTicker({ role: "carolina", canOperate: false }), false);
-  assert.equal(canEditHubTicker({ role: "husband", canOperate: false }), false);
-  assert.equal(canEditHubTicker({ role: "allowlisted", canOperate: false }), false);
+test("only pinned Yahoska and Katy Telegram ids can edit the Hub ticker", () => {
+  const env = { TELEGRAM_YAHOSKA_USER_ID: "888", TELEGRAM_KATY_USER_ID: "777" };
+  assert.equal(canEditHubTicker("888", env), true);
+  assert.equal(canEditHubTicker("777", env), true);
+  assert.equal(canEditHubTicker("888", {}), false);
+  assert.equal(canEditHubTicker("999", env), false);
+  assert.equal(canEditHubTicker("", env), false);
 });
 
 test("Yahoska ticker wording calls update_hub_ticker and skips Grok", async () => {
   const calls = [];
   const result = await editHubTickerIfRequested({
     text: "slow down the speed of the ticker",
-    speaker: { role: "yahoska" },
+    speaker: { role: "yahoska", id: "888" },
+    toolContext: { senderId: "888", environment: { TELEGRAM_YAHOSKA_USER_ID: "888" } },
     executeTool: async (name, args) => {
       calls.push({ name, args });
       return { status: "published", removed: ["Kayla Robles's Zoom Meeting"], tickerSeconds: 240 };
@@ -70,16 +72,17 @@ test("Yahoska ticker wording calls update_hub_ticker and skips Grok", async () =
   assert.match(result.reply, /Kayla/);
 });
 
-test("husband and Carolina ticker wording do not write the Hub", async () => {
-  for (const speaker of [
-    { role: "husband", canOperate: false },
-    { role: "carolina", canOperate: false },
-    { role: "allowlisted", canOperate: false }
-  ]) {
+test("inferred Yahoska/Katy names do not write the Hub", async () => {
+  const cases = [
+    { speaker: { role: "yahoska", canOperate: true, id: "999" }, toolContext: { senderId: "999", environment: { TELEGRAM_YAHOSKA_USER_ID: "888" } } },
+    { speaker: { role: "katy", canOperate: true, id: "999" }, toolContext: { senderId: "999", environment: {} } },
+    { speaker: { role: "husband", canOperate: false, id: "111" }, toolContext: { senderId: "111", environment: { TELEGRAM_YAHOSKA_USER_ID: "888", TELEGRAM_HUSBAND_USER_ID: "111" } } }
+  ];
+  for (const ctx of cases) {
     const calls = [];
     const result = await editHubTickerIfRequested({
       text: "slow down the speed of the ticker",
-      speaker,
+      ...ctx,
       executeTool: async (name, args) => {
         calls.push({ name, args });
         return { status: "published", tickerSeconds: 240 };

@@ -1,5 +1,9 @@
-export function canEditHubTicker(speaker) {
-  return speaker?.canOperate === true || speaker?.role === "yahoska" || speaker?.role === "katy";
+export function canEditHubTicker(senderId, environment = {}) {
+  const id = String(senderId ?? "").trim();
+  if (!id) return false;
+  const yahoska = String(environment.TELEGRAM_YAHOSKA_USER_ID ?? "").trim();
+  const katy = String(environment.TELEGRAM_KATY_USER_ID ?? "").trim();
+  return (Boolean(yahoska) && id === yahoska) || (Boolean(katy) && id === katy);
 }
 
 export function hubTickerForbiddenResult() {
@@ -58,7 +62,8 @@ export async function editHubTickerIfRequested({
 }) {
   if (typeof executeTool !== "function") return null;
   if (!wantsHubTickerEdit(text)) return null;
-  if (!canEditHubTicker(speaker)) {
+  const senderId = toolContext?.senderId ?? speaker?.id;
+  if (!canEditHubTicker(senderId, toolContext?.environment ?? {})) {
     const result = hubTickerForbiddenResult();
     return { args: null, result, reply: hubTickerEditReply(result) };
   }

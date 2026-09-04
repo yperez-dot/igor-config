@@ -48,6 +48,14 @@ test("update_hub_ticker refuses husband, Carolina, and unsigned callers", async 
     environment: { GITHUB_TOKEN: "gh" }
   });
   assert.equal(nobody.status, "skipped");
+
+  const inferred = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: { GITHUB_TOKEN: "gh" },
+    senderId: "999",
+    senderProfile: { firstName: "Katy", text: "This is Yahoska" }
+  });
+  assert.equal(inferred.status, "skipped");
+  assert.match(inferred.error, /Yahoska or Katy/);
 });
 
 test("sheets is connected via the approved public CSV without SALES_SHEET_CSV_URL", () => {

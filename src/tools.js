@@ -1027,8 +1027,7 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "update_hub_ticker") {
-      const speaker = telegramSpeaker(environment, senderId, senderProfile);
-      if (!canEditHubTicker(speaker)) return hubTickerForbiddenResult();
+      if (!canEditHubTicker(senderId, environment)) return hubTickerForbiddenResult();
       return editHubTicker({
         environment,
         remove: args.remove,
