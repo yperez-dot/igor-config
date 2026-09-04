@@ -172,6 +172,63 @@ function eventEndMs(event) {
   return NaN;
 }
 
+const WEEKDAY_CODE = { Sun: "SU", Mon: "MO", Tue: "TU", Wed: "WE", Thu: "TH", Fri: "FR", Sat: "SA" };
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+export function schoolYearUntilJune(now = new Date(), timeZone = DEFAULT_TIMEZONE) {
+  const isoDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(now);
+  const year = Number(isoDate.slice(0, 4));
+  const month = Number(isoDate.slice(5, 7));
+  return `${month >= 7 ? year + 1 : year}-06-30`;
+}
+
+export function buildRrule({ freq = "WEEKLY", byDay = ["MO"], until } = {}) {
+  const days = (Array.isArray(byDay) ? byDay : String(byDay ?? "").split(","))
+    .map((day) => String(day).trim().toUpperCase())
+    .filter((day) => ["SU", "MO", "TU", "WE", "TH", "FR", "SA"].includes(day));
+  if (!days.length) return null;
+  const untilDate = parseDateOnly(until);
+  if (!untilDate) return null;
+  return `RRULE:FREQ=${String(freq || "WEEKLY").toUpperCase()};BYDAY=${days.join(",")};UNTIL=${untilDate.year}${pad2(untilDate.month)}${pad2(untilDate.day)}T235959Z`;
+}
+
+export function resolveRecurrence(args = {}) {
+  const explicit = String(args.rrule ?? "").trim();
+  if (explicit.startsWith("RRULE:")) return [explicit];
+  const until = trim(args.until);
+  const byDay = args.byDay ?? args.days;
+  if (!until) return null;
+  const rrule = buildRrule({
+    freq: args.freq || args.recurrence || "WEEKLY",
+    byDay: byDay || ["MO"],
+    until
+  });
+  return rrule ? [rrule] : null;
+}
+
+export function nextOccurrence(now, timeZone, { byDay = ["MO"], hour = 17, minute = 0 } = {}) {
+  const wanted = new Set((Array.isArray(byDay) ? byDay : [byDay]).map((day) => String(day).toUpperCase()));
+  const start = formatParts(now, timeZone);
+  let cursor = { year: start.year, month: start.month, day: start.day };
+  for (let i = 0; i < 8; i += 1) {
+    const ms = zonedUtcMs(cursor.year, cursor.month, cursor.day, hour, minute, timeZone);
+    const shown = formatParts(new Date(ms), timeZone);
+    if (wanted.has(WEEKDAY_CODE[shown.weekday]) && ms >= now.getTime() - 60_000) {
+      return toZonedDateTime(ms, timeZone);
+    }
+    cursor = addLocalDays(cursor.year, cursor.month, cursor.day, 1);
+  }
+  return null;
+}
+
 export function summarizeEvent(event, timeZone = DEFAULT_TIMEZONE) {
   const startMs = eventStartMs(event);
   const endMs = eventEndMs(event);
@@ -180,6 +237,7 @@ export function summarizeEvent(event, timeZone = DEFAULT_TIMEZONE) {
   return {
     id: event.id ?? null,
     summary: event.summary || "(No title)",
+    recurrence: event.recurrence ?? null,
     start: allDay
       ? event.start?.date || null
       : Number.isNaN(startMs) ? event.start?.dateTime || event.start?.date || null : toZonedDateTime(startMs, timeZone),
@@ -228,7 +286,7 @@ function isFree(start, end, busy) {
   return !busy.some((range) => start < range.end && end > range.start);
 }
 
-function addLocalDays(year, month, day, days) {
+export function addLocalDays(year, month, day, days) {
   const utc = Date.UTC(year, month - 1, day + days);
   const date = new Date(utc);
   return {
@@ -519,6 +577,7 @@ export function proposedEvent(args, config) {
   const attendees = proposedAttendees(args);
   const transparency = resolveTransparency(args);
   const allDay = resolveAllDay(args);
+  const recurrence = resolveRecurrence(args);
   const base = {
     summary: trim(args.summary) || "THEI appointment",
     timeZone: trim(args.timeZone) || config.timeZone,
@@ -528,7 +587,8 @@ export function proposedEvent(args, config) {
     sendUpdates: args.sendUpdates === "none" ? "none" : "all",
     allDay,
     transparency,
-    free: transparency === "transparent"
+    free: transparency === "transparent",
+    recurrence
   };
 
   if (allDay) {
@@ -595,6 +655,7 @@ function eventBody(proposed) {
   if (proposed.location) body.location = proposed.location;
   if (proposed.description) body.description = proposed.description;
   if (proposed.attendees.length) body.attendees = proposed.attendees.map((email) => ({ email }));
+  if (proposed.recurrence?.length) body.recurrence = proposed.recurrence;
   return body;
 }
 

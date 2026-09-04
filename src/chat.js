@@ -9,6 +9,7 @@ import {
   suppressionPatternsFrom
 } from "./mail-alerts.js";
 import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
+import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { downloadTelegramFile } from "./telegram.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
@@ -140,19 +141,44 @@ export async function handleTelegramChat({
     return reply;
   }
 
+  const calendarContext = {
+    environment,
+    chatId: message.chatId,
+    botToken,
+    senderId: message.senderId,
+    senderProfile,
+    store
+  };
+  const schoolPickup = await bookSchoolPickupIfRequested({
+    text: message.text,
+    history,
+    speaker,
+    executeTool,
+    toolContext: calendarContext
+  });
+  if (schoolPickup) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: schoolPickup.reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: schoolPickup.reply
+    });
+    return schoolPickup.reply;
+  }
   const ownBooking = await bookOwnCalendarIfRequested({
     text: message.text,
     history,
     speaker,
     executeTool,
-    toolContext: {
-      environment,
-      chatId: message.chatId,
-      botToken,
-      senderId: message.senderId,
-      senderProfile,
-      store
-    }
+    toolContext: calendarContext
   });
   if (ownBooking) {
     await sendTelegramMessage({ botToken, chatId: message.chatId, text: ownBooking.reply });

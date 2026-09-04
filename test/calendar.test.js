@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildRrule,
   calendarConfig,
   freeSlots,
   missingTeamCalendar,
@@ -75,6 +76,47 @@ test("calendar tools appear only when OAuth secrets are set", () => {
   assert.equal(names(calendarEnv).includes("calendar_create_event"), true);
   assert.equal(calendarConfig({}).connected, false);
   assert.equal(calendarConfig(calendarEnv).connected, true);
+});
+
+test("weekly school pickup POSTs an RRULE on create", async () => {
+  resetCalendarTokenCache();
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options?.method ?? "GET", body: options?.body });
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    if (String(url).includes("/freeBusy")) {
+      return jsonResponse({ calendars: { primary: { busy: [] } } });
+    }
+    if (String(url).includes("/events") && options?.method === "POST") {
+      return jsonResponse({
+        id: "evt-pickup",
+        summary: "School pickup",
+        start: { dateTime: "2026-09-07T17:00:00-04:00" },
+        end: { dateTime: "2026-09-07T17:30:00-04:00" },
+        recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270630T235959Z"]
+      });
+    }
+    return jsonResponse({ items: [] });
+  };
+  const booked = await executeTool("calendar_create_event", {
+    summary: "School pickup",
+    start: "2026-09-07T17:00:00",
+    durationMinutes: 30,
+    until: "2027-06-30",
+    byDay: ["MO"],
+    whose: "yahoska",
+    confirmed: true,
+    force: true
+  }, { environment: calendarEnv, fetchImpl });
+  assert.equal(booked.booked, true);
+  assert.deepEqual(booked.event.recurrence, ["RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270630T235959Z"]);
+  const create = calls.find((call) => call.method === "POST" && call.url.includes("/events"));
+  assert.deepEqual(JSON.parse(create.body).recurrence, [
+    "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270630T235959Z"
+  ]);
+  assert.equal(buildRrule({ byDay: ["MO"], until: "2027-06-30" }), "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270630T235959Z");
 });
 
 test("booking requires confirmed=true and then creates the event", async () => {

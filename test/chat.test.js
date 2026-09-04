@@ -82,6 +82,39 @@ test("Grok refusal is rewritten so Katy never hears only-Yahoska", async () => {
   assert.match(sent[0], /your calendar/);
 });
 
+test("Yahoska school pickup until June books her calendar, not Katy’s", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "Yes go ahead and add for the school pick up add all the way til June"
+    },
+    askGrok: async () => "should not run",
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { booked: true, event: { summary: "School pickup" } };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(toolCalls[0].name, "calendar_create_event");
+  assert.equal(toolCalls[0].args.whose, "yahoska");
+  assert.equal(toolCalls[0].args.summary, "School pickup");
+  assert.match(reply, /School pickup is on your calendar/);
+  assert.doesNotMatch(reply, /Not Yahoska/);
+  assert.deepEqual(sent, [reply]);
+});
+
 test("Yahoska correcting the calendar loop reaches Grok instead of repeating Not Yahoska’s", async () => {
   const store = memoryStore();
   store.getTelegramSpeaker = async () => "katy";

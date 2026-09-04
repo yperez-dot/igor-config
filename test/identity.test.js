@@ -130,6 +130,7 @@ test("Yahoska’s Telegram id wins even if history said Not Yahoska’s", () => 
   assert.match(prompt, /This message is from Yahoska Perez/);
   assert.match(prompt, /Never say “Not Yahoska’s/);
   assert.match(SYSTEM_PROMPT, /her calendar IS Yahoska/);
+  assert.match(SYSTEM_PROMPT, /School pickup through June/);
 });
 
 test("Telegram first name identifies Katy without TELEGRAM_KATY_USER_ID", () => {
