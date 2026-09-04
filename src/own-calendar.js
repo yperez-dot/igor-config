@@ -1,12 +1,40 @@
-import { floridaClock, wantsOwnTeamCalendar } from "./identity.js";
+import { claimsToBeYahoska, floridaClock, wantsOwnTeamCalendar } from "./identity.js";
 
 const REFUSAL_RE = /only yahoska|don.t have your calendar|can.t put it on yours|i only have yahoska|i don.t have your calendar/i;
+const CANNED_OWN_RE = /on it — it.?s on your calendar.*not yahoska/i;
 const CALENDAR_INTENT_RE = /calendar|remind|appoint|\b\d{1,2}:\d{2}\b|put (it )?(on )?mine|put mine|am i free|what.?s on|book |add (it|this)|not (ok )?yahoska/i;
 const ADD_INTENT_RE = /put |add |remind|book |on mine|my calendar/i;
+const CLARIFY_RE = /\b(pls|please)?\s*clarify\b/i;
 
-export function sanitizeOwnCalendarHistory(turns = []) {
+function userAuthoredText(text, history = []) {
+  const userTurns = (history ?? [])
+    .filter((turn) => turn?.role === "user")
+    .map((turn) => turn?.content)
+    .filter(Boolean);
+  return [text, ...userTurns].filter(Boolean).join("\n");
+}
+
+function isIdentityCorrection(text) {
+  const raw = String(text ?? "");
+  return claimsToBeYahoska(raw) || CLARIFY_RE.test(raw) || /\bmy calendar is\b/i.test(raw);
+}
+
+function lastAssistantIsCanned(history = []) {
+  const last = [...(history ?? [])].reverse().find((turn) => turn?.role === "assistant");
+  return Boolean(last && CANNED_OWN_RE.test(String(last.content ?? "")));
+}
+
+export function sanitizeOwnCalendarHistory(turns = [], speaker) {
   return (turns ?? []).map((turn) => {
-    if (turn?.role !== "assistant" || !REFUSAL_RE.test(String(turn.content ?? ""))) return turn;
+    if (turn?.role !== "assistant") return turn;
+    const content = String(turn.content ?? "");
+    if (speaker?.role === "yahoska" && /not yahoska/i.test(content)) {
+      return {
+        ...turn,
+        content: "Ignore my earlier message — this chat is Yahoska. Her calendar is Yahoska’s. Do not say Not Yahoska’s."
+      };
+    }
+    if (!REFUSAL_RE.test(content)) return turn;
     return {
       ...turn,
       content: "Ignore my earlier message — I do have your calendar. I will add it there, not Yahoska’s."
@@ -15,6 +43,9 @@ export function sanitizeOwnCalendarHistory(turns = []) {
 }
 
 export function blockYahoskaOnlyRefusal(reply, speaker) {
+  if (speaker?.role === "yahoska") {
+    return String(reply ?? "").replace(/\s*Not Yahoska['’]s\.?/gi, "").trim();
+  }
   if (speaker?.role !== "katy" && speaker?.role !== "carolina") return reply;
   if (!REFUSAL_RE.test(String(reply ?? ""))) return reply;
   return "I have your calendar. Tell me the time and I’ll add it there — not Yahoska’s.";
@@ -40,13 +71,15 @@ function parseLocalStart(blob, now, timeZone) {
 }
 
 function resolveWhose(speaker, blob) {
+  if (speaker?.role === "yahoska") return null;
   if (speaker?.role === "carolina") return "carolina";
   if (speaker?.role === "katy" || wantsOwnTeamCalendar(blob)) return "katy";
   return null;
 }
 
 export function ownCalendarBookingArgs({ text, history = [], speaker, now = new Date(), timeZone = "America/New_York" } = {}) {
-  const blob = [text, ...history.map((turn) => turn?.content)].filter(Boolean).join("\n");
+  if (speaker?.role === "yahoska" || isIdentityCorrection(text)) return null;
+  const blob = userAuthoredText(text, history);
   const whose = resolveWhose(speaker, blob);
   if (!whose) return null;
   if (!wantsOwnTeamCalendar(blob) && speaker?.role !== "katy" && speaker?.role !== "carolina") return null;
@@ -93,7 +126,11 @@ export async function handleOwnCalendarTurn({
   timeZone
 }) {
   if (typeof executeTool !== "function") return null;
-  const blob = [text, ...history.map((turn) => turn?.content)].filter(Boolean).join("\n");
+  if (speaker?.role === "yahoska") return null;
+  if (isIdentityCorrection(text)) return null;
+  if (lastAssistantIsCanned(history) && !wantsOwnTeamCalendar(text)) return null;
+
+  const blob = userAuthoredText(text, history);
   const whose = resolveWhose(speaker, blob);
   if (!whose) return null;
   if (!isOwnCalendarIntent(text) && !wantsOwnTeamCalendar(blob)) return null;

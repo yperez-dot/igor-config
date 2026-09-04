@@ -1,5 +1,5 @@
 import { resolveInboundUserText } from "./inbound-file.js";
-import { systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "./identity.js";
+import { claimsToBeYahoska, systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "./identity.js";
 import {
   findLatestMailAlert,
   formatDismissReply,
@@ -72,20 +72,25 @@ export async function handleTelegramChat({
   const rememberedRole = typeof store.getTelegramSpeaker === "function"
     ? await store.getTelegramSpeaker(message.senderId)
     : null;
-  const historyIntent = wantsOwnTeamCalendar(
-    history.map((turn) => turn.content).join("\n")
-  );
+  const userBlob = [message.text, ...history.filter((turn) => turn.role === "user").map((turn) => turn.content)]
+    .filter(Boolean)
+    .join("\n");
+  const historyIntent = claimsToBeYahoska(message.text) ? null : wantsOwnTeamCalendar(userBlob);
   const senderProfile = {
     ...message,
-    rememberedRole: rememberedRole || historyIntent,
-    text: [message.text, ...history.map((turn) => turn.content)].filter(Boolean).join("\n")
+    rememberedRole: claimsToBeYahoska(message.text) ? "yahoska" : (rememberedRole || historyIntent),
+    text: userBlob
   };
   const speaker = telegramSpeaker(environment, message.senderId, senderProfile);
   if (
-    (speaker.role === "katy" || speaker.role === "carolina")
+    ["yahoska", "katy", "carolina"].includes(speaker.role)
     && typeof store.rememberTelegramSpeaker === "function"
   ) {
-    await store.rememberTelegramSpeaker(message.senderId, speaker.role, "inferred");
+    await store.rememberTelegramSpeaker(
+      message.senderId,
+      speaker.role,
+      claimsToBeYahoska(message.text) ? "claimed" : "inferred"
+    );
   }
   const prompt = systemPrompt ?? systemPromptFor(environment, {
     senderId: message.senderId,
@@ -136,7 +141,7 @@ export async function handleTelegramChat({
   }
 
   const ownBooking = await bookOwnCalendarIfRequested({
-    text: senderProfile.text,
+    text: message.text,
     history,
     speaker,
     executeTool,
@@ -184,7 +189,7 @@ export async function handleTelegramChat({
         model,
         text: userText,
         media: inbound.media,
-        history: sanitizeOwnCalendarHistory(history),
+        history: sanitizeOwnCalendarHistory(history, speaker),
         systemPrompt: prompt,
         tools,
         executeTool: toolRunner,

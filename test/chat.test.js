@@ -82,6 +82,90 @@ test("Grok refusal is rewritten so Katy never hears only-Yahoska", async () => {
   assert.match(sent[0], /your calendar/);
 });
 
+test("Yahoska correcting the calendar loop reaches Grok instead of repeating Not Yahoska’s", async () => {
+  const store = memoryStore();
+  store.getTelegramSpeaker = async () => "katy";
+  const remembered = [];
+  store.rememberTelegramSpeaker = async (senderId, role, source) => {
+    remembered.push({ senderId, role, source });
+    return { saved: true };
+  };
+  store.turns.push({
+    role: "user",
+    content: "Yes go ahead and add for the school pick up add all the way til June"
+  });
+  store.turns.push({
+    role: "assistant",
+    content: "On it — it’s on your calendar at 17:00. Not Yahoska’s."
+  });
+  let grokCalled = false;
+  let toolCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: { chatId: 1, senderId: "8882265752", text: "My calendar is Yahoska" },
+    askGrok: async (request) => {
+      grokCalled = true;
+      assert.match(request.systemPrompt, /This message is from Yahoska Perez/);
+      assert.match(request.history.at(-1).content, /this chat is Yahoska/i);
+      return "You’re right — this is your calendar. Yahoska’s.";
+    },
+    executeTool: async () => {
+      toolCalled = true;
+      return { booked: true };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalled, false);
+  assert.doesNotMatch(reply, /Not Yahoska/);
+  assert.match(sent[0], /Yahoska/);
+  assert.equal(remembered.at(-1)?.role, "yahoska");
+});
+
+test("Pls clarify after the canned line does not rebook 17:00", async () => {
+  const store = memoryStore();
+  store.turns.push({
+    role: "user",
+    content: "Yes go ahead and add for the school pick up add all the way til June"
+  });
+  store.turns.push({
+    role: "assistant",
+    content: "On it — it’s on your calendar at 17:00. Not Yahoska’s."
+  });
+  let grokCalled = false;
+  let toolCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    message: { chatId: 1, senderId: "8882265752", text: "Pls clarify" },
+    askGrok: async () => {
+      grokCalled = true;
+      return "Sorry — I mixed you up with Katy. This is your calendar.";
+    },
+    executeTool: async () => {
+      toolCalled = true;
+      return { booked: true };
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalled, false);
+  assert.match(reply, /Sorry/);
+});
+
 test("Put mine after a not-Yahoska ask treats the chat as Katy", async () => {
   const store = memoryStore();
   store.turns.push({
