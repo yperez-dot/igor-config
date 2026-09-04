@@ -119,6 +119,14 @@ test("classifies carrier and urgent messages", () => {
   assert.equal(classifyMessage({ from: "ops@example.com", subject: "URGENT action required" }), "urgent");
   assert.equal(classifyMessage({ from: "newsletter@example.com", subject: "Hello" }), null);
   assert.equal(classifyMessage({
+    from: "calendar-notification@google.com",
+    subject: "Kayla Robles's Zoom Meeting"
+  }), null);
+  assert.equal(classifyMessage({
+    from: "noreply@humana.com",
+    subject: "Invitation: Kayla Robles's Zoom Meeting @ Fri Sep 4"
+  }), null);
+  assert.equal(classifyMessage({
     from: "noreply@humana.com",
     subject: "[carrier] Statement is Ready for Viewing via www.humana.com"
   }), null);

@@ -36,6 +36,10 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /run_sales_tracker_sync/);
   assert.match(SYSTEM_PROMPT, /Anthropic \/ Claude is retired/);
   assert.match(SYSTEM_PROMPT, /update_hub_sneak_peeks/);
+  assert.match(SYSTEM_PROMPT, /update_hub_ticker/);
+  assert.match(SYSTEM_PROMPT, /Never put personal calendar/);
+  assert.match(SYSTEM_PROMPT, /cannot edit the Hub ticker/);
+  assert.match(SYSTEM_PROMPT, /pinned Telegram user id/);
   assert.match(SYSTEM_PROMPT, /info@/);
   assert.match(SYSTEM_PROMPT, /run_agent_pulse/);
   assert.match(SYSTEM_PROMPT, /THEI does not use SendGrid/);

@@ -152,6 +152,143 @@ test("Olivia Tue/Thu/Fri 2:30–3:30 wording books Yahoska’s calendar", async 
   assert.deepEqual(sent, [reply]);
 });
 
+test("slow the ticker does not call Grok", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  let grokCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "slow down the speed of the ticker"
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { status: "published", removed: ["Kayla Robles's Zoom Meeting"], tickerSeconds: 240 };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls[0].name, "update_hub_ticker");
+  assert.equal(toolCalls[0].args.slower, true);
+  assert.match(reply, /slower/);
+  assert.deepEqual(sent, [reply]);
+});
+
+test("Kayla Zoom off the Hub does not call Grok", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "dont add my calendar appts to the agent hub... theres one that says kayla's zoom meeting"
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { status: "published", removed: ["Kayla Robles's Zoom Meeting"], tickerSeconds: 150 };
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls[0].name, "update_hub_ticker");
+  assert.equal(toolCalls[0].args.remove, "kayla");
+  assert.match(reply, /Kayla/);
+});
+
+test("inferred Katy name without pinned id does not write the Hub", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "999",
+      firstName: "Katy",
+      text: "slow down the speed of the ticker"
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { status: "published", tickerSeconds: 240 };
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls.length, 0);
+  assert.match(reply, /Yahoska or Katy/);
+});
+
+test("husband ticker wording does not write the Hub or call Grok", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_HUSBAND_USER_ID: "111" },
+    message: {
+      chatId: 1,
+      senderId: "111",
+      text: "slow down the speed of the ticker"
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { status: "published", tickerSeconds: 240 };
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls.length, 0);
+  assert.match(reply, /Yahoska or Katy/);
+});
+
 test("Yahoska correcting the calendar loop reaches Grok instead of repeating Not Yahoska’s", async () => {
   const store = memoryStore();
   store.getTelegramSpeaker = async () => "katy";

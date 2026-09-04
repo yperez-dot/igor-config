@@ -224,7 +224,7 @@ export function telegramFailureMessage(error) {
     return "Grok didn't answer that turn. I'm still here — try me again.";
   }
   if (/tool loop exceeded/i.test(raw)) {
-    return "I chased too many tools on that one. Ask me one thing at a time.";
+    return "I got stuck looping tools. Say it again as one job — ticker, calendar, or sneak peeks — and I’ll do that in code.";
   }
   return `Couldn't finish that (${raw}). I'm still here — say it again.`;
 }

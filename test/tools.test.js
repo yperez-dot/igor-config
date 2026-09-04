@@ -11,6 +11,8 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({}).includes("ghl_stale_leads"), false);
   assert.equal(names({ GHL_API_TOKEN: "token" }).includes("ghl_stale_leads"), true);
   assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("github_get"), true);
+  assert.equal(names({ GITHUB_TOKEN: "gh" }).includes("update_hub_ticker"), true);
+  assert.equal(names({}).includes("update_hub_ticker"), false);
   assert.equal(names({
     HEARTBEAT_IMAP_USER: "info@healthexps.com",
     HEARTBEAT_IMAP_PASS: "x",
@@ -25,6 +27,35 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({}).includes("run_sales_tracker_sync"), true);
   assert.equal(names({}).includes("run_agent_pulse"), true);
   assert.equal(names({}).includes("sales_sheet_summary"), true);
+});
+
+test("update_hub_ticker refuses husband, Carolina, and unsigned callers", async () => {
+  const env = { GITHUB_TOKEN: "gh", TELEGRAM_YAHOSKA_USER_ID: "888", TELEGRAM_HUSBAND_USER_ID: "111", TELEGRAM_CAROLINA_USER_ID: "222" };
+  const denied = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: env,
+    senderId: "111"
+  });
+  assert.equal(denied.status, "skipped");
+  assert.match(denied.error, /Yahoska or Katy/);
+
+  const carolina = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: env,
+    senderId: "222"
+  });
+  assert.equal(carolina.status, "skipped");
+
+  const nobody = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: { GITHUB_TOKEN: "gh" }
+  });
+  assert.equal(nobody.status, "skipped");
+
+  const inferred = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: { GITHUB_TOKEN: "gh" },
+    senderId: "999",
+    senderProfile: { firstName: "Katy", text: "This is Yahoska" }
+  });
+  assert.equal(inferred.status, "skipped");
+  assert.match(inferred.error, /Yahoska or Katy/);
 });
 
 test("sheets is connected via the approved public CSV without SALES_SHEET_CSV_URL", () => {

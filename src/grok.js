@@ -95,7 +95,7 @@ export async function askGrok({
   tools,
   executeTool,
   conversationId,
-  maxToolRounds = 6,
+  maxToolRounds = 12,
   timeoutMs,
   fetchImpl = fetch
 }) {
