@@ -82,6 +82,76 @@ test("Grok refusal is rewritten so Katy never hears only-Yahoska", async () => {
   assert.match(sent[0], /your calendar/);
 });
 
+test("Yahoska school pickup until June books her calendar, not Katy’s", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "Yes go ahead and add for the school pick up add all the way til June"
+    },
+    askGrok: async () => "should not run",
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { booked: true, event: { summary: "Olivia’s school pickup" } };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(toolCalls[0].name, "calendar_create_event");
+  assert.equal(toolCalls[0].args.whose, "yahoska");
+  assert.equal(toolCalls[0].args.summary, "Olivia’s school pickup");
+  assert.deepEqual(toolCalls[0].args.byDay, ["TU", "TH", "FR"]);
+  assert.equal(toolCalls[0].args.durationMinutes, 60);
+  assert.match(reply, /Olivia.s school pickup is on your calendar/);
+  assert.doesNotMatch(reply, /Not Yahoska/);
+  assert.deepEqual(sent, [reply]);
+});
+
+test("Olivia Tue/Thu/Fri 2:30–3:30 wording books Yahoska’s calendar", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "On my calendar for tuesdays and Thursday’s and Friday’s add Olivia’ school pick up 2:30-3:30 pm"
+    },
+    askGrok: async () => "should not run",
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { booked: true, event: { summary: "Olivia’s school pickup" } };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(toolCalls[0].name, "calendar_create_event");
+  assert.equal(toolCalls[0].args.whose, "yahoska");
+  assert.equal(toolCalls[0].args.summary, "Olivia’s school pickup");
+  assert.deepEqual(toolCalls[0].args.byDay, ["TU", "TH", "FR"]);
+  assert.equal(toolCalls[0].args.durationMinutes, 60);
+  assert.match(reply, /Tuesdays, Thursdays, and Fridays/);
+  assert.match(reply, /2:30 PM/);
+  assert.deepEqual(sent, [reply]);
+});
+
 test("Yahoska correcting the calendar loop reaches Grok instead of repeating Not Yahoska’s", async () => {
   const store = memoryStore();
   store.getTelegramSpeaker = async () => "katy";
