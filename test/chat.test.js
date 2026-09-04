@@ -127,7 +127,7 @@ test("Olivia Tue/Thu/Fri 2:30–3:30 wording books Yahoska’s calendar", async 
     message: {
       chatId: 1,
       senderId: "8882265752",
-      text: "On my calendar for tuesdays and Thursday’s and Friday’s add Olivia’ school pick up 2:30-3:30 pm"
+      text: "On my ceornser for tuesdays and Thursday’s and Friday’s add Olivia’ school pick up 2:30-3:30 pm"
     },
     askGrok: async () => "should not run",
     executeTool: async (name, args) => {

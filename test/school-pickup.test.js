@@ -17,7 +17,7 @@ const env = {
   GOOGLE_CALENDAR_REFRESH_TOKEN: "refresh"
 };
 
-const OLIVIA_ASK = "On my calendar for tuesdays and Thursday’s and Friday’s add Olivia’ school pick up 2:30-3:30 pm";
+const OLIVIA_ASK = "On my ceornser for tuesdays and Thursday’s and Friday’s add Olivia’ school pick up 2:30-3:30 pm";
 
 test("school pickup until June is a Yahoska series request", () => {
   assert.equal(wantsSchoolPickupSeries("Yes go ahead and add for the school pick up add all the way til June"), true);
