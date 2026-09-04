@@ -232,7 +232,7 @@ test("downloadTelegramFile uses getFile then downloads bytes", async () => {
 test("Telegram failures sound like Igor, not a generic bot", () => {
   assert.match(telegramFailureMessage(new Error("xAI request failed with HTTP 429")), /Grok didn't answer/);
   assert.match(telegramFailureMessage(new Error("The operation was aborted due to timeout")), /ran long/);
-  assert.match(telegramFailureMessage(new Error("xAI tool loop exceeded the maximum number of rounds.")), /too many tools/);
+  assert.match(telegramFailureMessage(new Error("xAI tool loop exceeded the maximum number of rounds.")), /stuck looping tools/);
   assert.match(telegramFailureMessage(new Error("boom Bearer secret-token-value")), /Couldn't finish that/);
   assert.equal(telegramFailureMessage(new Error("boom Bearer secret-token-value")).includes("secret-token-value"), false);
 });

@@ -43,6 +43,7 @@ import { sendTelegramDocument, sendTelegramMessage } from "./telegram.js";
 import { legacySchedules } from "./legacy-schedules.js";
 import { runLookout } from "./lookout.js";
 import { runSneakPeekUpdate } from "./hub-sneak-peeks.js";
+import { editHubTicker } from "./hub-ticker.js";
 import { imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
 import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
 
@@ -182,6 +183,16 @@ export function grokTools(environment = process.env) {
           confirmed: { type: "boolean" }
         },
         required: ["method", "path"],
+        additionalProperties: false
+      }),
+      functionTool("update_hub_ticker", "Edit the Agent Hub ticker. Use when Yahoska or Katy says slow the ticker, take calendar appointments off the Hub, or remove Kayla’s Zoom / a personal meeting from the strip. Never publish personal calendar or Zoom items to the Hub. Standing-approved when they ask.", {
+        type: "object",
+        properties: {
+          slower: { type: "boolean", description: "Slow the ticker strip. Default new speed is 240 seconds per loop." },
+          tickerSeconds: { type: "integer", description: "Seconds per ticker loop (60–480). Use when they name a speed." },
+          stripCalendar: { type: "boolean", description: "Remove personal calendar and Zoom items from the ticker." },
+          remove: { type: "string", description: "Remove alerts matching this text, e.g. kayla or zoom meeting." }
+        },
         additionalProperties: false
       })
     );
@@ -1012,6 +1023,17 @@ export async function executeTool(name, rawArgs, {
 
     if (name === "update_hub_sneak_peeks") {
       return runSneakPeekUpdate({ environment, pendingAttachment });
+    }
+
+    if (name === "update_hub_ticker") {
+      return editHubTicker({
+        environment,
+        remove: args.remove,
+        stripCalendar: args.stripCalendar === true,
+        slower: args.slower === true,
+        tickerSeconds: args.tickerSeconds,
+        fetchImpl
+      });
     }
 
     if (name === "calendar_list_events") {

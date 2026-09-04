@@ -10,6 +10,7 @@ import {
 } from "./mail-alerts.js";
 import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
 import { bookSchoolPickupIfRequested } from "./school-pickup.js";
+import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
@@ -196,6 +197,29 @@ export async function handleTelegramChat({
       content: ownBooking.reply
     });
     return ownBooking.reply;
+  }
+  const tickerEdit = await editHubTickerIfRequested({
+    text: message.text,
+    speaker,
+    executeTool,
+    toolContext: calendarContext
+  });
+  if (tickerEdit) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: tickerEdit.reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: tickerEdit.reply
+    });
+    return tickerEdit.reply;
   }
 
   const toolRunner = (name, args) => executeTool(name, args, {

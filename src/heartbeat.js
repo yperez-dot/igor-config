@@ -27,6 +27,9 @@ export function isQuietHours(now = new Date(), { start = 23, end = 8 } = {}) {
 
 export function classifyMessage({ from = "", subject = "" }) {
   if (isMailNoise(subject)) return null;
+  if (/zoom meeting|calendar invitation|\binvitation:|canceled event|updated invitation/i.test(subject)) {
+    return null;
+  }
   const haystack = `${from} ${subject}`.toLowerCase();
   const carrier = CARRIER_HINTS.some((hint) => haystack.includes(hint));
   const urgent = URGENT_HINTS.some((hint) => haystack.includes(hint));
