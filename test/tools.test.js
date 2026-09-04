@@ -29,6 +29,27 @@ test("GHL tools appear only when GHL_API_TOKEN is set", () => {
   assert.equal(names({}).includes("sales_sheet_summary"), true);
 });
 
+test("update_hub_ticker refuses husband, Carolina, and unsigned callers", async () => {
+  const env = { GITHUB_TOKEN: "gh", TELEGRAM_YAHOSKA_USER_ID: "888", TELEGRAM_HUSBAND_USER_ID: "111", TELEGRAM_CAROLINA_USER_ID: "222" };
+  const denied = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: env,
+    senderId: "111"
+  });
+  assert.equal(denied.status, "skipped");
+  assert.match(denied.error, /Yahoska or Katy/);
+
+  const carolina = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: env,
+    senderId: "222"
+  });
+  assert.equal(carolina.status, "skipped");
+
+  const nobody = await executeTool("update_hub_ticker", { slower: true, confirmed: true }, {
+    environment: { GITHUB_TOKEN: "gh" }
+  });
+  assert.equal(nobody.status, "skipped");
+});
+
 test("sheets is connected via the approved public CSV without SALES_SHEET_CSV_URL", () => {
   const sheets = connectedSystems({}).find((system) => system.id === "sheets");
   assert.equal(sheets.connected, true);

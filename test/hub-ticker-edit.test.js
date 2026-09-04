@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canEditHubTicker,
   editHubTickerIfRequested,
   hubTickerEditArgs,
   hubTickerEditReply,
@@ -44,6 +45,14 @@ test("ticker edit reply names removed items and the new speed", () => {
   assert.match(hubTickerEditReply({ status: "skipped", error: "GITHUB_TOKEN is missing on Igor V2." }), /GITHUB_TOKEN/);
 });
 
+test("only Yahoska and Katy can edit the Hub ticker", () => {
+  assert.equal(canEditHubTicker({ role: "yahoska", canOperate: true }), true);
+  assert.equal(canEditHubTicker({ role: "katy", canOperate: true }), true);
+  assert.equal(canEditHubTicker({ role: "carolina", canOperate: false }), false);
+  assert.equal(canEditHubTicker({ role: "husband", canOperate: false }), false);
+  assert.equal(canEditHubTicker({ role: "allowlisted", canOperate: false }), false);
+});
+
 test("Yahoska ticker wording calls update_hub_ticker and skips Grok", async () => {
   const calls = [];
   const result = await editHubTickerIfRequested({
@@ -59,4 +68,24 @@ test("Yahoska ticker wording calls update_hub_ticker and skips Grok", async () =
   assert.equal(calls[0].args.confirmed, true);
   assert.match(result.reply, /slower/);
   assert.match(result.reply, /Kayla/);
+});
+
+test("husband and Carolina ticker wording do not write the Hub", async () => {
+  for (const speaker of [
+    { role: "husband", canOperate: false },
+    { role: "carolina", canOperate: false },
+    { role: "allowlisted", canOperate: false }
+  ]) {
+    const calls = [];
+    const result = await editHubTickerIfRequested({
+      text: "slow down the speed of the ticker",
+      speaker,
+      executeTool: async (name, args) => {
+        calls.push({ name, args });
+        return { status: "published", tickerSeconds: 240 };
+      }
+    });
+    assert.equal(calls.length, 0);
+    assert.match(result.reply, /Yahoska or Katy/);
+  }
 });

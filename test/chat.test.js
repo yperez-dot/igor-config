@@ -222,6 +222,39 @@ test("Kayla Zoom off the Hub does not call Grok", async () => {
   assert.match(reply, /Kayla/);
 });
 
+test("husband ticker wording does not write the Hub or call Grok", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_HUSBAND_USER_ID: "111" },
+    message: {
+      chatId: 1,
+      senderId: "111",
+      text: "slow down the speed of the ticker"
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { status: "published", tickerSeconds: 240 };
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls.length, 0);
+  assert.match(reply, /Yahoska or Katy/);
+});
+
 test("Yahoska correcting the calendar loop reaches Grok instead of repeating Not Yahoska’s", async () => {
   const store = memoryStore();
   store.getTelegramSpeaker = async () => "katy";

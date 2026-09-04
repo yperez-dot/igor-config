@@ -1,3 +1,14 @@
+export function canEditHubTicker(speaker) {
+  return speaker?.canOperate === true || speaker?.role === "yahoska" || speaker?.role === "katy";
+}
+
+export function hubTickerForbiddenResult() {
+  return {
+    status: "skipped",
+    error: "Hub ticker edits stay with Yahoska or Katy."
+  };
+}
+
 export function wantsHubTickerEdit(text) {
   const raw = String(text ?? "");
   if (!raw.trim()) return false;
@@ -46,8 +57,11 @@ export async function editHubTickerIfRequested({
   toolContext
 }) {
   if (typeof executeTool !== "function") return null;
-  if (speaker?.role === "carolina") return null;
   if (!wantsHubTickerEdit(text)) return null;
+  if (!canEditHubTicker(speaker)) {
+    const result = hubTickerForbiddenResult();
+    return { args: null, result, reply: hubTickerEditReply(result) };
+  }
   const args = hubTickerEditArgs(text);
   const result = await executeTool("update_hub_ticker", args, toolContext);
   return { args, result, reply: hubTickerEditReply(result) };

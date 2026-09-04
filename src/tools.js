@@ -44,6 +44,7 @@ import { legacySchedules } from "./legacy-schedules.js";
 import { runLookout } from "./lookout.js";
 import { runSneakPeekUpdate } from "./hub-sneak-peeks.js";
 import { editHubTicker } from "./hub-ticker.js";
+import { canEditHubTicker, hubTickerForbiddenResult } from "./hub-ticker-edit.js";
 import { imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
 import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
 
@@ -185,7 +186,7 @@ export function grokTools(environment = process.env) {
         required: ["method", "path"],
         additionalProperties: false
       }),
-      functionTool("update_hub_ticker", "Edit the Agent Hub ticker. Use when Yahoska or Katy says slow the ticker, take calendar appointments off the Hub, or remove Kayla’s Zoom / a personal meeting from the strip. Never publish personal calendar or Zoom items to the Hub. Standing-approved when they ask.", {
+      functionTool("update_hub_ticker", "Edit the Agent Hub ticker. Yahoska or Katy only — never husband, Carolina, or other allowlisted users. Use when Yahoska or Katy says slow the ticker, take calendar appointments off the Hub, or remove Kayla’s Zoom / a personal meeting from the strip. Never publish personal calendar or Zoom items to the Hub. Standing-approved when Yahoska or Katy ask.", {
         type: "object",
         properties: {
           slower: { type: "boolean", description: "Slow the ticker strip. Default new speed is 240 seconds per loop." },
@@ -1026,6 +1027,8 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "update_hub_ticker") {
+      const speaker = telegramSpeaker(environment, senderId, senderProfile);
+      if (!canEditHubTicker(speaker)) return hubTickerForbiddenResult();
       return editHubTicker({
         environment,
         remove: args.remove,
