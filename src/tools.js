@@ -328,7 +328,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Add an event on a team Google Calendar. Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free.", {
+      functionTool("calendar_create_event", "Add an event on a team Google Calendar. Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). Do not claim it is on the calendar unless booked is true.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title." },
@@ -338,6 +338,14 @@ export function grokTools(environment = process.env) {
           allDay: { type: "boolean", description: "All-day event. Date-only start (2026-09-07) also counts as all-day." },
           transparency: { type: "string", enum: ["transparent", "opaque"], description: "transparent = free (does not block time). opaque = busy. Default opaque." },
           free: { type: "boolean", description: "Shortcut for transparency=transparent. Use for no-school days and reminders she wants visible but not busy." },
+          until: { type: "string", description: "Last inclusive day for a weekly series (YYYY-MM-DD). Use with byDay. School-year 'until June' is the next June 30." },
+          byDay: {
+            type: "array",
+            items: { type: "string", enum: ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] },
+            description: "Weekdays for a repeating event. Olivia’s school pickup is [TU,TH,FR]. Weekdays are [MO,TU,WE,TH,FR]."
+          },
+          freq: { type: "string", enum: ["WEEKLY"], description: "Repeat frequency. Default WEEKLY when until is set." },
+          rrule: { type: "string", description: "Raw RRULE if until/byDay are not enough." },
           location: { type: "string" },
           description: { type: "string" },
           attendees: {
