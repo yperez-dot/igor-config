@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { pulseBootCatchupMessage, queueMissedAgentPulse } from "../src/pulse-catchup.js";
+import { pulseBootCatchupFailureMessage, pulseBootCatchupMessage, queueMissedAgentPulse } from "../src/pulse-catchup.js";
 import { PULSE_READY_ENV } from "./pulse-ready-env.js";
 
 const monday = new Date("2026-08-31T14:00:00.000Z");
@@ -86,4 +86,11 @@ test("does not double-queue when a Pulse task is already open", async () => {
   assert.equal(result.reason, "already_queued");
   assert.equal(result.taskId, "open-1");
   assert.equal(created.length, 0);
+});
+
+test("boot catch-up failure pages instead of staying quiet", () => {
+  assert.match(
+    pulseBootCatchupFailureMessage(new Error("DATABASE_URL refused the connection")),
+    /🚨 Agent Pulse catch-up failed on boot: DATABASE_URL refused the connection/
+  );
 });

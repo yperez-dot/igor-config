@@ -71,3 +71,8 @@ export function pulseBootCatchupMessage(catchup) {
   if (!catchup?.queued) return null;
   return `On it — Agent Pulse Issue #${catchup.issue} is queued from this boot. Watch Telegram for sent or 🚨. No extra catch-up needed.`;
 }
+
+export function pulseBootCatchupFailureMessage(error) {
+  const detail = String(error?.message ?? error ?? "unknown error").replace(/\s+/g, " ").trim().slice(0, 180);
+  return `🚨 Agent Pulse catch-up failed on boot: ${detail || "unknown error"}`;
+}
