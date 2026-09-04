@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockYahoskaOnlyRefusal, ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
+import { blockYahoskaOnlyRefusal, handleOwnCalendarTurn, ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
 
 test("Put it on mine today 6:40 books Katy at 18:40 Florida time", () => {
   const args = ownCalendarBookingArgs({
@@ -32,4 +32,60 @@ test("Katy never sees a Grok only-Yahoska refusal", () => {
 test("booked reply says it is on theirs", () => {
   assert.match(ownCalendarBookedReply({ booked: true }, { start: "2026-09-01T18:40:00" }), /your calendar/);
   assert.match(ownCalendarBookedReply({ error: "notFound" }, { start: "2026-09-01T18:40:00" }), /not Yahoska/);
+});
+
+test("Yahoska’s chat does not use the Katy own-calendar shortcut", () => {
+  const args = ownCalendarBookingArgs({
+    text: "Yes go ahead and add for the school pick up add all the way til June",
+    history: [
+      { role: "assistant", content: "On it — it’s on your calendar at 17:00. Not Yahoska’s." }
+    ],
+    speaker: { role: "yahoska" },
+    now: new Date("2026-09-04T10:25:00.000Z")
+  });
+  assert.equal(args, null);
+});
+
+test("identity corrections do not rebook the leftover 17:00", () => {
+  for (const text of ["My calendar is Yahoska", "This is Yahoska", "Pls clarify"]) {
+    const args = ownCalendarBookingArgs({
+      text,
+      history: [
+        { role: "user", content: "Yes go ahead and add for the school pick up add all the way til June" },
+        { role: "assistant", content: "On it — it’s on your calendar at 17:00. Not Yahoska’s." }
+      ],
+      speaker: { role: "allowlisted" },
+      now: new Date("2026-09-04T10:26:00.000Z")
+    });
+    assert.equal(args, null, text);
+  }
+});
+
+test("canned Not Yahoska reply is stripped when the speaker is Yahoska", () => {
+  assert.equal(
+    blockYahoskaOnlyRefusal("On it — it’s on your calendar at 17:00. Not Yahoska’s.", { role: "yahoska" }),
+    "On it — it’s on your calendar at 17:00."
+  );
+  const cleaned = sanitizeOwnCalendarHistory([
+    { role: "assistant", content: "On it — it’s on your calendar at 17:00. Not Yahoska’s." }
+  ], { role: "yahoska" });
+  assert.match(cleaned[0].content, /this chat is Yahoska/i);
+  assert.doesNotMatch(cleaned[0].content, /On it/);
+});
+
+test("follow-up after the canned line goes back to the model", async () => {
+  let toolCalled = false;
+  const result = await handleOwnCalendarTurn({
+    text: "Pls clarify",
+    history: [
+      { role: "assistant", content: "On it — it’s on your calendar at 17:00. Not Yahoska’s." }
+    ],
+    speaker: { role: "allowlisted" },
+    executeTool: async () => {
+      toolCalled = true;
+      return { booked: true };
+    }
+  });
+  assert.equal(result, null);
+  assert.equal(toolCalled, false);
 });

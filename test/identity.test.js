@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SYSTEM_PROMPT, floridaClock, systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "../src/identity.js";
+import { SYSTEM_PROMPT, claimsToBeYahoska, floridaClock, systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "../src/identity.js";
 
 test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /The Health Experts Insurance/);
@@ -102,6 +102,34 @@ test("put it on mine / not Yahoska’s identifies Katy without a Telegram id", (
   });
   assert.equal(speaker.role, "katy");
   assert.equal(telegramSpeaker({}, "999", { text: "Put mine" }).role, "katy");
+});
+
+test("Yahoska saying this is her calendar is not treated as Katy", () => {
+  assert.equal(claimsToBeYahoska("This is Yahoska"), true);
+  assert.equal(claimsToBeYahoska("My calendar is Yahoska"), true);
+  assert.equal(wantsOwnTeamCalendar("My calendar is Yahoska"), null);
+  assert.equal(wantsOwnTeamCalendar("my calendar"), null);
+  assert.equal(telegramSpeaker({}, "888", { text: "My calendar is Yahoska" }).role, "yahoska");
+  assert.equal(telegramSpeaker({}, "888", { text: "This is Yahoska" }).role, "yahoska");
+});
+
+test("Yahoska’s Telegram id wins even if history said Not Yahoska’s", () => {
+  const speaker = telegramSpeaker(
+    { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    "8882265752",
+    {
+      rememberedRole: "katy",
+      text: "My calendar is Yahoska\nOn it — it’s on your calendar at 17:00. Not Yahoska’s."
+    }
+  );
+  assert.equal(speaker.role, "yahoska");
+  const prompt = systemPromptFor(
+    { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    { senderId: "8882265752" }
+  );
+  assert.match(prompt, /This message is from Yahoska Perez/);
+  assert.match(prompt, /Never say “Not Yahoska’s/);
+  assert.match(SYSTEM_PROMPT, /her calendar IS Yahoska/);
 });
 
 test("Telegram first name identifies Katy without TELEGRAM_KATY_USER_ID", () => {
