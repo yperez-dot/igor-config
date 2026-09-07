@@ -70,6 +70,15 @@ function withModeOverride(environment, task, key) {
   return { ...environment, [key]: mode };
 }
 
+function withAgentPulseEnv(environment, task) {
+  const env = { ...withModeOverride(environment, task, "AGENT_PULSE_MODE") };
+  const correctionNote = String(task.payload?.correctionNote ?? "").trim();
+  const subjectNote = String(task.payload?.subjectNote ?? "").trim();
+  if (correctionNote) env.AGENT_PULSE_CORRECTION_NOTE = correctionNote;
+  if (subjectNote) env.AGENT_PULSE_SUBJECT_NOTE = subjectNote;
+  return env;
+}
+
 export async function processTask(task, {
   environment = process.env,
   notify = async () => {},
@@ -114,7 +123,7 @@ export async function processTask(task, {
 
   if (workflow === "agent_pulse_weekly") {
     const result = await runAgentPulse({
-      environment: withModeOverride(environment, task, "AGENT_PULSE_MODE")
+      environment: withAgentPulseEnv(environment, task)
     });
     if (store?.record && result.status === "sent") {
       await store.record("agent_pulse.sent", String(result.issue), {

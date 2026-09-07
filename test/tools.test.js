@@ -116,6 +116,29 @@ test("run_agent_pulse queues a send task for the Railway worker", async () => {
   assert.equal(created[0].payload.source, "catchup");
 });
 
+test("run_agent_pulse queues a Yahoska-only proof with a correction banner", async () => {
+  const created = [];
+  const result = await executeTool("run_agent_pulse", {
+    mode: "test",
+    correctionNote: "This morning went out in the wrong format. Use this email.",
+    subjectNote: "CORRECTED"
+  }, {
+    environment: PULSE_READY_ENV,
+    store: {
+      async createTask(task) {
+        created.push(task);
+        return task;
+      }
+    }
+  });
+  assert.equal(result.queued, true);
+  assert.equal(created[0].payload.mode, "test");
+  assert.equal(created[0].payload.source, "proof");
+  assert.match(created[0].payload.correctionNote, /wrong format/);
+  assert.equal(created[0].payload.subjectNote, "CORRECTED");
+  assert.match(result.note, /proof/);
+});
+
 test("OliComm is connected via the known production URL without OLICOMM_BASE_URL", () => {
   const olicomm = connectedSystems({}).find((system) => system.id === "olicomm");
   assert.equal(olicomm.connected, true);

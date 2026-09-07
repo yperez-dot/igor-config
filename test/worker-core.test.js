@@ -185,6 +185,31 @@ test("processes agent pulse weekly tasks", async () => {
   assert.equal(events[0].detail.mondayIso, "2026-08-31");
 });
 
+test("passes correction banner and subject note from the pulse task payload", async () => {
+  let seen;
+  await processTask(
+    {
+      payload: {
+        workflow: "agent_pulse_weekly",
+        mode: "test",
+        correctionNote: "This morning went out in the wrong format. Use this email.",
+        subjectNote: "CORRECTED"
+      }
+    },
+    {
+      runAgentPulse: async ({ environment }) => {
+        seen = environment;
+        return { status: "sent", issue: 12, mondayIso: "2026-09-07", recipientCount: 1 };
+      },
+      store: { async record() {} },
+      notify: async () => {}
+    }
+  );
+  assert.equal(seen.AGENT_PULSE_MODE, "test");
+  assert.match(seen.AGENT_PULSE_CORRECTION_NOTE, /wrong format/);
+  assert.equal(seen.AGENT_PULSE_SUBJECT_NOTE, "CORRECTED");
+});
+
 test("processes carrier inbox digest tasks", async () => {
   const notifications = [];
   const result = await processTask(

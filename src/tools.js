@@ -117,10 +117,12 @@ export function grokTools(environment = process.env) {
       },
       additionalProperties: false
     }),
-    functionTool("run_agent_pulse", "Queue this week's Agent Pulse only when /health pulseReady is true. If pulseReady is false, report pulseBlockers and do not queue. Industry Pulse is the old name for this same Monday email — do not queue both.", {
+    functionTool("run_agent_pulse", "Queue Agent Pulse when /health pulseReady is true. Use mode=test for a Yahoska-only branded Insider proof, including when this week's issue already went out with the wrong template. Use mode=send for the contracted list. If pulseReady is false, report pulseBlockers and do not queue. Industry Pulse is the old name for this same Monday email — do not queue both.", {
       type: "object",
       properties: {
-        mode: { type: "string", description: "send (default, contracted list from info@), test (proof mailbox only), or dry-run." }
+        mode: { type: "string", description: "send (contracted list from info@), test (proof mailbox only), or dry-run." },
+        correctionNote: { type: "string", description: "Pink banner on the branded Insider HTML, e.g. this morning went out in the wrong format — use this email. Do not set this as a Railway env var." },
+        subjectNote: { type: "string", description: "Appended to the subject, e.g. CORRECTED. Do not set this as a Railway env var." }
       },
       additionalProperties: false
     })
@@ -979,17 +981,28 @@ export async function executeTool(name, rawArgs, {
       if (!store?.createTask) {
         return { error: "Agent Pulse queue is unavailable in this process. The Railway worker sends it Monday 8:00 AM ET." };
       }
+      const correctionNote = String(args.correctionNote ?? "").trim();
+      const subjectNote = String(args.subjectNote ?? "").trim();
+      const payload = {
+        workflow: "agent_pulse_weekly",
+        mode,
+        source: mode === "test" ? "proof" : "catchup"
+      };
+      if (correctionNote) payload.correctionNote = correctionNote;
+      if (subjectNote) payload.subjectNote = subjectNote;
       const task = await store.createTask({
         id: crypto.randomUUID(),
         type: "content_draft",
-        payload: { workflow: "agent_pulse_weekly", mode, source: "catchup" }
+        payload
       });
       return {
         queued: true,
         pulseReady: true,
         taskId: task.id,
         mode,
-        note: "Worker will scan theiagentpulse@gmail.com, write Issue # from the July 13 epoch, send from info@, and update the Hub ticker. Industry Pulse is not a second send."
+        note: mode === "test"
+          ? "Worker will send a branded Insider proof to the test mailbox only. Not the contracted list."
+          : "Worker will scan theiagentpulse@gmail.com, write Issue # from the July 13 epoch, send from info@, and update the Hub ticker. Industry Pulse is not a second send."
       };
     }
 
