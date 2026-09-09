@@ -26,6 +26,11 @@ export const SYSTEM_IDS = [
     env: ["NETLIFY_AUTH_TOKEN"]
   },
   {
+    id: "railway",
+    label: "Railway projects and deployments",
+    env: ["RAILWAY_ACCOUNT_TOKEN"]
+  },
+  {
     id: "facebook",
     label: "Facebook Ads",
     env: ["FACEBOOK_ACCESS_TOKEN"]
