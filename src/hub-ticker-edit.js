@@ -54,20 +54,8 @@ export function hubTickerEditReply(result) {
   return bits.join(" ");
 }
 
-export async function editHubTickerIfRequested({
-  text,
-  speaker,
-  executeTool,
-  toolContext
-}) {
-  if (typeof executeTool !== "function") return null;
-  if (!wantsHubTickerEdit(text)) return null;
-  const senderId = toolContext?.senderId ?? speaker?.id;
-  if (!canEditHubTicker(senderId, toolContext?.environment ?? {})) {
-    const result = hubTickerForbiddenResult();
-    return { args: null, result, reply: hubTickerEditReply(result) };
-  }
-  const args = hubTickerEditArgs(text);
-  const result = await executeTool("update_hub_ticker", args, toolContext);
-  return { args, result, reply: hubTickerEditReply(result) };
+export async function editHubTickerIfRequested() {
+  // Emergency guard: never intercept Telegram ticker wording and mutate the Hub.
+  // Let the normal assistant workflow create a working branch and pull request.
+  return null;
 }
