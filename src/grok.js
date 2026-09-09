@@ -77,6 +77,7 @@ async function completeChat({ apiKey, model, provider, messages, tools, conversa
   if (tools?.length) {
     payload.tools = tools;
     payload.tool_choice = "auto";
+    if (provider === "openai" && model === "gpt-5.6-luna") payload.reasoning_effort = "none";
   }
   const headers = {
     Authorization: `Bearer ${apiKey}`,
