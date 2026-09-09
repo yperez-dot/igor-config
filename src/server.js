@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import express from "express";
 import cron from "node-cron";
 import { createStore } from "./store.js";
-import { askGrok, isPlanRecommendationRequest, recommendationRefusal, unavailableMessage } from "./grok.js";
+import { askGrok, isPlanRecommendationRequest, modelConfig, recommendationRefusal, unavailableMessage } from "./grok.js";
 import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { executeTool, grokTools } from "./tools.js";
@@ -16,8 +16,7 @@ import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegra
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.IGOR_API_KEY;
-const XAI_API_KEY = process.env.XAI_API_KEY;
-const XAI_MODEL = process.env.XAI_MODEL ?? "grok-4.6";
+const MODEL = modelConfig(process.env);
 const TELEGRAM = telegramConfig();
 const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
 const TOOLS = grokTools();
@@ -153,8 +152,8 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       askGrok,
       sendTelegramMessage,
       botToken: TELEGRAM.botToken,
-      apiKey: XAI_API_KEY,
-      model: XAI_MODEL,
+      apiKey: MODEL.apiKey,
+      model: MODEL.model,
       isPlanRecommendationRequest,
       recommendationRefusal,
       unavailableMessage,

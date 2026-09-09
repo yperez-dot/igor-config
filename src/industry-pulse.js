@@ -1,4 +1,4 @@
-import { askGrok } from "./grok.js";
+import { askGrok, modelConfig } from "./grok.js";
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 
 const INDUSTRY_PULSE_PROMPT = `You are producing the Industry Pulse digest for The Health Experts Insurance, a Florida Medicare brokerage.
@@ -52,12 +52,14 @@ export async function runIndustryPulse({
     throw new Error("Industry Pulse mode must be dry-run, test, or send.");
   }
 
-  const apiKey = environment.XAI_API_KEY;
-  if (!apiKey) throw new Error("XAI_API_KEY is required for Industry Pulse.");
+  const activeModel = modelConfig(environment);
+  const apiKey = activeModel.apiKey;
+  if (!apiKey) throw new Error(`${activeModel.provider === "openai" ? "OPENAI_API_KEY" : "XAI_API_KEY"} is required for Industry Pulse.`);
 
   const digest = await askModel({
     apiKey,
-    model: environment.XAI_MODEL ?? "grok-4.6",
+    model: activeModel.model,
+    provider: activeModel.provider,
     systemPrompt: INDUSTRY_PULSE_PROMPT,
     text: pulsePrompt({ lang, cadence })
   });

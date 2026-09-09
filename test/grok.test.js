@@ -1,6 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { askGrok, userMessageContent } from "../src/grok.js";
+import { askGrok, modelConfig, userMessageContent } from "../src/grok.js";
+
+test("modelConfig selects OpenAI Luna while retaining explicit xAI rollback", () => {
+  assert.deepEqual(modelConfig({ OPENAI_API_KEY: "openai-key" }), {
+    provider: "openai",
+    apiKey: "openai-key",
+    model: "gpt-5.6-luna"
+  });
+  assert.deepEqual(modelConfig({ AI_PROVIDER: "xai", XAI_API_KEY: "xai-key" }), {
+    provider: "xai",
+    apiKey: "xai-key",
+    model: "grok-4.6"
+  });
+});
+
+test("askGrok routes Luna requests to OpenAI without the Grok conversation header", async () => {
+  let request;
+  const reply = await askGrok({
+    apiKey: "openai-key",
+    model: "gpt-5.6-luna",
+    provider: "openai",
+    text: "hello",
+    conversationId: "private-chat-id",
+    fetchImpl: async (url, options) => {
+      request = { url, options };
+      return { ok: true, json: async () => ({ choices: [{ message: { role: "assistant", content: "hi" } }] }) };
+    }
+  });
+  assert.equal(reply, "hi");
+  assert.equal(request.url, "https://api.openai.com/v1/chat/completions");
+  assert.equal(request.options.headers["x-grok-conv-id"], undefined);
+});
 
 test("askGrok sends identity system prompt plus prior chat turns", async () => {
   let payload;

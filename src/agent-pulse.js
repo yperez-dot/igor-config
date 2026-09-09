@@ -1,4 +1,4 @@
-import { askGrok } from "./grok.js";
+import { askGrok, modelConfig } from "./grok.js";
 import { parseRecipientList, sendEmail, smtpConfig } from "./email.js";
 import { scanMailbox } from "./heartbeat.js";
 import { scanAllAccounts } from "./imap-accounts.js";
@@ -159,7 +159,8 @@ export async function runAgentPulseWeekly({
   }
 
   assertPulseSendReady(environment);
-  const apiKey = environment.XAI_API_KEY;
+  const activeModel = modelConfig(environment);
+  const apiKey = activeModel.apiKey;
 
   try {
   const findings = (await scanAllAccounts({
@@ -179,7 +180,8 @@ export async function runAgentPulseWeekly({
   const locale = pulseLocale(environment);
   const digest = await askModel({
     apiKey,
-    model: environment.XAI_MODEL ?? "grok-4.6",
+    model: activeModel.model,
+    provider: activeModel.provider,
     systemPrompt: locale === "es" ? AGENT_PULSE_PROMPT_ES : AGENT_PULSE_PROMPT,
     text: agentPulsePrompt({ findings, now, environment }),
     timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000),
