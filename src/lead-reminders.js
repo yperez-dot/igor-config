@@ -41,8 +41,11 @@ function addDays(parts, days) {
 }
 
 function parseClock(text, fallbackHour = 9) {
-  const match = text.match(/(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  const explicitAt = text.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  const explicitMeridiem = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+  const match = explicitAt || explicitMeridiem;
   if (!match) return { hour: fallbackHour, minute: 0 };
+
   let hour = Number(match[1]);
   const minute = Number(match[2] ?? 0);
   const meridiem = match[3]?.toLowerCase();
