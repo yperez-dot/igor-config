@@ -15,14 +15,8 @@ function salesTrackerMessage(result, environment) {
 }
 
 function agentPulseMessage(result) {
-  if (result.status === "dry_run") {
-    return `✅ Agent Pulse dry-run: Issue #${result.issue} (${result.length} chars, ${result.findingCount} inbox items).`;
-  }
-  const hub = result.hub?.status === "published"
-    ? " Hub ticker updated."
-    : result.hub?.status === "failed"
-      ? " Hub ticker failed."
-      : "";
+  if (result.status === "dry_run") return `✅ Agent Pulse dry-run: Issue #${result.issue} (${result.length} chars, ${result.findingCount} inbox items).`;
+  const hub = result.hub?.status === "published" ? " Hub ticker updated." : result.hub?.status === "failed" ? " Hub ticker failed." : "";
   return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).${hub}`;
 }
 
@@ -34,13 +28,40 @@ function carrierDigestMessage(result) {
   return `✅ Carrier inbox digest sent: ${result.findingCount} item(s).${hub}`;
 }
 
+const MORNING_CHECKINS = [
+  "Morning — any open leads you need to follow up with today? Send me the names and when you want me to remind you. Also: is each one already in GHL?",
+  "Good morning. Quick lead check: anyone still waiting on a call or follow-up? Tell me who + when, and make sure they made it into GHL.",
+  "Lead check-in: who needs attention today? Give me a name and a time and I’ll remind you. If they’re not in GHL yet, let’s catch that too."
+];
+
+const EVENING_CHECKINS = [
+  "End-of-day lead check: any new leads today, anyone you still owe a follow-up, or any sales that need their GHL status updated? Tell me who and when you want the reminder.",
+  "How was the day? Before we wrap: any new leads to add to GHL, follow-ups to schedule, or enrollments whose CRM status still needs updating?",
+  "Quick closeout: did any leads come in today? Anyone I should remind you to call tomorrow? And is GHL current for the leads you worked or sold?"
+];
+
+function leadCheckinTargets(environment) {
+  return [...new Set([
+    environment.TELEGRAM_YAHOSKA_USER_ID,
+    environment.TELEGRAM_KATY_USER_ID,
+    environment.TELEGRAM_CAROLINA_USER_ID
+  ].map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function leadCheckinText(phase, now = new Date()) {
+  const templates = phase === "evening" ? EVENING_CHECKINS : MORNING_CHECKINS;
+  const dayIndex = Math.floor(now.getTime() / 86_400_000);
+  return templates[Math.abs(dayIndex) % templates.length];
+}
+
 export const WORKER_WORKFLOWS = new Set([
   "sales_tracker_sync",
   "agent_pulse_weekly",
   "carrier_inbox_digest",
   "igor_heartbeat",
   "site_uptime",
-  "telegram_reminder"
+  "telegram_reminder",
+  "lead_followup_checkin"
 ]);
 
 export function runtimeIdentity(environment = process.env) {
@@ -71,6 +92,20 @@ function withAgentPulseEnv(environment, task) {
   return env;
 }
 
+async function sendDirectTelegram({ chatId, text, environment, sendTelegram, store }) {
+  const telegram = telegramConfig(environment);
+  if (!telegram.botToken) throw new Error("Telegram bot token is not configured.");
+  if (!telegram.allowedUserIds.has(String(chatId))) throw new Error("Telegram reminder recipient is not an allowed user.");
+  await sendTelegram({ botToken: telegram.botToken, chatId: String(chatId), text });
+  if (store?.appendChatTurn) {
+    try {
+      await store.appendChatTurn({ chatId: String(chatId), senderId: "igor", role: "assistant", content: text, maxChars: 4000 });
+    } catch {
+      // Delivery succeeded; history is best-effort.
+    }
+  }
+}
+
 export async function processTask(task, {
   environment = process.env,
   notify = async () => {},
@@ -86,9 +121,7 @@ export async function processTask(task, {
   const workflow = task.payload?.workflow;
 
   if (!isWorkerWorkflow(task.payload)) {
-    if (task.payload?.source === "telegram" && !workflow) {
-      return { status: "skipped", reason: "telegram_chat" };
-    }
+    if (task.payload?.source === "telegram" && !workflow) return { status: "skipped", reason: "telegram_chat" };
     throw new Error(`No v2 handler is registered for workflow: ${workflow ?? "unknown"}`);
   }
 
@@ -98,32 +131,20 @@ export async function processTask(task, {
     if (!text) throw new Error("Telegram reminder text is required.");
     if (!chatId) throw new Error("Telegram reminder chatId is required.");
     if (text.length > 4000) throw new Error("Telegram reminder text exceeds 4000 characters.");
-
-    const telegram = telegramConfig(environment);
-    if (!telegram.botToken) throw new Error("Telegram bot token is not configured.");
-    if (!telegram.allowedUserIds.has(chatId)) {
-      throw new Error("Telegram reminder recipient is not an allowed user.");
-    }
-
-    await sendTelegram({
-      botToken: telegram.botToken,
-      chatId,
-      text
-    });
-    if (store?.appendChatTurn) {
-      try {
-        await store.appendChatTurn({
-          chatId,
-          senderId: "igor",
-          role: "assistant",
-          content: text,
-          maxChars: 4000
-        });
-      } catch {
-        // Delivery already succeeded; chat history is best-effort.
-      }
-    }
+    await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
     return { status: "sent", channel: "telegram", chatId };
+  }
+
+  if (workflow === "lead_followup_checkin") {
+    const phase = task.payload?.phase === "evening" ? "evening" : "morning";
+    const text = leadCheckinText(phase);
+    const targets = leadCheckinTargets(environment);
+    let sent = 0;
+    for (const chatId of targets) {
+      await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
+      sent += 1;
+    }
+    return { status: "sent", channel: "telegram", phase, recipientCount: sent };
   }
 
   if (workflow === "sales_tracker_sync") {
@@ -140,14 +161,10 @@ export async function processTask(task, {
   }
 
   if (workflow === "agent_pulse_weekly") {
-    const result = await runAgentPulse({
-      environment: withAgentPulseEnv(environment, task)
-    });
+    const result = await runAgentPulse({ environment: withAgentPulseEnv(environment, task) });
     if (store?.record && result.status === "sent") {
       await store.record("agent_pulse.sent", String(result.issue), {
-        mondayIso: result.mondayIso ?? easternMondayIso(),
-        issue: result.issue,
-        recipientCount: result.recipientCount
+        mondayIso: result.mondayIso ?? easternMondayIso(), issue: result.issue, recipientCount: result.recipientCount
       });
     }
     await notify(agentPulseMessage(result));
@@ -155,18 +172,14 @@ export async function processTask(task, {
   }
 
   if (workflow === "carrier_inbox_digest") {
-    const result = await runCarrierDigest({
-      environment: withModeOverride(environment, task, "CARRIER_DIGEST_MODE")
-    });
+    const result = await runCarrierDigest({ environment: withModeOverride(environment, task, "CARRIER_DIGEST_MODE") });
     await notify(carrierDigestMessage(result));
     return result;
   }
 
   if (workflow === "igor_heartbeat") {
     const last = store ? await store.latestEvent("heartbeat.lookout") : null;
-    const suppressions = store?.listAlertSuppressions
-      ? (await store.listAlertSuppressions()).map((row) => row.pattern)
-      : [];
+    const suppressions = store?.listAlertSuppressions ? (await store.listAlertSuppressions()).map((row) => row.pattern) : [];
     const result = await runHeartbeatFn({
       environment,
       lastFingerprint: last?.detail?.fingerprint,
@@ -176,13 +189,11 @@ export async function processTask(task, {
     });
     if (result.shouldNotify && result.alert) {
       await notify(result.alert);
-      if (store) {
-        await store.record("heartbeat.lookout", "igor", {
-          fingerprint: result.fingerprint,
-          mailFingerprint: result.mailFingerprint ?? last?.detail?.mailFingerprint ?? "clear",
-          status: result.status
-        });
-      }
+      if (store) await store.record("heartbeat.lookout", "igor", {
+        fingerprint: result.fingerprint,
+        mailFingerprint: result.mailFingerprint ?? last?.detail?.mailFingerprint ?? "clear",
+        status: result.status
+      });
     }
     return result;
   }
@@ -205,12 +216,7 @@ export async function processTask(task, {
       } catch (error) {
         result.email = { status: "failed", reason: error.message };
       }
-      if (store) {
-        await store.record("site_uptime.lookout", "igor", {
-          fingerprint: result.fingerprint,
-          status: result.status
-        });
-      }
+      if (store) await store.record("site_uptime.lookout", "igor", { fingerprint: result.fingerprint, status: result.status });
     }
     return result;
   }

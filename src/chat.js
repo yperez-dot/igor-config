@@ -12,6 +12,7 @@ import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalenda
 import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
+import { maybeScheduleLeadReminder } from "./lead-reminders.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 
@@ -140,6 +141,33 @@ export async function handleTelegramChat({
       content: reply
     });
     return reply;
+  }
+
+  const reminder = await maybeScheduleLeadReminder({
+    text: inbound.text,
+    history: message.replyTo?.text
+      ? [...history, { role: "assistant", content: message.replyTo.text }]
+      : history,
+    store,
+    chatId: message.chatId,
+    senderId: message.senderId
+  });
+  if (reminder) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: reminder.reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: reminder.reply
+    });
+    return reminder.reply;
   }
 
   const calendarContext = {

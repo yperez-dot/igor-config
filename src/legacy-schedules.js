@@ -3,9 +3,14 @@ export const EMAIL_LIVE_SCHEDULE_IDS = [
   "v2-agent-pulse",
   "v2-carrier-inbox-digest"
 ];
+export const LEAD_LIVE_SCHEDULE_IDS = [
+  "v2-lead-followup-morning",
+  "v2-lead-followup-evening"
+];
 export const LIVE_SCHEDULE_IDS = [
   ...LOOKOUT_LIVE_SCHEDULE_IDS,
   ...EMAIL_LIVE_SCHEDULE_IDS,
+  ...LEAD_LIVE_SCHEDULE_IDS,
   "v2-sales-tracker-sync"
 ];
 // Same Monday newsletter as Agent Pulse — old OpenClaw name only. Do not run both.
@@ -147,6 +152,22 @@ export const legacySchedules = [
     cron: "0 7 * * *",
     timezone: "America/New_York",
     payload: { workflow: "carrier_inbox_digest", mode: "live", source: "v2" }
+  },
+  {
+    id: "v2-lead-followup-morning",
+    title: "Morning personal lead follow-up",
+    taskType: "lead_management",
+    cron: "0 9 * * *",
+    timezone: "America/New_York",
+    payload: { workflow: "lead_followup_checkin", phase: "morning", mode: "live", source: "v2" }
+  },
+  {
+    id: "v2-lead-followup-evening",
+    title: "Evening personal lead closeout",
+    taskType: "lead_management",
+    cron: "0 18 * * *",
+    timezone: "America/New_York",
+    payload: { workflow: "lead_followup_checkin", phase: "evening", mode: "live", source: "v2" }
   },
   {
     id: "legacy-openclaw-netlify-credit-check",
