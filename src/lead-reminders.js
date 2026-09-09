@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
 const EXPLICIT_RE = /remind me|set (?:a )?reminder|follow up with|follow-up with|call\s+/i;
+const ATTACHMENT_INSTRUCTION_RE = /(?:User sent a photo\.|The image is attached for THIS turn only\.|Do not say the photo never arrived\.|Later turns without an attached image are not looking at this photo\.|User sent a video:|Grok cannot watch raw video|User sent a Telegram file:|The image is attached for you to see\.|Do not say the file never arrived\.)/gi;
 
 function localParts(date = new Date(), timeZone = TZ) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -87,8 +88,17 @@ export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ } = {
   return runAt;
 }
 
-function reminderSubject(text) {
+export function sanitizeReminderInput(text) {
   return String(text ?? "")
+    .replace(ATTACHMENT_INSTRUCTION_RE, " ")
+    .replace(/Ask them to resend a JPG or PNG\.?/gi, " ")
+    .replace(/This turn has no attached image\.[^\n]*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function reminderSubject(text) {
+  return sanitizeReminderInput(text)
     .replace(/\b(remind me|set (?:a )?reminder(?: for)?|tomorrow|today|tonight)\b/gi, " ")
     .replace(/\bin\s+\d+\s*(minutes?|hours?)\b/gi, " ")
     .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/gi, " ")
@@ -102,6 +112,11 @@ function recentReminderContext(history = []) {
   return history.slice(-6).some((turn) => turn.role === "assistant" && REMINDER_CONTEXT_RE.test(turn.content));
 }
 
+export function isLeadReminderRequest(text, history = []) {
+  const raw = sanitizeReminderInput(text);
+  return Boolean(raw && (EXPLICIT_RE.test(raw) || recentReminderContext(history)));
+}
+
 export async function maybeScheduleLeadReminder({
   text,
   history = [],
@@ -111,10 +126,9 @@ export async function maybeScheduleLeadReminder({
   now = new Date(),
   timeZone = TZ
 }) {
-  const raw = String(text ?? "").trim();
+  const raw = sanitizeReminderInput(text);
   if (!raw || !store?.createTask || !chatId) return null;
-  const hasContext = recentReminderContext(history);
-  if (!EXPLICIT_RE.test(raw) && !hasContext) return null;
+  if (!isLeadReminderRequest(raw, history)) return null;
 
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
