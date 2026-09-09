@@ -25,12 +25,18 @@ export function tokenize(query) {
 }
 
 export function loadStandingMemory(rootDir) {
-  const file = path.join(memoryDir(rootDir), "standing.md");
-  try {
-    return fs.readFileSync(file, "utf8").trim();
-  } catch {
-    return "";
+  const root = memoryDir(rootDir);
+  const files = ["standing.md", "right-hand.md"];
+  const sections = [];
+  for (const name of files) {
+    try {
+      const text = fs.readFileSync(path.join(root, name), "utf8").trim();
+      if (text) sections.push(text);
+    } catch {
+      // Optional standing-memory files may be absent in older deployments.
+    }
   }
+  return sections.join("\n\n");
 }
 
 export function listMemoryFiles(rootDir) {
