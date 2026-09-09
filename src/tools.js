@@ -244,7 +244,7 @@ export function grokTools(environment = process.env) {
         properties: { repo: { type: "string" }, pullNumber: { type: "integer" }, mergeMethod: { type: "string", enum: ["merge", "squash", "rebase"] }, confirmed: { type: "boolean" } },
         required: ["repo", "pullNumber"], additionalProperties: false
       }),
-      functionTool("update_hub_ticker", "Edit the Agent Hub ticker. Yahoska or Katy only — never husband, Carolina, or other allowlisted users. Use when Yahoska or Katy says slow the ticker, take calendar appointments off the Hub, or remove Kayla’s Zoom / a personal meeting from the strip. Never publish personal calendar or Zoom items to the Hub. Standing-approved when Yahoska or Katy ask.", {
+      functionTool("update_hub_ticker", "Legacy ticker publisher. Direct use is disabled; use the guarded GitHub branch and pull-request workflow instead.", {
         type: "object",
         properties: {
           slower: { type: "boolean", description: "Slow the ticker strip. Default new speed is 240 seconds per loop." },
@@ -1252,16 +1252,11 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "update_hub_ticker") {
-      if (!canEditHubTicker(senderId, environment)) return hubTickerForbiddenResult();
-      return editHubTicker({
-        environment,
-        remove: args.remove,
-        stripCalendar: args.stripCalendar === true,
-        slower: args.slower === true,
-        tickerSeconds: args.tickerSeconds,
-        fetchImpl
-      });
-    }
+      return {
+        status: "skipped",
+        error: "Direct Hub ticker publishing is disabled. Create a working branch, update the Hub files there, and open a pull request. Do not merge or deploy without separate approval."
+      };
+ }
 
     if (name === "calendar_list_events") {
       const { config, missing } = calendarRequest({ environment, senderId, senderProfile, whose: args.whose });
