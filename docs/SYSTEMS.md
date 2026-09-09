@@ -10,6 +10,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker. Ru
 | Notion | `NOTION_TOKEN` | `notion_search` |
 | GitHub | `GITHUB_TOKEN`, optional `GITHUB_ALLOWED_OWNERS` (default `yperez-dot`) | `github_get` (read), `github_write` (confirm required) |
 | Netlify | `NETLIFY_AUTH_TOKEN` | `netlify_list_sites`, `netlify_deploy` (confirm required) |
+| Railway | `RAILWAY_ACCOUNT_TOKEN` (account scope for all Yahoska-authorized projects; never paste into chat or GitHub) | List projects/services/environments/deployments, read redacted logs, redeploy a selected service (confirm required), and upsert one selected variable (confirm required). No delete, stop, rollback, or bulk replacement tools. |
 | Facebook Ads | `FACEBOOK_ACCESS_TOKEN`, optional `FACEBOOK_AD_ACCOUNT_ID` / `FACEBOOK_CAMPAIGN_ID` | `facebook_ads_insights` |
 | Tavily | `TAVILY_API_KEY` | `web_search` |
 | OliComm | Optional `OLICOMM_BASE_URL` (defaults to the live commission-tracker Railway URL). For reads: optional `OLICOMM_API_KEY`. For uploads: set `OLICOMM_JWT`, or `OLICOMM_API_KEY` if it is a user/service JWT, or `OLICOMM_EMAIL` + `OLICOMM_PASSWORD`. Optional `OLICOMM_AGENCY_OVERRIDE` (`THEI` or `BSI`, default `THEI`). | `olicomm_get` (`/health`, `/api/`, `/v1/` only). `olicomm_preview_upload` (auto-detects upload bucket from filename + headers; source row/commission preview). `olicomm_upload` (multipart ingest + row-by-row verification — confirm required; only call clean when `verification.status` is `match`). |

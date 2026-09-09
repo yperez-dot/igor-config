@@ -55,10 +55,21 @@ import {
   searchDrive,
   searchGmail
 } from "./google-workspace.js";
+import {
+  getRailwayLogs,
+  getRailwayProject,
+  listRailwayDeployments,
+  listRailwayProjects,
+  railwayConfig,
+  redeployRailwayService,
+  setRailwayVariable
+} from "./railway.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
   "netlify_deploy",
+  "railway_redeploy_service",
+  "railway_set_variable",
   "github_write",
   "calendar_create_event",
   "calendar_update_event",
@@ -226,6 +237,46 @@ export function grokTools(environment = process.env) {
         },
         required: ["siteId"],
         additionalProperties: false
+      })
+    );
+  }
+
+  if (connected.has("railway")) {
+    tools.push(
+      functionTool("railway_list_projects", "List all Railway projects available to Igor’s authorized account token. Read-only.", {
+        type: "object", properties: {}, additionalProperties: false
+      }),
+      functionTool("railway_get_project", "List a Railway project’s services and environments by project id. Read-only.", {
+        type: "object",
+        properties: { projectId: { type: "string" } },
+        required: ["projectId"], additionalProperties: false
+      }),
+      functionTool("railway_list_deployments", "List recent Railway deployments for one service and environment. Read-only.", {
+        type: "object",
+        properties: {
+          projectId: { type: "string" }, serviceId: { type: "string" }, environmentId: { type: "string" }, limit: { type: "integer" }
+        },
+        required: ["projectId", "serviceId", "environmentId"], additionalProperties: false
+      }),
+      functionTool("railway_get_logs", "Read redacted Railway build or runtime logs for a deployment. Secrets are filtered and output is capped.", {
+        type: "object",
+        properties: {
+          deploymentId: { type: "string" }, type: { type: "string", enum: ["build", "runtime"] }, limit: { type: "integer" }
+        },
+        required: ["deploymentId"], additionalProperties: false
+      }),
+      functionTool("railway_redeploy_service", "Redeploy a Railway service’s latest deployed commit. Requires confirmed=true after Yahoska or Katy approves the exact project, service, and environment.", {
+        type: "object",
+        properties: { serviceId: { type: "string" }, environmentId: { type: "string" }, confirmed: { type: "boolean" } },
+        required: ["serviceId", "environmentId"], additionalProperties: false
+      }),
+      functionTool("railway_set_variable", "Create or update one Railway variable without revealing its value in the result. Requires confirmed=true after Yahoska or Katy approves the exact project, service, environment, and variable name. Cannot replace Igor’s Railway token; cannot delete or bulk-replace variables.", {
+        type: "object",
+        properties: {
+          projectId: { type: "string" }, serviceId: { type: "string" }, environmentId: { type: "string" },
+          name: { type: "string" }, value: { type: "string" }, skipDeploys: { type: "boolean" }, confirmed: { type: "boolean" }
+        },
+        required: ["projectId", "serviceId", "environmentId", "name", "value"], additionalProperties: false
       })
     );
   }
@@ -862,6 +913,30 @@ export async function executeTool(name, rawArgs, {
         body: {},
         fetchImpl
       });
+    }
+
+    if (name === "railway_list_projects") {
+      return listRailwayProjects({ config: railwayConfig(environment), fetchImpl });
+    }
+
+    if (name === "railway_get_project") {
+      return getRailwayProject({ config: railwayConfig(environment), projectId: args.projectId, fetchImpl });
+    }
+
+    if (name === "railway_list_deployments") {
+      return listRailwayDeployments({ config: railwayConfig(environment), ...args, fetchImpl });
+    }
+
+    if (name === "railway_get_logs") {
+      return getRailwayLogs({ config: railwayConfig(environment), ...args, fetchImpl });
+    }
+
+    if (name === "railway_redeploy_service") {
+      return redeployRailwayService({ config: railwayConfig(environment), serviceId: args.serviceId, environmentId: args.environmentId, fetchImpl });
+    }
+
+    if (name === "railway_set_variable") {
+      return setRailwayVariable({ config: railwayConfig(environment), ...args, fetchImpl });
     }
 
     if (name === "facebook_ads_insights") {
