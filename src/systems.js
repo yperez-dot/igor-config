@@ -61,6 +61,11 @@ export const SYSTEM_IDS = [
     env: ["GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_CALENDAR_REFRESH_TOKEN"]
   },
   {
+    id: "google_workspace",
+    label: "Google Drive and Gmail",
+    env: ["GOOGLE_WORKSPACE_REFRESH_TOKEN"]
+  },
+  {
     id: "imap",
     label: "Leadership inbox (IMAP)",
     env: ["HEARTBEAT_IMAP_USER", "HEARTBEAT_IMAP_PASS"]

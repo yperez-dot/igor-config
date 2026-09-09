@@ -65,24 +65,11 @@ test("telegram-sourced unknown workflows fail loud instead of looking like a cha
   );
 });
 
-test("processes industry pulse weekly tasks", async () => {
-  const notifications = [];
-  const result = await processTask(
-    { payload: { workflow: "industry_pulse_weekly" } },
-    {
-      environment: { XAI_API_KEY: "token", INDUSTRY_PULSE_MODE: "dry-run" },
-      runIndustryPulse: async () => ({
-        status: "completed",
-        results: [
-          { lang: "en", status: "dry_run", length: 400 },
-          { lang: "es", status: "dry_run", length: 420 }
-        ]
-      }),
-      notify: async (message) => notifications.push(message)
-    }
+test("rejects the retired legacy industry pulse workflow", async () => {
+  await assert.rejects(
+    processTask({ payload: { workflow: "industry_pulse_weekly" } }),
+    /No v2 handler/
   );
-  assert.equal(result.status, "completed");
-  assert.match(notifications[0], /Industry Pulse completed/);
 });
 
 test("heartbeat worker loads dismissals and mail fingerprints before paging", async () => {
