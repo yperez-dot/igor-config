@@ -22,6 +22,7 @@ test("askGrok routes Luna requests to OpenAI without the Grok conversation heade
     model: "gpt-5.6-luna",
     provider: "openai",
     text: "hello",
+    tools: [{ type: "function", function: { name: "ping", description: "Test tool", parameters: { type: "object", properties: {} } } }],
     conversationId: "private-chat-id",
     fetchImpl: async (url, options) => {
       request = { url, options };
@@ -31,6 +32,7 @@ test("askGrok routes Luna requests to OpenAI without the Grok conversation heade
   assert.equal(reply, "hi");
   assert.equal(request.url, "https://api.openai.com/v1/chat/completions");
   assert.equal(request.options.headers["x-grok-conv-id"], undefined);
+  assert.equal(JSON.parse(request.options.body).reasoning_effort, "none");
 });
 
 test("askGrok sends identity system prompt plus prior chat turns", async () => {
