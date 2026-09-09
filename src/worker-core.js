@@ -38,7 +38,8 @@ export const WORKER_WORKFLOWS = new Set([
   "agent_pulse_weekly",
   "carrier_inbox_digest",
   "igor_heartbeat",
-  "site_uptime"
+  "site_uptime",
+  "telegram_reminder"
 ]);
 
 export function runtimeIdentity(environment = process.env) {
@@ -87,6 +88,14 @@ export async function processTask(task, {
       return { status: "skipped", reason: "telegram_chat" };
     }
     throw new Error(`No v2 handler is registered for workflow: ${workflow ?? "unknown"}`);
+  }
+
+  if (workflow === "telegram_reminder") {
+    const text = String(task.payload?.text ?? "").trim();
+    if (!text) throw new Error("Telegram reminder text is required.");
+    if (text.length > 4000) throw new Error("Telegram reminder text exceeds 4000 characters.");
+    await notify(text);
+    return { status: "sent", channel: "telegram" };
   }
 
   if (workflow === "sales_tracker_sync") {
