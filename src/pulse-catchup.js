@@ -53,7 +53,8 @@ export async function queueMissedAgentPulse({
     type: "content_draft",
     payload: {
       workflow: "agent_pulse_weekly",
-      source: "boot_catchup",
+      mode: "test",
+      source: "boot_proof",
       mondayIso,
       issue
     }

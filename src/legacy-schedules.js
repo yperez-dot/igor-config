@@ -130,7 +130,7 @@ export const legacySchedules = [
     taskType: "content_draft",
     cron: "0 8 * * 1",
     timezone: "America/New_York",
-    payload: { workflow: "agent_pulse_weekly", mode: "live", source: "v2" }
+    payload: { workflow: "agent_pulse_weekly", mode: "test", source: "v2" }
   },
   {
     id: "v2-industry-pulse",

@@ -141,7 +141,12 @@ app.post("/v1/telegram/webhook", async (request, response) => {
 
   await store.record("telegram.message_received", String(message.updateId), { source: "telegram" });
 
-  try {
+  // Telegram retries webhooks that stay open while an LLM or external tool works.
+  // Acknowledge the claimed update first, then finish it in this long-lived process.
+  response.sendStatus(200);
+
+  void (async () => {
+    try {
     await handleTelegramChat({
       store,
       message,
@@ -157,19 +162,19 @@ app.post("/v1/telegram/webhook", async (request, response) => {
       executeTool,
       environment: process.env
     });
-  } catch (error) {
-    await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });
-    try {
-      await sendTelegramMessage({
-        botToken: TELEGRAM.botToken,
-        chatId: message.chatId,
-        text: telegramFailureMessage(error)
-      });
-    } catch {
-      // The update is already recorded; avoid logging message content or secrets.
+    } catch (error) {
+      await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });
+      try {
+        await sendTelegramMessage({
+          botToken: TELEGRAM.botToken,
+          chatId: message.chatId,
+          text: telegramFailureMessage(error)
+        });
+      } catch {
+        // The update is already recorded; avoid logging message content or secrets.
+      }
     }
-  }
-  return response.sendStatus(200);
+  })();
 });
 
 app.use(authenticated);

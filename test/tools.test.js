@@ -98,7 +98,7 @@ test("run_agent_pulse refuses to queue when the send path is not ready", async (
   assert.match(result.error, /not Anthropic/);
 });
 
-test("run_agent_pulse queues a send task for the Railway worker", async () => {
+test("run_agent_pulse defaults to a proof for the Railway worker", async () => {
   const created = [];
   const result = await executeTool("run_agent_pulse", {}, {
     environment: PULSE_READY_ENV,
@@ -112,8 +112,25 @@ test("run_agent_pulse queues a send task for the Railway worker", async () => {
   assert.equal(result.queued, true);
   assert.equal(created[0].type, "content_draft");
   assert.equal(created[0].payload.workflow, "agent_pulse_weekly");
+  assert.equal(created[0].payload.mode, "test");
+  assert.equal(created[0].payload.source, "proof");
+});
+
+test("run_agent_pulse blocks a list send until the reviewed proof is confirmed", async () => {
+  const blocked = await executeTool("run_agent_pulse", { mode: "send" }, {
+    environment: PULSE_READY_ENV,
+    store: { async createTask() { throw new Error("must not queue"); } }
+  });
+  assert.equal(blocked.queued, false);
+  assert.match(blocked.error, /confirmed=true/);
+
+  const created = [];
+  const approved = await executeTool("run_agent_pulse", { mode: "send", confirmed: true }, {
+    environment: PULSE_READY_ENV,
+    store: { async createTask(task) { created.push(task); return task; } }
+  });
+  assert.equal(approved.queued, true);
   assert.equal(created[0].payload.mode, "send");
-  assert.equal(created[0].payload.source, "catchup");
 });
 
 test("run_agent_pulse queues a Yahoska-only proof with a correction banner", async () => {

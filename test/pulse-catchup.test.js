@@ -43,7 +43,8 @@ test("queues this week's Pulse on boot when the send path is ready", async () =>
   assert.equal(result.issue, 11);
   assert.equal(result.mondayIso, "2026-08-31");
   assert.equal(created[0].payload.workflow, "agent_pulse_weekly");
-  assert.equal(created[0].payload.source, "boot_catchup");
+  assert.equal(created[0].payload.source, "boot_proof");
+  assert.equal(created[0].payload.mode, "test");
   assert.match(pulseBootCatchupMessage(result), /Issue #11/);
 });
 

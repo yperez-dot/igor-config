@@ -135,8 +135,9 @@ export async function askGrok({
   nativeTools,
   executeTool,
   conversationId,
-  maxToolRounds = 12,
+  maxToolRounds = 4,
   timeoutMs,
+  totalTimeoutMs,
   fetchImpl = fetch
 }) {
   if (nativeTools?.length) {
@@ -160,7 +161,11 @@ export async function askGrok({
     { role: "user", content: userMessageContent(text, media) }
   ];
 
+  const deadline = Date.now() + (totalTimeoutMs ?? (tools?.length ? 75_000 : 60_000));
+
   for (let round = 0; round <= maxToolRounds; round += 1) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) throw new Error("xAI tool loop exceeded the total execution deadline.");
     const message = await completeChat({
       apiKey,
       model,
@@ -168,7 +173,10 @@ export async function askGrok({
       tools,
       conversationId,
       fetchImpl,
-      timeoutMs: timeoutMs ?? (media.length ? 120_000 : (tools?.length ? 90_000 : 60_000))
+      timeoutMs: Math.min(
+        remainingMs,
+        timeoutMs ?? (media.length ? 75_000 : (tools?.length ? 45_000 : 60_000))
+      )
     });
     const calls = toolCallsFrom(message);
     if (!calls.length) {

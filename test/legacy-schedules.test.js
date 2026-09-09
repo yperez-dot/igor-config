@@ -8,7 +8,7 @@ test("legacy schedules are Florida-time shadow definitions", () => {
   assert.ok(legacySchedules.every((schedule) => (
     schedule.payload.mode === "shadow"
     || schedule.payload.mode === "retired"
-    || (schedule.payload.source === "v2" && ["report-only", "apply", "live"].includes(schedule.payload.mode))
+    || (schedule.payload.source === "v2" && ["report-only", "apply", "live", "test"].includes(schedule.payload.mode))
   )));
   assert.equal(legacySchedules.find((schedule) => schedule.id === "legacy-igor-watchdog").cron, "*/5 * * * *");
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-site-uptime").cron, "*/5 * * * *");
@@ -17,6 +17,7 @@ test("legacy schedules are Florida-time shadow definitions", () => {
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-sales-tracker-sync").payload.mode, "apply");
   assert.equal(legacySchedules.find((schedule) => schedule.id === "legacy-openclaw-sales-tracker-sync").payload.mode, "retired");
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-agent-pulse").cron, "0 8 * * 1");
+  assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-agent-pulse").payload.mode, "test");
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-industry-pulse").payload.workflow, "industry_pulse_weekly");
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-carrier-inbox-digest").cron, "0 7 * * *");
   assert.deepEqual(EMAIL_LIVE_SCHEDULE_IDS, [

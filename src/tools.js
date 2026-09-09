@@ -47,6 +47,14 @@ import { editHubTicker } from "./hub-ticker.js";
 import { canEditHubTicker, hubTickerForbiddenResult } from "./hub-ticker-edit.js";
 import { imapAccounts, PULSE_INBOX } from "./imap-accounts.js";
 import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
+import {
+  createGmailDraft,
+  googleWorkspaceConfig,
+  readDriveFile,
+  readGmailMessage,
+  searchDrive,
+  searchGmail
+} from "./google-workspace.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
@@ -55,6 +63,7 @@ const WRITE_TOOLS = new Set([
   "calendar_create_event",
   "calendar_update_event",
   "calendar_delete_event",
+  "gmail_create_draft",
   "olicomm_upload"
 ]);
 const DEFAULT_GITHUB_OWNERS = ["yperez-dot"];
@@ -117,10 +126,11 @@ export function grokTools(environment = process.env) {
       },
       additionalProperties: false
     }),
-    functionTool("run_agent_pulse", "Queue Agent Pulse when /health pulseReady is true. Use mode=test for a Yahoska-only branded Insider proof, including when this week's issue already went out with the wrong template. Use mode=send for the contracted list. If pulseReady is false, report pulseBlockers and do not queue. Industry Pulse is the old name for this same Monday email — do not queue both.", {
+    functionTool("run_agent_pulse", "Queue a safe Agent Pulse proof by default. A contracted-list send is blocked unless Yahoska or Katy has reviewed the proof and explicitly confirmed this exact send. If pulseReady is false, report pulseBlockers and do not queue. The legacy Industry Pulse workflow is retired.", {
       type: "object",
       properties: {
         mode: { type: "string", description: "send (contracted list from info@), test (proof mailbox only), or dry-run." },
+        confirmed: { type: "boolean", description: "Required for mode=send after Yahoska or Katy explicitly approves the branded proof in this chat." },
         correctionNote: { type: "string", description: "Pink banner on the branded Insider HTML, e.g. this morning went out in the wrong format — use this email. Do not set this as a Railway env var." },
         subjectNote: { type: "string", description: "Appended to the subject, e.g. CORRECTED. Do not set this as a Railway env var." }
       },
@@ -410,6 +420,51 @@ export function grokTools(environment = process.env) {
     );
   }
 
+  if (connected.has("google_workspace")) {
+    tools.push(
+      functionTool("drive_search", "Search Yahoska's authorized Google Drive by file name or file text. Returns metadata only; use drive_read_file for contents.", {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          limit: { type: "integer", description: "Maximum 25. Default 10." }
+        },
+        required: ["query"],
+        additionalProperties: false
+      }),
+      functionTool("drive_read_file", "Read an authorized Google Doc, Google Sheet, or text file by Drive file id. Read-only and capped at 50,000 characters.", {
+        type: "object",
+        properties: { fileId: { type: "string" } },
+        required: ["fileId"],
+        additionalProperties: false
+      }),
+      functionTool("gmail_search", "Search Yahoska's authorized Gmail using Gmail search syntax. Returns sender, subject, date, and snippet; use gmail_read_message for the body.", {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Gmail search, e.g. from:carrier newer_than:30d." },
+          limit: { type: "integer", description: "Maximum 20. Default 10." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("gmail_read_message", "Read one authorized Gmail message by id. Do not expose message contents outside the authorized Telegram chat.", {
+        type: "object",
+        properties: { messageId: { type: "string" } },
+        required: ["messageId"],
+        additionalProperties: false
+      }),
+      functionTool("gmail_create_draft", "Create—but never send—a Gmail draft. Requires confirmed=true after the user reviews the recipient, subject, and body.", {
+        type: "object",
+        properties: {
+          to: { type: "string" },
+          subject: { type: "string" },
+          text: { type: "string" },
+          confirmed: { type: "boolean" }
+        },
+        required: ["to", "subject", "text"],
+        additionalProperties: false
+      })
+    );
+  }
+
   if (connected.has("imap")) {
     tools.push(functionTool("inbox_status", "Report whether IMAP is configured for theiagentpulse@gmail.com (forwarded inbox) and info@. Does not dump email bodies.", {
       type: "object",
@@ -607,6 +662,32 @@ export async function executeTool(name, rawArgs, {
 
     if (name === "run_lookout") {
       return runLookout({ environment, fetchImpl, includePulse: true });
+    }
+
+    if (name === "drive_search") {
+      return searchDrive({ config: googleWorkspaceConfig(environment), query: args.query, limit: args.limit, fetchImpl });
+    }
+
+    if (name === "drive_read_file") {
+      return readDriveFile({ config: googleWorkspaceConfig(environment), fileId: args.fileId, fetchImpl });
+    }
+
+    if (name === "gmail_search") {
+      return searchGmail({ config: googleWorkspaceConfig(environment), query: args.query, limit: args.limit, fetchImpl });
+    }
+
+    if (name === "gmail_read_message") {
+      return readGmailMessage({ config: googleWorkspaceConfig(environment), messageId: args.messageId, fetchImpl });
+    }
+
+    if (name === "gmail_create_draft") {
+      return createGmailDraft({
+        config: googleWorkspaceConfig(environment),
+        to: args.to,
+        subject: args.subject,
+        text: args.text,
+        fetchImpl
+      });
     }
 
     if (name === "ghl_stale_leads") {
@@ -967,7 +1048,14 @@ export async function executeTool(name, rawArgs, {
     }
 
     if (name === "run_agent_pulse") {
-      const mode = ["dry-run", "test", "send"].includes(args.mode) ? args.mode : "send";
+      const mode = ["dry-run", "test", "send"].includes(args.mode) ? args.mode : "test";
+      if (mode === "send" && args.confirmed !== true) {
+        return {
+          queued: false,
+          error: "Agent Pulse list send requires confirmed=true after Yahoska or Katy reviews the branded proof.",
+          nextStep: "Run mode=test first, then ask for explicit approval of that proof."
+        };
+      }
       const readiness = pulseReadiness({ ...environment, AGENT_PULSE_MODE: mode });
       if (!readiness.ready) {
         return {
