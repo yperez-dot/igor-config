@@ -30,10 +30,10 @@ export function pulseReadiness(environment = process.env) {
   const pulseConfigured = hasPulseInbox(environment);
   const blockers = [];
 
-  if (!present(environment.XAI_API_KEY)) {
+  if (!present(environment.OPENAI_API_KEY) && !present(environment.XAI_API_KEY)) {
     blockers.push({
-      id: "XAI_API_KEY",
-      detail: "XAI_API_KEY is missing on igor-config and Igor V2. Grok cannot draft Pulse."
+      id: "AI_API_KEY",
+      detail: "OPENAI_API_KEY or XAI_API_KEY is missing on igor-config and Igor V2. The AI model cannot draft Pulse."
     });
   }
   if (!pulseConfigured) {
