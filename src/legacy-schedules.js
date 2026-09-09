@@ -159,7 +159,7 @@ export const legacySchedules = [
     taskType: "lead_management",
     cron: "0 9 * * *",
     timezone: "America/New_York",
-    payload: { workflow: "lead_followup_checkin", phase: "morning", source: "v2" }
+    payload: { workflow: "lead_followup_checkin", phase: "morning", mode: "live", source: "v2" }
   },
   {
     id: "v2-lead-followup-evening",
@@ -167,7 +167,7 @@ export const legacySchedules = [
     taskType: "lead_management",
     cron: "0 18 * * *",
     timezone: "America/New_York",
-    payload: { workflow: "lead_followup_checkin", phase: "evening", source: "v2" }
+    payload: { workflow: "lead_followup_checkin", phase: "evening", mode: "live", source: "v2" }
   },
   {
     id: "legacy-openclaw-netlify-credit-check",
