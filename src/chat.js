@@ -12,13 +12,14 @@ import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalenda
 import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
-import { maybeScheduleLeadReminder } from "./lead-reminders.js";
+import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput } from "./lead-reminders.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 const LEAD_ONBOARDING_ROLES = new Set(["yahoska", "katy", "carolina"]);
 const KNOWN_GREETING_ROLES = new Set(["yahoska", "katy", "carolina", "husband"]);
 const SIMPLE_GREETING_RE = /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))(?:[\s,!.-]+(?:igor|there|yahoska|katy|carolina))?[\s!?.]*$/i;
 const SELF_IDENTIFICATION_RE = /\b(?:this is|i am|i['’]?m)\s+(?:yahoska|katy|carolina)(?:\s+robles|\s+perez)?\b/i;
+const LEAD_IMAGE_PROMPT = `Extract only useful lead-follow-up facts from the attached image and the user's note. Return one short plain-English phrase, not a sentence to the user. Include a first name if visible, relationship/context, carrier or plan context if visible, and why follow-up is needed. Do not include phone numbers, email addresses, account numbers, IDs, or internal processing instructions. Do not invent anything.`;
 
 export const LEAD_ONBOARDING_MESSAGE = "Hey! I’m going to help you keep track of leads and follow-ups so nothing falls through the cracks. This only works if you respond when I check in.\n\nLet’s start:\n1. Do you have any open leads you still need to follow up with?\n2. Any new leads today that still need to go into GHL?\n3. Anyone you want me to remind you to call or follow up with? Send me the name + when.\n4. Any sales or lead outcomes you worked today that still need their GHL status updated?";
 
@@ -204,11 +205,35 @@ export async function handleTelegramChat({
     return reply;
   }
 
+  const reminderHistory = message.replyTo?.text
+    ? [...history, { role: "assistant", content: message.replyTo.text }]
+    : history;
+  let reminderSubjectText;
+  const cleanReminderInput = sanitizeReminderInput(inbound.text);
+  if (hasMedia && apiKey && isLeadReminderRequest(cleanReminderInput, reminderHistory)) {
+    try {
+      const imageFacts = await askGrok({
+        apiKey,
+        model,
+        text: `${LEAD_IMAGE_PROMPT}\n\nUser note: ${cleanReminderInput || "(no note)"}`,
+        media: inbound.media,
+        history: [],
+        systemPrompt: "You extract concise lead follow-up facts from the image supplied in this turn. Follow the user's privacy constraints exactly.",
+        tools: [],
+        conversationId: `${message.chatId}:lead-reminder-image`,
+        maxToolRounds: 0,
+        totalTimeoutMs: 35_000
+      });
+      reminderSubjectText = [cleanReminderInput, imageFacts].filter(Boolean).join(". ");
+    } catch {
+      reminderSubjectText = cleanReminderInput;
+    }
+  }
+
   const reminder = await maybeScheduleLeadReminder({
-    text: inbound.text,
-    history: message.replyTo?.text
-      ? [...history, { role: "assistant", content: message.replyTo.text }]
-      : history,
+    text: cleanReminderInput,
+    subjectText: reminderSubjectText,
+    history: reminderHistory,
     store,
     chatId: message.chatId,
     senderId: message.senderId
