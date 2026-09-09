@@ -3,6 +3,8 @@ import { stringifyToolResult } from "./tools.js";
 
 const XAI_CHAT_COMPLETIONS_URL = "https://api.x.ai/v1/chat/completions";
 const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
+const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 
 export { SYSTEM_PROMPT, systemPromptFor };
 
@@ -20,8 +22,20 @@ export function isSpanish(text) {
 
 export function unavailableMessage(text) {
   return isSpanish(text)
-    ? "Igor v2 está configurado, pero la conexión con Grok aún no está activa. Avísale a Yahoska o a Katy para completar la configuración."
-    : "Igor v2 is configured, but the Grok connection is not active yet. Ask Yahoska or Katy to complete the setup.";
+    ? "Igor v2 está configurado, pero la conexión con el modelo de IA aún no está activa. Avísale a Yahoska o a Katy para completar la configuración."
+    : "Igor v2 is configured, but the AI model connection is not active yet. Ask Yahoska or Katy to complete the setup.";
+}
+
+export function modelConfig(environment = process.env) {
+  const provider = String(environment.AI_PROVIDER ?? (environment.OPENAI_API_KEY ? "openai" : "xai")).toLowerCase();
+  if (provider === "openai") {
+    return { provider, apiKey: environment.OPENAI_API_KEY, model: environment.OPENAI_MODEL ?? "gpt-5.6-luna" };
+  }
+  return { provider: "xai", apiKey: environment.XAI_API_KEY, model: environment.XAI_MODEL ?? "grok-4.6" };
+}
+
+function providerName(provider) {
+  return provider === "openai" ? "OpenAI" : "xAI";
 }
 
 export function isPlanRecommendationRequest(text) {
@@ -46,7 +60,7 @@ export function toolCallsFrom(message) {
   return [];
 }
 
-async function completeChat({ apiKey, model, messages, tools, conversationId, fetchImpl, timeoutMs = 60_000 }) {
+async function completeChat({ apiKey, model, provider, messages, tools, conversationId, fetchImpl, timeoutMs = 60_000 }) {
   const payload = { model, messages };
   if (tools?.length) {
     payload.tools = tools;
@@ -56,9 +70,9 @@ async function completeChat({ apiKey, model, messages, tools, conversationId, fe
     Authorization: `Bearer ${apiKey}`,
     "Content-Type": "application/json"
   };
-  if (conversationId) headers["x-grok-conv-id"] = String(conversationId);
+  if (conversationId && provider !== "openai") headers["x-grok-conv-id"] = String(conversationId);
 
-  const response = await fetchImpl(XAI_CHAT_COMPLETIONS_URL, {
+  const response = await fetchImpl(provider === "openai" ? OPENAI_CHAT_COMPLETIONS_URL : XAI_CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers,
     body: JSON.stringify(payload),
@@ -66,12 +80,12 @@ async function completeChat({ apiKey, model, messages, tools, conversationId, fe
   });
 
   if (!response.ok) {
-    throw new Error(`xAI request failed with HTTP ${response.status}`);
+    throw new Error(`${providerName(provider)} request failed with HTTP ${response.status}`);
   }
 
   const body = await response.json();
   const message = body.choices?.[0]?.message;
-  if (!message) throw new Error("xAI returned no assistant message.");
+  if (!message) throw new Error(`${providerName(provider)} returned no assistant message.`);
   return message;
 }
 
@@ -89,8 +103,8 @@ export function textFromXaiResponses(body) {
   return chunks.join("\n").trim();
 }
 
-async function completeResponses({ apiKey, model, input, tools, fetchImpl, timeoutMs = 60_000 }) {
-  const response = await fetchImpl(XAI_RESPONSES_URL, {
+async function completeResponses({ apiKey, model, provider, input, tools, fetchImpl, timeoutMs = 60_000 }) {
+  const response = await fetchImpl(provider === "openai" ? OPENAI_RESPONSES_URL : XAI_RESPONSES_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -105,11 +119,11 @@ async function completeResponses({ apiKey, model, input, tools, fetchImpl, timeo
     signal: AbortSignal.timeout(timeoutMs)
   });
   if (!response.ok) {
-    throw new Error(`xAI request failed with HTTP ${response.status}`);
+    throw new Error(`${providerName(provider)} request failed with HTTP ${response.status}`);
   }
   const body = await response.json();
   const text = textFromXaiResponses(body);
-  if (!text) throw new Error("xAI returned no assistant text.");
+  if (!text) throw new Error(`${providerName(provider)} returned no assistant text.`);
   return text;
 }
 
@@ -127,6 +141,7 @@ export function userMessageContent(text, media = []) {
 export async function askGrok({
   apiKey,
   model,
+  provider = String(model).startsWith("gpt-") ? "openai" : "xai",
   text,
   media = [],
   history = [],
@@ -149,6 +164,7 @@ export async function askGrok({
     return completeResponses({
       apiKey,
       model,
+      provider,
       input,
       tools: nativeTools,
       fetchImpl,
@@ -169,6 +185,7 @@ export async function askGrok({
     const message = await completeChat({
       apiKey,
       model,
+      provider,
       messages,
       tools,
       conversationId,
@@ -181,7 +198,7 @@ export async function askGrok({
     const calls = toolCallsFrom(message);
     if (!calls.length) {
       const reply = typeof message.content === "string" ? message.content.trim() : "";
-      if (!reply) throw new Error("xAI returned no assistant text.");
+      if (!reply) throw new Error(`${providerName(provider)} returned no assistant text.`);
       return reply;
     }
     if (!executeTool) {
