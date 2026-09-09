@@ -243,16 +243,6 @@ export function grokTools(environment = process.env) {
         type: "object",
         properties: { repo: { type: "string" }, pullNumber: { type: "integer" }, mergeMethod: { type: "string", enum: ["merge", "squash", "rebase"] }, confirmed: { type: "boolean" } },
         required: ["repo", "pullNumber"], additionalProperties: false
-      }),
-      functionTool("update_hub_ticker", "Legacy ticker publisher. Direct use is disabled; use the guarded GitHub branch and pull-request workflow instead.", {
-        type: "object",
-        properties: {
-          slower: { type: "boolean", description: "Slow the ticker strip. Default new speed is 240 seconds per loop." },
-          tickerSeconds: { type: "integer", description: "Seconds per ticker loop (60–480). Use when they name a speed." },
-          stripCalendar: { type: "boolean", description: "Remove personal calendar and Zoom items from the ticker." },
-          remove: { type: "string", description: "Remove alerts matching this text, e.g. kayla or zoom meeting." }
-        },
-        additionalProperties: false
       })
     );
   }
