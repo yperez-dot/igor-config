@@ -16,16 +16,26 @@ function response(data) {
 
 test("Railway uses the account token and lists projects", async () => {
   let request;
+  let calls = 0;
   const result = await listRailwayProjects({
     config,
     fetchImpl: async (url, options) => {
       request = { url, options };
+      calls += 1;
+      if (calls === 1) {
+        return response({
+          me: { workspaces: [{ id: "w1", name: "yperez-dot's Projects" }] },
+          projects: { edges: [] }
+        });
+      }
       return response({ projects: { edges: [{ node: { id: "p1", name: "Agent Medicare Hub" } }] } });
     }
   });
   assert.equal(request.url, "https://backboard.railway.com/graphql/v2");
   assert.equal(request.options.headers.Authorization, "Bearer railway-token");
   assert.equal(result.projects[0].name, "Agent Medicare Hub");
+  assert.equal(result.projects[0].workspace.name, "yperez-dot's Projects");
+  assert.equal(calls, 2);
 });
 
 test("Railway log output redacts credentials", async () => {
