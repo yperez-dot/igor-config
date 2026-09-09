@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleTelegramChat, looksLikeOpsAlert, withReplyContext } from "../src/chat.js";
+import { handleTelegramChat, isLeadKickoffRole, isSimpleGreeting, LEAD_KICKOFF_MESSAGE, looksLikeOpsAlert, withReplyContext } from "../src/chat.js";
 import { isPlanRecommendationRequest, recommendationRefusal } from "../src/grok.js";
 import { writeStoredZip } from "../src/zip.js";
 
@@ -658,4 +658,133 @@ test("Stop after a Humana mail alert persists dismissals without calling Grok", 
   assert.match(reply, /will not ping you/i);
   assert.deepEqual(sent, [reply]);
   assert.ok(store.turns.some((turn) => turn.role === "suppression" && turn.content === "statement is ready"));
+});
+
+test("isSimpleGreeting recognizes the allowed greeting phrases", () => {
+  const greetings = ["hi", "Hello", "HEY", "Good morning", "good afternoon", "Good Evening"];
+  for (const greeting of greetings) {
+    assert.equal(isSimpleGreeting(greeting), true, `expected "${greeting}" to be a simple greeting`);
+  }
+  assert.equal(isSimpleGreeting("hi there, quick question"), false);
+  assert.equal(isSimpleGreeting("how's it going"), false);
+});
+
+test("isLeadKickoffRole only allows yahoska, katy, and carolina", () => {
+  assert.equal(isLeadKickoffRole("yahoska"), true);
+  assert.equal(isLeadKickoffRole("katy"), true);
+  assert.equal(isLeadKickoffRole("carolina"), true);
+  assert.equal(isLeadKickoffRole("husband"), false);
+  assert.equal(isLeadKickoffRole("allowlisted"), false);
+  assert.equal(isLeadKickoffRole(undefined), false);
+});
+
+for (const [role, envKey] of [
+  ["yahoska", "TELEGRAM_YAHOSKA_USER_ID"],
+  ["katy", "TELEGRAM_KATY_USER_ID"],
+  ["carolina", "TELEGRAM_CAROLINA_USER_ID"]
+]) {
+  for (const greeting of ["hi", "hello", "hey", "good morning", "good afternoon", "good evening"]) {
+    test(`${role} saying "${greeting}" gets the lead kickoff without calling Grok`, async () => {
+      const store = memoryStore();
+      let grokCalled = false;
+      const sent = [];
+      const reply = await handleTelegramChat({
+        store,
+        environment: { [envKey]: "555" },
+        message: { chatId: 1, senderId: "555", text: greeting },
+        askGrok: async () => {
+          grokCalled = true;
+          return "should not run";
+        },
+        sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+        botToken: "token",
+        apiKey: "xai",
+        model: "grok-4.6",
+        isPlanRecommendationRequest,
+        recommendationRefusal,
+        unavailableMessage: () => "offline"
+      });
+
+      assert.equal(grokCalled, false);
+      assert.equal(reply, LEAD_KICKOFF_MESSAGE);
+      assert.deepEqual(sent, [LEAD_KICKOFF_MESSAGE]);
+      assert.equal(store.turns.length, 2);
+      assert.equal(store.turns[0].role, "user");
+      assert.equal(store.turns[0].content, greeting);
+      assert.equal(store.turns[1].role, "assistant");
+      assert.equal(store.turns[1].content, LEAD_KICKOFF_MESSAGE);
+    });
+  }
+}
+
+test("Yahoska sending a non-greeting message proceeds to Grok normally", async () => {
+  const store = memoryStore();
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "555" },
+    message: { chatId: 1, senderId: "555", text: "Did we hear back from the Humana rep?" },
+    askGrok: async () => {
+      grokCalled = true;
+      return "Not yet — I'll flag it if we hear anything.";
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+
+  assert.equal(grokCalled, true);
+  assert.notEqual(reply, LEAD_KICKOFF_MESSAGE);
+  assert.match(reply, /Not yet/);
+});
+
+test("husband saying hello does not get the lead kickoff", async () => {
+  const store = memoryStore();
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_HUSBAND_USER_ID: "111" },
+    message: { chatId: 1, senderId: "111", text: "hello" },
+    askGrok: async () => {
+      grokCalled = true;
+      return "Hey — what do you need?";
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+
+  assert.equal(grokCalled, true);
+  assert.notEqual(reply, LEAD_KICKOFF_MESSAGE);
+});
+
+test("unknown sender saying hello does not get the lead kickoff", async () => {
+  const store = memoryStore();
+  let grokCalled = false;
+  const reply = await handleTelegramChat({
+    store,
+    message: { chatId: 1, senderId: "999999", text: "hello" },
+    askGrok: async () => {
+      grokCalled = true;
+      return "Hey — what do you need?";
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+
+  assert.equal(grokCalled, true);
+  assert.notEqual(reply, LEAD_KICKOFF_MESSAGE);
 });

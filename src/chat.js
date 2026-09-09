@@ -20,6 +20,25 @@ export function looksLikeOpsAlert(text) {
   return OPS_ALERT_RE.test(String(text ?? ""));
 }
 
+const SIMPLE_GREETING_RE = /^(hi|hello|hey|good morning|good afternoon|good evening)[.!?]*$/i;
+const LEAD_KICKOFF_ROLES = ["yahoska", "katy", "carolina"];
+
+export const LEAD_KICKOFF_MESSAGE = `Hey! I'm going to help you keep track of leads and follow-ups so nothing falls through the cracks. This only works if you respond when I check in.
+
+Let's start:
+1. Do you have any open leads you still need to follow up with?
+2. Any new leads today that still need to go into GHL?
+3. Anyone you want me to remind you to call or follow up with? Send me the name + when.
+4. Any sales or lead outcomes you worked today that still need their GHL status updated?`;
+
+export function isSimpleGreeting(text) {
+  return SIMPLE_GREETING_RE.test(String(text ?? "").trim());
+}
+
+export function isLeadKickoffRole(role) {
+  return LEAD_KICKOFF_ROLES.includes(role);
+}
+
 export function withReplyContext(userText, replyTo, { hasMedia = false } = {}) {
   if (!replyTo) return userText;
   const quoted = String(replyTo.text ?? "").trim();
@@ -95,6 +114,24 @@ export async function handleTelegramChat({
       claimsToBeYahoska(message.text) ? "claimed" : "inferred"
     );
   }
+
+  if (isSimpleGreeting(message.text) && isLeadKickoffRole(speaker.role)) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: LEAD_KICKOFF_MESSAGE });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: message.text
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: LEAD_KICKOFF_MESSAGE
+    });
+    return LEAD_KICKOFF_MESSAGE;
+  }
+
   const prompt = systemPrompt ?? systemPromptFor(environment, {
     senderId: message.senderId,
     senderProfile
