@@ -7,6 +7,11 @@ test("parses tomorrow at 11 in Eastern time", () => {
   assert.equal(parseReminderRunAt("remind me tomorrow at 11 am", { now }).toISOString(), "2026-09-10T15:00:00.000Z");
 });
 
+test("does not mistake a numeric date for the reminder time", () => {
+  const now = new Date("2026-09-09T21:00:00Z");
+  assert.equal(parseReminderRunAt("remind me Maria 9/10 at 2 pm", { now }).toISOString(), "2026-09-10T18:00:00.000Z");
+});
+
 test("creates a private future reminder for the requesting chat", async () => {
   let created;
   const store = {
