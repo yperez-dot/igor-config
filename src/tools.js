@@ -64,6 +64,12 @@ import {
   redeployRailwayService,
   setRailwayVariable
 } from "./railway.js";
+import {
+  createGithubBranch,
+  mergeGithubPullRequest,
+  openGithubPullRequest,
+  putGithubFile
+} from "./github-workflow.js";
 
 const WRITE_TOOLS = new Set([
   "send_internal_email",
@@ -71,6 +77,10 @@ const WRITE_TOOLS = new Set([
   "railway_redeploy_service",
   "railway_set_variable",
   "github_write",
+  "github_create_branch",
+  "github_put_file",
+  "github_open_pull_request",
+  "github_merge_pull_request",
   "calendar_create_event",
   "calendar_update_event",
   "calendar_delete_event",
@@ -208,6 +218,31 @@ export function grokTools(environment = process.env) {
         },
         required: ["method", "path"],
         additionalProperties: false
+      }),
+      functionTool("github_create_branch", "Create a working branch from an existing base branch. Direct main/master creation or editing is blocked. Requires confirmed=true.", {
+        type: "object",
+        properties: { repo: { type: "string" }, branch: { type: "string" }, baseBranch: { type: "string" }, confirmed: { type: "boolean" } },
+        required: ["repo", "branch"], additionalProperties: false
+      }),
+      functionTool("github_put_file", "Create or replace one UTF-8 file on a working branch. Never writes directly to main/master. For replacement, pass the current file sha from github_get. Requires confirmed=true after showing the proposed file/diff.", {
+        type: "object",
+        properties: {
+          repo: { type: "string" }, branch: { type: "string" }, path: { type: "string" }, content: { type: "string" },
+          message: { type: "string" }, sha: { type: "string" }, confirmed: { type: "boolean" }
+        },
+        required: ["repo", "branch", "path", "content"], additionalProperties: false
+      }),
+      functionTool("github_open_pull_request", "Open a pull request from a working branch after the user approves the proposed change. Requires confirmed=true.", {
+        type: "object",
+        properties: {
+          repo: { type: "string" }, head: { type: "string" }, base: { type: "string" }, title: { type: "string" }, body: { type: "string" }, confirmed: { type: "boolean" }
+        },
+        required: ["repo", "head", "title"], additionalProperties: false
+      }),
+      functionTool("github_merge_pull_request", "Merge a reviewed GitHub pull request. Requires a new confirmed=true after the user approves the exact PR number. Never merges automatically after opening.", {
+        type: "object",
+        properties: { repo: { type: "string" }, pullNumber: { type: "integer" }, mergeMethod: { type: "string", enum: ["merge", "squash", "rebase"] }, confirmed: { type: "boolean" } },
+        required: ["repo", "pullNumber"], additionalProperties: false
       }),
       functionTool("update_hub_ticker", "Edit the Agent Hub ticker. Yahoska or Katy only — never husband, Carolina, or other allowlisted users. Use when Yahoska or Katy says slow the ticker, take calendar appointments off the Hub, or remove Kayla’s Zoom / a personal meeting from the strip. Never publish personal calendar or Zoom items to the Hub. Standing-approved when Yahoska or Katy ask.", {
         type: "object",
@@ -887,6 +922,15 @@ export async function executeTool(name, rawArgs, {
       });
     }
 
+    if (["github_create_branch", "github_put_file", "github_open_pull_request", "github_merge_pull_request"].includes(name)) {
+      if (!allowedGithubPath(environment, args.repo)) return { error: "GitHub repository is outside the allowed owner list." };
+      const token = environment.GITHUB_TOKEN;
+      if (name === "github_create_branch") return createGithubBranch({ token, ...args, fetchImpl });
+      if (name === "github_put_file") return putGithubFile({ token, ...args, fetchImpl });
+      if (name === "github_open_pull_request") return openGithubPullRequest({ token, ...args, fetchImpl });
+      return mergeGithubPullRequest({ token, ...args, fetchImpl });
+    }
+
     if (name === "netlify_list_sites") {
       const sites = await jsonFetch("https://api.netlify.com/api/v1/sites?per_page=30", {
         headers: { Authorization: `Bearer ${environment.NETLIFY_AUTH_TOKEN}` },
@@ -898,7 +942,12 @@ export async function executeTool(name, rawArgs, {
           name: site.name,
           url: site.ssl_url || site.url,
           publishedDeploy: site.published_deploy?.published_at ?? null,
-          state: site.published_deploy?.state ?? site.state ?? null
+          state: site.published_deploy?.state ?? site.state ?? null,
+          repository: site.build_settings?.repo_path ?? site.build_settings?.repo_url ?? null,
+          branch: site.build_settings?.repo_branch ?? null,
+          baseDirectory: site.build_settings?.base ?? null,
+          publishDirectory: site.build_settings?.dir ?? null,
+          buildCommand: site.build_settings?.cmd ?? null
         }))
       };
     }
