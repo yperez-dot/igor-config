@@ -54,41 +54,17 @@ test("only pinned Yahoska and Katy Telegram ids can edit the Hub ticker", () => 
   assert.equal(canEditHubTicker("", env), false);
 });
 
-test("Yahoska ticker wording calls update_hub_ticker and skips Grok", async () => {
-  const calls = [];
+test("ticker wording is not intercepted by a direct publisher", async () => {
+  let called = false;
   const result = await editHubTickerIfRequested({
-    text: "slow down the speed of the ticker",
+    text: "remove the live ticker from the Agent Hub",
     speaker: { role: "yahoska", id: "888" },
     toolContext: { senderId: "888", environment: { TELEGRAM_YAHOSKA_USER_ID: "888" } },
-    executeTool: async (name, args) => {
-      calls.push({ name, args });
-      return { status: "published", removed: ["Kayla Robles's Zoom Meeting"], tickerSeconds: 240 };
+    executeTool: async () => {
+      called = true;
+      return { status: "published" };
     }
   });
-  assert.equal(calls[0].name, "update_hub_ticker");
-  assert.equal(calls[0].args.slower, true);
-  assert.equal(calls[0].args.confirmed, true);
-  assert.match(result.reply, /slower/);
-  assert.match(result.reply, /Kayla/);
-});
-
-test("inferred Yahoska/Katy names do not write the Hub", async () => {
-  const cases = [
-    { speaker: { role: "yahoska", canOperate: true, id: "999" }, toolContext: { senderId: "999", environment: { TELEGRAM_YAHOSKA_USER_ID: "888" } } },
-    { speaker: { role: "katy", canOperate: true, id: "999" }, toolContext: { senderId: "999", environment: {} } },
-    { speaker: { role: "husband", canOperate: false, id: "111" }, toolContext: { senderId: "111", environment: { TELEGRAM_YAHOSKA_USER_ID: "888", TELEGRAM_HUSBAND_USER_ID: "111" } } }
-  ];
-  for (const ctx of cases) {
-    const calls = [];
-    const result = await editHubTickerIfRequested({
-      text: "slow down the speed of the ticker",
-      ...ctx,
-      executeTool: async (name, args) => {
-        calls.push({ name, args });
-        return { status: "published", tickerSeconds: 240 };
-      }
-    });
-    assert.equal(calls.length, 0);
-    assert.match(result.reply, /Yahoska or Katy/);
-  }
+  assert.equal(result, null);
+  assert.equal(called, false);
 });
