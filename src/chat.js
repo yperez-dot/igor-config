@@ -15,9 +15,45 @@ import { downloadTelegramFile } from "./telegram.js";
 import { maybeScheduleLeadReminder } from "./lead-reminders.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
+const LEAD_ONBOARDING_ROLES = new Set(["yahoska", "katy", "carolina"]);
+const KNOWN_GREETING_ROLES = new Set(["yahoska", "katy", "carolina", "husband"]);
+const SIMPLE_GREETING_RE = /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))(?:[\s,!.-]+(?:igor|there|yahoska|katy|carolina))?[\s!?.]*$/i;
+const SELF_IDENTIFICATION_RE = /\b(?:this is|i am|i['’]?m)\s+(?:yahoska|katy|carolina)(?:\s+robles|\s+perez)?\b/i;
+
+export const LEAD_ONBOARDING_MESSAGE = "Hey! I’m going to help you keep track of leads and follow-ups so nothing falls through the cracks. This only works if you respond when I check in.\n\nLet’s start:\n1. Do you have any open leads you still need to follow up with?\n2. Any new leads today that still need to go into GHL?\n3. Anyone you want me to remind you to call or follow up with? Send me the name + when.\n4. Any sales or lead outcomes you worked today that still need their GHL status updated?";
 
 export function looksLikeOpsAlert(text) {
   return OPS_ALERT_RE.test(String(text ?? ""));
+}
+
+export function isSimpleGreeting(text) {
+  const raw = String(text ?? "").trim();
+  return raw.length > 0 && raw.length <= 40 && !raw.includes("\n") && SIMPLE_GREETING_RE.test(raw);
+}
+
+function onboardingEventType(senderId) {
+  return `lead_onboarding.completed.${String(senderId ?? "").trim()}`;
+}
+
+function normalGreeting(speaker) {
+  const firstName = String(speaker?.name ?? "").trim().split(/\s+/)[0];
+  return firstName ? `Hey ${firstName}! What can I help you with?` : "Hey! What can I help you with?";
+}
+
+async function storeDirectReply({ store, message, userText, userMaxChars, reply }) {
+  await store.appendChatTurn({
+    chatId: message.chatId,
+    senderId: message.senderId,
+    role: "user",
+    content: userText,
+    maxChars: userMaxChars
+  });
+  await store.appendChatTurn({
+    chatId: message.chatId,
+    senderId: "igor",
+    role: "assistant",
+    content: reply
+  });
 }
 
 export function withReplyContext(userText, replyTo, { hasMedia = false } = {}) {
@@ -86,7 +122,7 @@ export async function handleTelegramChat({
   };
   const speaker = telegramSpeaker(environment, message.senderId, senderProfile);
   if (
-    ["yahoska", "katy", "carolina"].includes(speaker.role)
+    LEAD_ONBOARDING_ROLES.has(speaker.role)
     && typeof store.rememberTelegramSpeaker === "function"
   ) {
     await store.rememberTelegramSpeaker(
@@ -106,6 +142,31 @@ export async function handleTelegramChat({
   });
   const hasMedia = Array.isArray(inbound.media) && inbound.media.length > 0;
   const userText = withReplyContext(inbound.text, message.replyTo, { hasMedia });
+  const standaloneGreeting = !message.replyTo && !hasMedia && isSimpleGreeting(inbound.text);
+  const selfIdentification = !message.replyTo && !hasMedia && SELF_IDENTIFICATION_RE.test(String(inbound.text ?? ""));
+
+  if (LEAD_ONBOARDING_ROLES.has(speaker.role) && (standaloneGreeting || selfIdentification)) {
+    const markerType = onboardingEventType(message.senderId);
+    const completed = typeof store.latestEvent === "function"
+      ? Boolean(await store.latestEvent(markerType))
+      : false;
+    if (!completed) {
+      const reply = LEAD_ONBOARDING_MESSAGE;
+      await sendTelegramMessage({ botToken, chatId: message.chatId, text: reply });
+      await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply });
+      if (typeof store.record === "function") {
+        await store.record(markerType, String(message.senderId), { role: speaker.role, source: "telegram" });
+      }
+      return reply;
+    }
+  }
+
+  if (standaloneGreeting && KNOWN_GREETING_ROLES.has(speaker.role)) {
+    const reply = normalGreeting(speaker);
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply });
+    return reply;
+  }
 
   if (isDismissRequest(message.text) || isDismissRequest(inbound.text)) {
     const quoted = message.replyTo?.text;
