@@ -8,6 +8,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       type TEXT NOT NULL,
       status TEXT NOT NULL,
       payload JSONB NOT NULL,
+      run_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       attempts INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +65,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
   `);
 
   const record = async (eventType, subjectId, detail) => {
@@ -75,12 +77,12 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
 
   return {
     ready,
-    async createTask({ id, type, payload }) {
+    async createTask({ id, type, payload, runAt = new Date() }) {
       await pool.query(
-        "INSERT INTO tasks (id, type, status, payload) VALUES ($1, $2, 'queued', $3)",
-        [id, type, payload]
+        "INSERT INTO tasks (id, type, status, payload, run_at) VALUES ($1, $2, 'queued', $3, $4)",
+        [id, type, payload, runAt]
       );
-      await record("task.created", id, { type });
+      await record("task.created", id, { type, runAt: new Date(runAt).toISOString() });
       return this.getTask(id);
     },
     async getTask(id) {
@@ -96,8 +98,8 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       const { rows } = await pool.query(`
         WITH candidate AS (
           SELECT id FROM tasks
-          WHERE status = 'queued'
-          ORDER BY created_at
+          WHERE status = 'queued' AND run_at <= NOW()
+          ORDER BY run_at, created_at
           FOR UPDATE SKIP LOCKED
           LIMIT 1
         )
@@ -162,15 +164,14 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     },
     async activeSchedules() {
       const { rows } = await pool.query("SELECT * FROM schedules WHERE active = TRUE");
-      return rows
-        .map((row) => ({
-          id: row.id,
-          taskType: row.task_type,
-          cron: row.cron,
-          payload: row.payload,
-          active: Boolean(row.active),
-          timezone: row.timezone
-        }));
+      return rows.map((row) => ({
+        id: row.id,
+        taskType: row.task_type,
+        cron: row.cron,
+        payload: row.payload,
+        active: Boolean(row.active),
+        timezone: row.timezone
+      }));
     },
     async allSchedules() {
       const { rows } = await pool.query("SELECT * FROM schedules ORDER BY created_at ASC");
@@ -201,9 +202,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       return rows.reverse().map((row) => ({ role: row.role, content: row.content }));
     },
     async appendChatTurn({ chatId, senderId, role, content, keep = 40, maxChars = 1500 }) {
-      if (role !== "user" && role !== "assistant") {
-        throw new Error("Chat turns must use role user or assistant.");
-      }
+      if (role !== "user" && role !== "assistant") throw new Error("Chat turns must use role user or assistant.");
       const limit = Number(maxChars) > 0 ? Number(maxChars) : 1500;
       await pool.query(
         "INSERT INTO chat_turns (chat_id, sender_id, role, content) VALUES ($1, $2, $3, $4)",
@@ -216,9 +215,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
         "SELECT id FROM chat_turns WHERE chat_id = $1 ORDER BY created_at DESC, id DESC",
         [String(chatId)]
       );
-      for (const row of rows.slice(keep)) {
-        await pool.query("DELETE FROM chat_turns WHERE id = $1", [row.id]);
-      }
+      for (const row of rows.slice(keep)) await pool.query("DELETE FROM chat_turns WHERE id = $1", [row.id]);
     },
     async saveAgentMemory({ id, content, tags, source = "telegram" }) {
       const memoryId = id || crypto.randomUUID();
@@ -277,10 +274,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     async getTelegramSpeaker(senderId) {
       const id = String(senderId ?? "").trim();
       if (!id) return null;
-      const { rows } = await pool.query(
-        "SELECT role FROM telegram_speakers WHERE sender_id = $1",
-        [id]
-      );
+      const { rows } = await pool.query("SELECT role FROM telegram_speakers WHERE sender_id = $1", [id]);
       return rows[0]?.role ?? null;
     },
     async listAlertSuppressions() {
@@ -297,9 +291,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     },
     record,
     async openWorkflowTask(workflow) {
-      const { rows } = await pool.query(
-        "SELECT * FROM tasks WHERE status IN ('queued', 'running')"
-      );
+      const { rows } = await pool.query("SELECT * FROM tasks WHERE status IN ('queued', 'running')");
       return rows.find((row) => row.payload?.workflow === workflow) ?? null;
     },
     async latestEvent(eventType) {
