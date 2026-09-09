@@ -6,6 +6,7 @@ import { runSiteLookout } from "./lookout.js";
 import { sendOpsAlert } from "./email.js";
 import { easternMondayIso } from "./hub-ticker.js";
 import { pulseHealthFields } from "./pulse-readiness.js";
+import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 
 function salesTrackerMessage(result, environment) {
   return result.status === "aborted"
@@ -73,6 +74,7 @@ function withAgentPulseEnv(environment, task) {
 export async function processTask(task, {
   environment = process.env,
   notify = async () => {},
+  sendTelegram = sendTelegramMessage,
   runSalesSync = runSalesTrackerSync,
   runAgentPulse = runAgentPulseWeekly,
   runCarrierDigest = runCarrierInboxDigest,
@@ -92,10 +94,36 @@ export async function processTask(task, {
 
   if (workflow === "telegram_reminder") {
     const text = String(task.payload?.text ?? "").trim();
+    const chatId = String(task.payload?.chatId ?? "").trim();
     if (!text) throw new Error("Telegram reminder text is required.");
+    if (!chatId) throw new Error("Telegram reminder chatId is required.");
     if (text.length > 4000) throw new Error("Telegram reminder text exceeds 4000 characters.");
-    await notify(text);
-    return { status: "sent", channel: "telegram" };
+
+    const telegram = telegramConfig(environment);
+    if (!telegram.botToken) throw new Error("Telegram bot token is not configured.");
+    if (!telegram.allowedUserIds.has(chatId)) {
+      throw new Error("Telegram reminder recipient is not an allowed user.");
+    }
+
+    await sendTelegram({
+      botToken: telegram.botToken,
+      chatId,
+      text
+    });
+    if (store?.appendChatTurn) {
+      try {
+        await store.appendChatTurn({
+          chatId,
+          senderId: "igor",
+          role: "assistant",
+          content: text,
+          maxChars: 4000
+        });
+      } catch {
+        // Delivery already succeeded; chat history is best-effort.
+      }
+    }
+    return { status: "sent", channel: "telegram", chatId };
   }
 
   if (workflow === "sales_tracker_sync") {
