@@ -119,6 +119,7 @@ export function isLeadReminderRequest(text, history = []) {
 
 export async function maybeScheduleLeadReminder({
   text,
+  subjectText,
   history = [],
   store,
   chatId,
@@ -132,7 +133,7 @@ export async function maybeScheduleLeadReminder({
 
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
-  const subject = reminderSubject(raw);
+  const subject = reminderSubject(subjectText || raw);
   const reminderText = `Lead follow-up: ${subject}. Before I close this out: is this person in GHL, and did you update the lead outcome/status?`;
   const task = await store.createTask({
     id: crypto.randomUUID(),
