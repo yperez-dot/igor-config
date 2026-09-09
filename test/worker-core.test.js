@@ -41,6 +41,24 @@ test("processes sales sync tasks with a Telegram-ready result", async () => {
   assert.match(notifications[0], /3 records were missing/);
 });
 
+test("processes Telegram reminder tasks with exact text", async () => {
+  const notifications = [];
+  const text = "End-of-day check: Did you add today’s leads to GHL and leave a follow-up note or date?";
+  const result = await processTask(
+    { payload: { workflow: "telegram_reminder", text } },
+    { notify: async (message) => notifications.push(message) }
+  );
+  assert.deepEqual(result, { status: "sent", channel: "telegram" });
+  assert.deepEqual(notifications, [text]);
+});
+
+test("rejects Telegram reminders without text", async () => {
+  await assert.rejects(
+    processTask({ payload: { workflow: "telegram_reminder", text: "   " } }),
+    /reminder text is required/
+  );
+});
+
 test("rejects unregistered workflow tasks", async () => {
   await assert.rejects(
     processTask({ payload: { workflow: "seo_weekly" } }),
@@ -244,6 +262,7 @@ test("emails Yahoska when a site-uptime alert fires", async () => {
 test("runtime identity lists Pulse on the worker", () => {
   const identity = runtimeIdentity();
   assert.ok(identity.workflows.includes("agent_pulse_weekly"));
+  assert.ok(identity.workflows.includes("telegram_reminder"));
 });
 
 test("runtime identity reports pulse send-path readiness without leaking secrets", () => {
