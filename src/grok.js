@@ -38,6 +38,18 @@ function providerName(provider) {
   return provider === "openai" ? "OpenAI" : "xAI";
 }
 
+async function providerRequestError(response, provider) {
+  let detail = "";
+  try {
+    const body = await response.json();
+    detail = String(body?.error?.message ?? body?.message ?? "").trim();
+  } catch {
+    // Keep the status-only fallback when the provider did not return JSON.
+  }
+  const safeDetail = detail.replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]").slice(0, 500);
+  return new Error(`${providerName(provider)} request failed with HTTP ${response.status}${safeDetail ? `: ${safeDetail}` : ""}`);
+}
+
 export function isPlanRecommendationRequest(text) {
   return /\b(recommend|recommendation|which\s+(medicare\s+)?plan|best\s+(medicare\s+)?plan|should\s+i\s+(choose|enroll)|what\s+plan\s+should)\b|(?:qué|cual|cuál)\s+plan\s+(?:me\s+)?(?:recomiendas|conviene)|mejor\s+plan/i.test(text);
 }
@@ -80,7 +92,7 @@ async function completeChat({ apiKey, model, provider, messages, tools, conversa
   });
 
   if (!response.ok) {
-    throw new Error(`${providerName(provider)} request failed with HTTP ${response.status}`);
+    throw await providerRequestError(response, provider);
   }
 
   const body = await response.json();
@@ -119,7 +131,7 @@ async function completeResponses({ apiKey, model, provider, input, tools, fetchI
     signal: AbortSignal.timeout(timeoutMs)
   });
   if (!response.ok) {
-    throw new Error(`${providerName(provider)} request failed with HTTP ${response.status}`);
+    throw await providerRequestError(response, provider);
   }
   const body = await response.json();
   const text = textFromXaiResponses(body);
