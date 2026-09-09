@@ -13,6 +13,7 @@ import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
 import { maybeScheduleLeadReminder } from "./lead-reminders.js";
+import { maybeReplyToGreeting } from "./greeting-kickoff.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 
@@ -106,6 +107,25 @@ export async function handleTelegramChat({
   });
   const hasMedia = Array.isArray(inbound.media) && inbound.media.length > 0;
   const userText = withReplyContext(inbound.text, message.replyTo, { hasMedia });
+
+  const greeting = await maybeReplyToGreeting({ text: message.text, speaker });
+  if (greeting) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: greeting.reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: greeting.reply
+    });
+    return greeting.reply;
+  }
 
   if (isDismissRequest(message.text) || isDismissRequest(inbound.text)) {
     const quoted = message.replyTo?.text;
