@@ -33,12 +33,34 @@ async function railwayRequest({ config, query, variables = {}, fetchImpl = fetch
 }
 
 export async function listRailwayProjects({ config, fetchImpl = fetch }) {
-  const data = await railwayRequest({
+  const account = await railwayRequest({
     config,
     fetchImpl,
-    query: `query { projects { edges { node { id name description createdAt updatedAt } } } }`
+    query: `query {
+      me { workspaces { id name } }
+      projects { edges { node { id name description createdAt updatedAt } } }
+    }`
   });
-  return { projects: (data.projects?.edges ?? []).map((edge) => edge.node) };
+  const projects = (account.projects?.edges ?? []).map((edge) => ({ ...edge.node, workspace: null }));
+  const workspaces = account.me?.workspaces ?? [];
+  for (const workspace of workspaces) {
+    const data = await railwayRequest({
+      config,
+      fetchImpl,
+      query: `query workspaceProjects($workspaceId: String!) {
+        projects(workspaceId: $workspaceId) {
+          edges { node { id name description createdAt updatedAt } }
+        }
+      }`,
+      variables: { workspaceId: workspace.id }
+    });
+    projects.push(...(data.projects?.edges ?? []).map((edge) => ({
+      ...edge.node,
+      workspace: { id: workspace.id, name: workspace.name }
+    })));
+  }
+  const unique = [...new Map(projects.map((project) => [project.id, project])).values()];
+  return { workspaces, projects: unique };
 }
 
 export async function getRailwayProject({ config, projectId, fetchImpl = fetch }) {
