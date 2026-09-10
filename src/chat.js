@@ -17,8 +17,8 @@ import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 const LEAD_ONBOARDING_ROLES = new Set(["yahoska", "katy", "carolina"]);
 const KNOWN_GREETING_ROLES = new Set(["yahoska", "katy", "carolina", "husband"]);
-const SIMPLE_GREETING_RE = /^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))(?:[\s,!.-]+(?:igor|there|yahoska|katy|carolina))?[\s!?.]*$/i;
-const SELF_IDENTIFICATION_RE = /\b(?:this is|i am|i['’]?m)\s+(?:yahoska|katy|carolina)(?:\s+robles|\s+perez)?\b/i;
+const SIMPLE_GREETING_RE = /^(?:h+i+|hello+|hey+|good\s+(?:morning|afternoon|evening))(?:[\s,!.-]+(?:igor|there|yahoska|katy|carolina))?[\s!?.]*$/i;
+const IDENTITY_INTRO_RE = /^(?:(?:h+i+|hello+|hey+|good\s+(?:morning|afternoon|evening))[\s,!.-]*)?(?:igor[\s,!.-]*)?(?:this\s+is|it['’]?s|i\s+am|i['’]?m)\s+(yahoska|katy|carolina)(?:\s+(?:robles|perez))?[\s!?.-]*$/i;
 const LEAD_IMAGE_PROMPT = `Extract only useful lead-follow-up facts from the attached image and the user's note. Return one short plain-English phrase, not a sentence to the user. Include a first name if visible, relationship/context, carrier or plan context if visible, and why follow-up is needed. Do not include phone numbers, email addresses, account numbers, IDs, or internal processing instructions. Do not invent anything.`;
 
 export const LEAD_ONBOARDING_MESSAGE = "Hey! I’m going to help you keep track of leads and follow-ups so nothing falls through the cracks. This only works if you respond when I check in.\n\nLet’s start:\n1. Do you have any open leads you still need to follow up with?\n2. Any new leads today that still need to go into GHL?\n3. Anyone you want me to remind you to call or follow up with? Send me the name + when.\n4. Any sales or lead outcomes you worked today that still need their GHL status updated?";
@@ -30,6 +30,12 @@ export function looksLikeOpsAlert(text) {
 export function isSimpleGreeting(text) {
   const raw = String(text ?? "").trim();
   return raw.length > 0 && raw.length <= 40 && !raw.includes("\n") && SIMPLE_GREETING_RE.test(raw);
+}
+
+export function teammateIdentityIntroduction(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw || raw.length > 80 || raw.includes("\n")) return null;
+  return raw.match(IDENTITY_INTRO_RE)?.[1]?.toLowerCase() ?? null;
 }
 
 function onboardingEventType(senderId) {
@@ -74,7 +80,7 @@ export function withReplyContext(userText, replyTo, { hasMedia = false } = {}) {
   if (looksLikeOpsAlert(quoted)) {
     lines.push(
       "That quoted message is an ops/site alert. Answer THAT topic — what broke, what to do, next step.",
-      "Call run_lookout if the alert is about a site or ads. Do not invent a flyer, screenshot, or unreadable picture."
+      "Call run_lookout if the alert is about a site or ads. Do not invent a flyer/screenshot or unreadable picture."
     );
   } else {
     lines.push("Treat the quoted message as the topic unless they clearly changed subjects.");
@@ -112,13 +118,14 @@ export async function handleTelegramChat({
   const rememberedRole = typeof store.getTelegramSpeaker === "function"
     ? await store.getTelegramSpeaker(message.senderId)
     : null;
+  const introducedRole = teammateIdentityIntroduction(message.text);
   const userBlob = [message.text, ...history.filter((turn) => turn.role === "user").map((turn) => turn.content)]
     .filter(Boolean)
     .join("\n");
   const historyIntent = claimsToBeYahoska(message.text) ? null : wantsOwnTeamCalendar(userBlob);
   const senderProfile = {
     ...message,
-    rememberedRole: claimsToBeYahoska(message.text) ? "yahoska" : (rememberedRole || historyIntent),
+    rememberedRole: claimsToBeYahoska(message.text) ? "yahoska" : (introducedRole || rememberedRole || historyIntent),
     text: userBlob
   };
   const speaker = telegramSpeaker(environment, message.senderId, senderProfile);
@@ -129,7 +136,7 @@ export async function handleTelegramChat({
     await store.rememberTelegramSpeaker(
       message.senderId,
       speaker.role,
-      claimsToBeYahoska(message.text) ? "claimed" : "inferred"
+      claimsToBeYahoska(message.text) ? "claimed" : (introducedRole ? "introduced" : "inferred")
     );
   }
   const prompt = systemPrompt ?? systemPromptFor(environment, {
@@ -144,9 +151,9 @@ export async function handleTelegramChat({
   const hasMedia = Array.isArray(inbound.media) && inbound.media.length > 0;
   const userText = withReplyContext(inbound.text, message.replyTo, { hasMedia });
   const standaloneGreeting = !message.replyTo && !hasMedia && isSimpleGreeting(inbound.text);
-  const selfIdentification = !message.replyTo && !hasMedia && SELF_IDENTIFICATION_RE.test(String(inbound.text ?? ""));
+  const identityIntroduction = !message.replyTo && !hasMedia ? teammateIdentityIntroduction(inbound.text) : null;
 
-  if (LEAD_ONBOARDING_ROLES.has(speaker.role) && (standaloneGreeting || selfIdentification)) {
+  if (LEAD_ONBOARDING_ROLES.has(speaker.role) && (standaloneGreeting || identityIntroduction)) {
     const markerType = onboardingEventType(message.senderId);
     const completed = typeof store.latestEvent === "function"
       ? Boolean(await store.latestEvent(markerType))
@@ -162,7 +169,7 @@ export async function handleTelegramChat({
     }
   }
 
-  if (standaloneGreeting && KNOWN_GREETING_ROLES.has(speaker.role)) {
+  if ((standaloneGreeting || identityIntroduction) && KNOWN_GREETING_ROLES.has(speaker.role)) {
     const reply = normalGreeting(speaker);
     await sendTelegramMessage({ botToken, chatId: message.chatId, text: reply });
     await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply });
