@@ -26,7 +26,7 @@ export function tokenize(query) {
 
 export function loadStandingMemory(rootDir) {
   const root = memoryDir(rootDir);
-  const files = ["standing.md", "right-hand.md"];
+  const files = ["standing.md", "right-hand.md", "lead-followup.md"];
   const sections = [];
   for (const name of files) {
     try {
