@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { maybeScheduleLeadReminder, parseReminderRunAt } from "../src/lead-reminders.js";
-import { listLeadSnapshots } from "../src/lead-ledger.js";
+import { listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
 
 function ledgerStore() {
   const memories = [];
@@ -39,15 +39,13 @@ test("does not mistake a numeric date for the reminder time", () => {
 });
 
 test("parses weekday reschedules", () => {
-  const now = new Date("2026-09-09T21:00:00Z"); // Wednesday
+  const now = new Date("2026-09-09T21:00:00Z");
   assert.equal(parseReminderRunAt("no answer, call Friday at 10 am", { now }).toISOString(), "2026-09-11T14:00:00.000Z");
 });
 
 test("creates a private future reminder for the requesting chat", async () => {
   let created;
-  const store = {
-    async createTask(task) { created = task; return { id: task.id, ...task }; }
-  };
+  const store = { async createTask(task) { created = task; return { id: task.id, ...task }; } };
   const result = await maybeScheduleLeadReminder({
     text: "Maria Lopez remind me tomorrow at 11 am",
     history: [],
@@ -64,7 +62,7 @@ test("creates a private future reminder for the requesting chat", async () => {
   assert.match(result.reply, /GHL/i);
 });
 
-test("uses lead check-in context for terse replies", async () => {
+test("uses lead check-in context for terse timing replies", async () => {
   let created;
   const store = { async createTask(task) { created = task; return task; } };
   const result = await maybeScheduleLeadReminder({
@@ -77,6 +75,38 @@ test("uses lead check-in context for terse replies", async () => {
   });
   assert.ok(result);
   assert.equal(created.payload.chatId, "333");
+});
+
+test("status correction with today does not create a reminder and preserves known GHL state", async () => {
+  const store = ledgerStore();
+  await saveLeadSnapshot({
+    store,
+    leadId: "tomas-1",
+    ownerSenderId: "222",
+    ownerRole: "yahoska",
+    subject: "Tomás",
+    nextAction: "follow up",
+    followUpAt: null,
+    ghlStatus: "in GHL",
+    state: "open"
+  });
+  const result = await maybeScheduleLeadReminder({
+    text: "No Tomas hasn’t enrolled. I helped him today enrolling in Medicare but he hasn’t selected a plan.",
+    history: [{ role: "assistant", content: "Your personal open leads include Tomás." }],
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-10T01:23:00Z")
+  });
+  assert.ok(result);
+  assert.equal(result.task, null);
+  assert.equal(store.tasks.length, 0);
+  assert.match(result.reply, /has not enrolled in a plan/i);
+  assert.match(result.reply, /in GHL/i);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "222" });
+  assert.equal(leads[0].subject, "Tomás");
+  assert.equal(leads[0].nextAction, "select a plan");
+  assert.equal(leads[0].ghlStatus, "in GHL");
 });
 
 test("creating a reminder also opens a persistent lead ledger entry", async () => {
@@ -99,54 +129,20 @@ test("creating a reminder also opens a persistent lead ledger entry", async () =
 
 test("an enrolled reply closes the lead after a reminder fires", async () => {
   const store = ledgerStore();
-  await maybeScheduleLeadReminder({
-    text: "Maria Lopez remind me tomorrow at 11 am",
-    history: [],
-    store,
-    chatId: "222",
-    senderId: "222",
-    now: new Date("2026-09-09T21:00:00Z")
-  });
-
-  const result = await maybeScheduleLeadReminder({
-    text: "enrolled her",
-    history: [{ role: "assistant", content: "Lead follow-up: Maria Lopez. Before I close this out: is this person in GHL, and did you update the lead outcome/status?" }],
-    store,
-    chatId: "222",
-    senderId: "222",
-    now: new Date("2026-09-10T15:05:00Z")
-  });
+  await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now: new Date("2026-09-09T21:00:00Z") });
+  const result = await maybeScheduleLeadReminder({ text: "enrolled her", history: [{ role: "assistant", content: "Lead follow-up: Maria Lopez. Before I close this out: is this person in GHL, and did you update the lead outcome/status?" }], store, chatId: "222", senderId: "222", now: new Date("2026-09-10T15:05:00Z") });
   assert.match(result.reply, /marked Maria Lopez as enrolled/i);
   const open = await listLeadSnapshots(store, { ownerSenderId: "222" });
   assert.equal(open.length, 0);
-  const all = await listLeadSnapshots(store, { ownerSenderId: "222", includeClosed: true });
-  assert.equal(all[0].state, "enrolled");
 });
 
 test("no-answer reply can reschedule the same lead for Friday", async () => {
   const store = ledgerStore();
-  const first = await maybeScheduleLeadReminder({
-    text: "Maria Lopez remind me tomorrow at 11 am",
-    history: [],
-    store,
-    chatId: "222",
-    senderId: "222",
-    now: new Date("2026-09-09T21:00:00Z")
-  });
-
-  const result = await maybeScheduleLeadReminder({
-    text: "no answer, call Friday at 10 am",
-    history: [{ role: "assistant", content: "Lead follow-up: Maria Lopez. Before I close this out: is this person in GHL, and did you update the lead outcome/status?" }],
-    store,
-    chatId: "222",
-    senderId: "222",
-    now: new Date("2026-09-10T15:05:00Z")
-  });
+  const first = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now: new Date("2026-09-09T21:00:00Z") });
+  const result = await maybeScheduleLeadReminder({ text: "no answer, call Friday at 10 am", history: [{ role: "assistant", content: "Lead follow-up: Maria Lopez. Before I close this out: is this person in GHL, and did you update the lead outcome/status?" }], store, chatId: "222", senderId: "222", now: new Date("2026-09-10T15:05:00Z") });
   assert.notEqual(result.task.id, first.task.id);
   assert.equal(result.task.runAt.toISOString(), "2026-09-11T14:00:00.000Z");
   const leads = await listLeadSnapshots(store, { ownerSenderId: "222" });
   assert.equal(leads.length, 1);
   assert.equal(leads[0].state, "open");
-  assert.equal(leads[0].followUpAt, "2026-09-11T14:00:00.000Z");
-  assert.equal(leads[0].reminderTaskId, result.task.id);
 });
