@@ -7,6 +7,9 @@ import { sendOpsAlert } from "./email.js";
 import { easternMondayIso } from "./hub-ticker.js";
 import { pulseHealthFields } from "./pulse-readiness.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
+import { listLeadSnapshots } from "./lead-ledger.js";
+
+const LEAD_TZ = "America/New_York";
 
 function salesTrackerMessage(result, environment) {
   return result.status === "aborted"
@@ -52,6 +55,74 @@ function leadCheckinText(phase, now = new Date()) {
   const templates = phase === "evening" ? EVENING_CHECKINS : MORNING_CHECKINS;
   const dayIndex = Math.floor(now.getTime() / 86_400_000);
   return templates[Math.abs(dayIndex) % templates.length];
+}
+
+function easternDayKey(value) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: LEAD_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(value));
+  const p = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
+function formatLeadWhen(value) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: LEAD_TZ,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function ghlLooseEnd(lead) {
+  const value = String(lead?.ghlStatus ?? "").trim();
+  return !value || /unknown|not.?in.?ghl/i.test(value);
+}
+
+function leadTimingLabel(lead, now = new Date()) {
+  if (!lead.followUpAt) return "no reminder scheduled";
+  const when = new Date(lead.followUpAt);
+  if (when.getTime() < now.getTime()) return `OVERDUE — ${formatLeadWhen(when)}`;
+  if (easternDayKey(when) === easternDayKey(now)) return `due today — ${formatLeadWhen(when)}`;
+  return `scheduled — ${formatLeadWhen(when)}`;
+}
+
+export function leadBriefText(phase, leads = [], now = new Date()) {
+  const open = [...leads].slice(0, 20);
+  if (!open.length) {
+    return phase === "evening"
+      ? "Evening lead closeout: your personal ledger is clear — no open leads to chase tonight. If anything new came in today, send me the name + next step and I’ll track it."
+      : "Morning lead brief: your personal ledger is clear — no open leads right now. If anything new comes in today, send me the name + next step and I’ll track it.";
+  }
+
+  const overdue = open.filter((lead) => lead.followUpAt && new Date(lead.followUpAt).getTime() < now.getTime());
+  const dueToday = open.filter((lead) => lead.followUpAt && new Date(lead.followUpAt).getTime() >= now.getTime() && easternDayKey(lead.followUpAt) === easternDayKey(now));
+  const unscheduled = open.filter((lead) => !lead.followUpAt);
+  const crmLooseEnds = open.filter(ghlLooseEnd);
+
+  const header = phase === "evening" ? "Evening lead closeout — still open:" : "Morning lead brief — here’s what needs attention:";
+  const lines = open.map((lead) => {
+    const action = String(lead.nextAction ?? "follow up").trim() || "follow up";
+    const ghl = ghlLooseEnd(lead) ? "GHL needs attention" : `GHL: ${lead.ghlStatus}`;
+    return `• ${lead.subject} — ${action}; ${leadTimingLabel(lead, now)}; ${ghl}`;
+  });
+
+  const summary = [];
+  if (overdue.length) summary.push(`${overdue.length} overdue`);
+  if (dueToday.length) summary.push(`${dueToday.length} due today`);
+  if (unscheduled.length) summary.push(`${unscheduled.length} without a reminder`);
+  if (crmLooseEnds.length) summary.push(`${crmLooseEnds.length} GHL loose end${crmLooseEnds.length === 1 ? "" : "s"}`);
+
+  const tail = phase === "evening"
+    ? "Reply with what happened — for example: “Ayda no answer, remind me Friday at 10” or “Maria enrolled.”"
+    : "Reply with any update or tell me when you want the next follow-up. I’ll keep the ledger current.";
+  const more = leads.length > open.length ? `\n• +${leads.length - open.length} more open lead(s)` : "";
+  return `${header}\n${lines.join("\n")}${more}${summary.length ? `\n\nPriority: ${summary.join(" • ")}.` : ""}\n\n${tail}`;
 }
 
 export const WORKER_WORKFLOWS = new Set([
@@ -137,10 +208,18 @@ export async function processTask(task, {
 
   if (workflow === "lead_followup_checkin") {
     const phase = task.payload?.phase === "evening" ? "evening" : "morning";
-    const text = leadCheckinText(phase);
     const targets = leadCheckinTargets(environment);
     let sent = 0;
     for (const chatId of targets) {
+      let text = leadCheckinText(phase);
+      if (store?.listAgentMemories) {
+        try {
+          const leads = await listLeadSnapshots(store, { ownerSenderId: chatId });
+          text = leadBriefText(phase, leads);
+        } catch {
+          // Keep the automatic check-in alive even if the ledger read has a transient failure.
+        }
+      }
       await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
       sent += 1;
     }
