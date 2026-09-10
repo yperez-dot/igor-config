@@ -1,10 +1,17 @@
 import crypto from "node:crypto";
-import { findLeadBySubject, saveLeadSnapshot } from "./lead-ledger.js";
+import {
+  findLeadBySubject,
+  latestLeadReminderSubject,
+  leadOutcome,
+  saveLeadSnapshot,
+  updateLeadState
+} from "./lead-ledger.js";
 
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
 const EXPLICIT_RE = /remind me|set (?:a )?reminder|follow up with|follow-up with|call\s+/i;
 const ATTACHMENT_INSTRUCTION_RE = /(?:User sent a photo\.|The image is attached for THIS turn only\.|Do not say the photo never arrived\.|Later turns without an attached image are not looking at this photo\.|User sent a video:|Grok cannot watch raw video|User sent a Telegram file:|The image is attached for you to see\.|Do not say the file never arrived\.)/gi;
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 function localParts(date = new Date(), timeZone = TZ) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -12,6 +19,7 @@ function localParts(date = new Date(), timeZone = TZ) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
+    weekday: "long",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -74,10 +82,19 @@ export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ } = {
   if (/\btomorrow\b/i.test(raw)) dateParts = addDays(p, 1);
   else if (/\btoday\b|\btonight\b/i.test(raw)) dateParts = addDays(p, 0);
   else {
-    const md = raw.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
-    if (md) {
-      const year = md[3] ? (Number(md[3]) < 100 ? 2000 + Number(md[3]) : Number(md[3])) : Number(p.year);
-      dateParts = { year, month: Number(md[1]), day: Number(md[2]) };
+    const weekdayMatch = raw.match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
+    if (weekdayMatch) {
+      const currentDay = WEEKDAYS.indexOf(String(p.weekday).toLowerCase());
+      const targetDay = WEEKDAYS.indexOf(weekdayMatch[1].toLowerCase());
+      let delta = (targetDay - currentDay + 7) % 7;
+      if (delta === 0) delta = 7;
+      dateParts = addDays(p, delta);
+    } else {
+      const md = raw.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+      if (md) {
+        const year = md[3] ? (Number(md[3]) < 100 ? 2000 + Number(md[3]) : Number(md[3])) : Number(p.year);
+        dateParts = { year, month: Number(md[1]), day: Number(md[2]) };
+      }
     }
   }
   if (!dateParts) return null;
@@ -101,6 +118,7 @@ export function sanitizeReminderInput(text) {
 export function reminderSubject(text) {
   return sanitizeReminderInput(text)
     .replace(/\b(remind me|set (?:a )?reminder(?: for)?|tomorrow|today|tonight)\b/gi, " ")
+    .replace(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, " ")
     .replace(/\bin\s+\d+\s*(minutes?|hours?)\b/gi, " ")
     .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/gi, " ")
     .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, " ")
@@ -118,6 +136,13 @@ export function isLeadReminderRequest(text, history = []) {
   return Boolean(raw && (EXPLICIT_RE.test(raw) || recentReminderContext(history)));
 }
 
+function outcomeReply(subject, outcome) {
+  if (outcome.state === "enrolled") return `Got it — I marked ${subject} as enrolled and closed the follow-up.`;
+  if (outcome.state === "completed") return `Got it — I marked ${subject} complete and closed the follow-up.`;
+  if (outcome.state === "not_interested") return `Got it — I marked ${subject} not interested and closed the follow-up.`;
+  return `Got it — ${subject} is still open. When should I remind you to follow up again?`;
+}
+
 export async function maybeScheduleLeadReminder({
   text,
   subjectText,
@@ -131,8 +156,60 @@ export async function maybeScheduleLeadReminder({
 }) {
   const raw = sanitizeReminderInput(text);
   if (!raw || !store?.createTask || !chatId) return null;
-  if (!isLeadReminderRequest(raw, history)) return null;
 
+  const outcome = leadOutcome(raw);
+  const priorSubject = latestLeadReminderSubject(history);
+  if (outcome && priorSubject) {
+    const lead = await findLeadBySubject(store, { ownerSenderId: senderId, subject: priorSubject });
+    if (lead) {
+      const nextRunAt = outcome.closed ? null : parseReminderRunAt(raw, { now, timeZone });
+      if (!outcome.closed && nextRunAt) {
+        const task = await store.createTask({
+          id: crypto.randomUUID(),
+          type: "lead_management",
+          payload: {
+            workflow: "telegram_reminder",
+            chatId: String(chatId),
+            ownerSenderId: String(senderId ?? ""),
+            leadId: lead.leadId,
+            text: `Lead follow-up: ${lead.subject}. Before I close this out: is this person in GHL, and did you update the lead outcome/status?`,
+            subject: lead.subject,
+            source: "lead_followup_rescheduled"
+          },
+          runAt: nextRunAt
+        });
+        await updateLeadState({
+          store,
+          lead,
+          state: outcome.state,
+          nextAction: outcome.nextAction ?? "follow up again",
+          followUpAt: nextRunAt,
+          reminderTaskId: task?.id
+        });
+        const when = new Intl.DateTimeFormat("en-US", {
+          timeZone,
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit"
+        }).format(nextRunAt);
+        return { task, leadId: lead.leadId, reply: `Got it — ${lead.subject} is still open. I’ll remind you again ${when}.` };
+      }
+
+      await updateLeadState({
+        store,
+        lead,
+        state: outcome.state,
+        nextAction: outcome.nextAction ?? lead.nextAction,
+        followUpAt: outcome.closed ? null : null,
+        reminderTaskId: null
+      });
+      return { task: null, leadId: lead.leadId, reply: outcomeReply(lead.subject, outcome) };
+    }
+  }
+
+  if (!isLeadReminderRequest(raw, history)) return null;
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
   const subject = reminderSubject(subjectText || raw);
@@ -154,11 +231,14 @@ export async function maybeScheduleLeadReminder({
     runAt
   });
 
+  const resolvedOwnerRole = ownerRole || (typeof store.getTelegramSpeaker === "function"
+    ? await store.getTelegramSpeaker(senderId)
+    : null);
   await saveLeadSnapshot({
     store,
     leadId,
     ownerSenderId: senderId,
-    ownerRole,
+    ownerRole: resolvedOwnerRole,
     subject,
     nextAction: "follow up",
     followUpAt: runAt,
