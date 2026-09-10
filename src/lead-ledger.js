@@ -4,7 +4,12 @@ const LEAD_TAG = "lead-ledger";
 const CLOSED_STATES = new Set(["completed", "enrolled", "not_interested", "closed"]);
 
 function normalize(value) {
-  return String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function leadKey(ownerSenderId, subject) {
@@ -67,7 +72,8 @@ export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = 
     const snapshot = parseSnapshot(row);
     if (!snapshot) continue;
     if (ownerSenderId && String(snapshot.ownerSenderId) !== String(ownerSenderId)) continue;
-    if (!latest.has(snapshot.leadKey)) latest.set(snapshot.leadKey, snapshot);
+    const identity = snapshot.leadId || `${snapshot.ownerSenderId}:${normalize(snapshot.subject)}`;
+    if (!latest.has(identity)) latest.set(identity, snapshot);
   }
   return [...latest.values()]
     .filter((lead) => includeClosed || !CLOSED_STATES.has(lead.state))
