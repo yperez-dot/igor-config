@@ -10,11 +10,12 @@ import {
 
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
-const EXPLICIT_RE = /remind me|set (?:a )?reminder|follow up with|follow-up with|call\s+/i;
+const EXPLICIT_RE = /remind me|set (?:a )?reminder|follow up with|follow-up with|follow up w\b|call\s+/i;
 const STATUS_CORRECTION_RE = /\b(hasn['’]?t enrolled|has not enrolled|not enrolled|hasn['’]?t selected|has not selected|no plan selected|helped (?:him|her|them) (?:today )?enroll|enrolling in medicare|enrolled in medicare but|still needs? (?:to )?(?:choose|select) (?:a )?plan)\b/i;
-const TIMING_HINT_RE = /\b(tomorrow|tonight|sunday|monday|tuesday|wednesday|thursday|friday|saturday|\d{1,2}\/\d{1,2}|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+const TIMING_HINT_RE = /\b(tomorrow|tonight|next\s+week|in\s+(?:a|one|two|three|\d+)\s+(?:day|days|week|weeks)|sunday|monday|tuesday|wednesday|thursday|friday|saturday|\d{1,2}\/\d{1,2}|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 const ATTACHMENT_INSTRUCTION_RE = /(?:User sent a photo\.|The image is attached for THIS turn only\.|Do not say the photo never arrived\.|Later turns without an attached image are not looking at this photo\.|User sent a video:|Grok cannot watch raw video|User sent a Telegram file:|The image is attached for you to see\.|Do not say the file never arrived\.)/gi;
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const NUMBER_WORDS = new Map([["a", 1], ["one", 1], ["two", 2], ["three", 3]]);
 
 function localParts(date = new Date(), timeZone = TZ) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", weekday: "long", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(date);
@@ -55,18 +56,28 @@ function parseClock(text, fallbackHour = 9) {
   return { hour, minute };
 }
 
+function relativeCount(token) {
+  const normalized = String(token ?? "").toLowerCase();
+  return NUMBER_WORDS.get(normalized) ?? Number(normalized);
+}
+
 export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ } = {}) {
   const raw = String(text ?? "").trim();
   if (!raw) return null;
-  const relative = raw.match(/\bin\s+(\d+)\s*(minute|minutes|hour|hours)\b/i);
-  if (relative) {
-    const count = Number(relative[1]);
-    const ms = /hour/i.test(relative[2]) ? count * 3_600_000 : count * 60_000;
+  const relativeShort = raw.match(/\bin\s+(\d+)\s*(minute|minutes|hour|hours)\b/i);
+  if (relativeShort) {
+    const count = Number(relativeShort[1]);
+    const ms = /hour/i.test(relativeShort[2]) ? count * 3_600_000 : count * 60_000;
     return new Date(now.getTime() + ms);
   }
   const p = localParts(now, timeZone);
   let dateParts;
-  if (/\btomorrow\b/i.test(raw)) dateParts = addDays(p, 1);
+  const relativeLong = raw.match(/\bin\s+(a|one|two|three|\d+)\s*(day|days|week|weeks)\b/i);
+  if (relativeLong) {
+    const count = relativeCount(relativeLong[1]);
+    dateParts = addDays(p, /week/i.test(relativeLong[2]) ? count * 7 : count);
+  } else if (/\bnext\s+week\b/i.test(raw)) dateParts = addDays(p, 7);
+  else if (/\btomorrow\b/i.test(raw)) dateParts = addDays(p, 1);
   else if (/\btoday\b|\btonight\b/i.test(raw)) dateParts = addDays(p, 0);
   else {
     const weekdayMatch = raw.match(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i);
@@ -98,11 +109,14 @@ export function sanitizeReminderInput(text) {
 
 export function reminderSubject(text) {
   return sanitizeReminderInput(text)
-    .replace(/\b(remind me|set (?:a )?reminder(?: for)?|tomorrow|today|tonight)\b/gi, " ")
+    .replace(/\b(remind me|set (?:a )?reminder(?: for)?|tomorrow|today|tonight|next\s+week)\b/gi, " ")
+    .replace(/\bin\s+(?:a|one|two|three|\d+)\s*(?:days?|weeks?|minutes?|hours?)\b/gi, " ")
+    .replace(/\bnext\s+(?=(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b)/gi, " ")
     .replace(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, " ")
-    .replace(/\bin\s+\d+\s*(minutes?|hours?)\b/gi, " ")
     .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/gi, " ")
     .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, " ")
+    .replace(/^\s*(?:to\s+)?follow[- ]?up\s+(?:with|w)\s+/i, "")
+    .replace(/^\s*call\s+/i, "")
     .replace(/\s+/g, " ").trim().replace(/^[,.-]+|[,.-]+$/g, "") || "that lead";
 }
 
@@ -136,6 +150,17 @@ function statusCorrectionNextAction(raw, fallback) {
   return fallback || "follow up";
 }
 
+async function resolveExistingLead(store, { ownerSenderId, text, history = [] } = {}) {
+  const direct = await findMentionedLead(store, { ownerSenderId, text });
+  if (direct) return direct;
+  if (!/\b(him|her|them)\b/i.test(String(text ?? ""))) return null;
+  for (const turn of history.slice(-4).reverse()) {
+    const fromContext = await findMentionedLead(store, { ownerSenderId, text: turn?.content });
+    if (fromContext) return fromContext;
+  }
+  return null;
+}
+
 export async function maybeScheduleLeadReminder({ text, subjectText, history = [], store, chatId, senderId, ownerRole, now = new Date(), timeZone = TZ }) {
   const raw = sanitizeReminderInput(text);
   if (!raw || !store?.createTask || !chatId) return null;
@@ -143,12 +168,7 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   if (STATUS_CORRECTION_RE.test(raw)) {
     const lead = await findMentionedLead(store, { ownerSenderId: senderId, text: raw });
     if (lead) {
-      await updateLeadState({
-        store,
-        lead,
-        state: "open",
-        nextAction: statusCorrectionNextAction(raw, lead.nextAction)
-      });
+      await updateLeadState({ store, lead, state: "open", nextAction: statusCorrectionNextAction(raw, lead.nextAction) });
       const ghlNote = lead.ghlStatus && !/unknown/i.test(String(lead.ghlStatus)) ? ` I still have ${lead.subject} as ${lead.ghlStatus} in the lead notes.` : "";
       return { task: null, leadId: lead.leadId, reply: `Got it — ${lead.subject} has not enrolled in a plan yet. I’ll keep the lead open; next step is to select a plan.${ghlNote} Do you want me to remind you to follow up?` };
     }
@@ -174,13 +194,16 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   if (!isLeadReminderRequest(raw, history)) return null;
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
-  const subject = reminderSubject(subjectText || raw);
-  const existingLead = await findLeadBySubject(store, { ownerSenderId: senderId, subject });
-  const leadId = existingLead?.leadId || crypto.randomUUID();
+  const existingLead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
+  const subject = existingLead?.subject || reminderSubject(subjectText || raw);
+  const matchedBySubject = existingLead || await findLeadBySubject(store, { ownerSenderId: senderId, subject });
+  const leadId = matchedBySubject?.leadId || crypto.randomUUID();
   const reminderText = `Lead follow-up: ${subject}. Before I close this out: is this person in GHL, and did you update the lead outcome/status?`;
   const task = await store.createTask({ id: crypto.randomUUID(), type: "lead_management", payload: { workflow: "telegram_reminder", chatId: String(chatId), ownerSenderId: String(senderId ?? ""), leadId, text: reminderText, subject, source: "lead_followup" }, runAt });
   const resolvedOwnerRole = ownerRole || (typeof store.getTelegramSpeaker === "function" ? await store.getTelegramSpeaker(senderId) : null);
-  await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: "follow up", followUpAt: runAt, ghlStatus: existingLead?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created" });
+  await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: matchedBySubject?.nextAction ?? "follow up", followUpAt: runAt, ghlStatus: matchedBySubject?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created" });
   const when = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(runAt);
-  return { task, leadId, reply: `Got it — I’ll remind you ${when} about ${subject}. Also, is this person already in GHL?` };
+  const knowsGhl = matchedBySubject?.ghlStatus && !/unknown/i.test(String(matchedBySubject.ghlStatus));
+  const ghlQuestion = knowsGhl ? "" : " Also, is this person already in GHL?";
+  return { task, leadId, reply: `Got it — I’ll remind you ${when} about ${subject}.${ghlQuestion}` };
 }
