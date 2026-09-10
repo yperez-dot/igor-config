@@ -84,6 +84,17 @@ export async function findLeadBySubject(store, { ownerSenderId, subject } = {}) 
   }) ?? null;
 }
 
+export async function findMentionedLead(store, { ownerSenderId, text } = {}) {
+  const haystack = ` ${normalize(text)} `;
+  if (!haystack.trim()) return null;
+  const leads = await listLeadSnapshots(store, { ownerSenderId, includeClosed: true });
+  const matches = leads
+    .map((lead) => ({ lead, subject: normalize(lead.subject) }))
+    .filter(({ subject }) => subject && haystack.includes(` ${subject} `))
+    .sort((a, b) => b.subject.length - a.subject.length);
+  return matches[0]?.lead ?? null;
+}
+
 export async function updateLeadState({ store, lead, state, nextAction, followUpAt, ghlStatus, reminderTaskId }) {
   if (!lead) return null;
   return saveLeadSnapshot({
@@ -115,7 +126,7 @@ export function leadOutcome(text) {
 }
 
 export function latestLeadReminderSubject(history = []) {
-  for (const turn of [...history].reverse()) {
+  for (const turn of history.slice(-4).reverse()) {
     if (turn?.role !== "assistant") continue;
     const text = String(turn.content ?? "");
     const match = text.match(/Lead follow-up:\s*(.+?)(?:\.\s*Before I close this out:|$)/i);
