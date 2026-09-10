@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { findLeadBySubject, saveLeadSnapshot } from "./lead-ledger.js";
 
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
@@ -124,6 +125,7 @@ export async function maybeScheduleLeadReminder({
   store,
   chatId,
   senderId,
+  ownerRole,
   now = new Date(),
   timeZone = TZ
 }) {
@@ -134,6 +136,8 @@ export async function maybeScheduleLeadReminder({
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
   const subject = reminderSubject(subjectText || raw);
+  const existingLead = await findLeadBySubject(store, { ownerSenderId: senderId, subject });
+  const leadId = existingLead?.leadId || crypto.randomUUID();
   const reminderText = `Lead follow-up: ${subject}. Before I close this out: is this person in GHL, and did you update the lead outcome/status?`;
   const task = await store.createTask({
     id: crypto.randomUUID(),
@@ -142,11 +146,26 @@ export async function maybeScheduleLeadReminder({
       workflow: "telegram_reminder",
       chatId: String(chatId),
       ownerSenderId: String(senderId ?? ""),
+      leadId,
       text: reminderText,
       subject,
       source: "lead_followup"
     },
     runAt
+  });
+
+  await saveLeadSnapshot({
+    store,
+    leadId,
+    ownerSenderId: senderId,
+    ownerRole,
+    subject,
+    nextAction: "follow up",
+    followUpAt: runAt,
+    ghlStatus: existingLead?.ghlStatus ?? "unknown",
+    state: "open",
+    reminderTaskId: task?.id,
+    source: "telegram:reminder-created"
   });
 
   const when = new Intl.DateTimeFormat("en-US", {
@@ -159,6 +178,7 @@ export async function maybeScheduleLeadReminder({
   }).format(runAt);
   return {
     task,
+    leadId,
     reply: `Got it — I’ll remind you ${when} about ${subject}. Also, is this person already in GHL?`
   };
 }
