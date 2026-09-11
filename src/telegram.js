@@ -178,6 +178,15 @@ export function stripTelegramMarkdown(text) {
     .replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "$1");
 }
 
+function sanitizeTelegramErrorDescription(description) {
+  return String(description ?? "unknown error")
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\bsk-[A-Za-z0-9._-]+/g, "[redacted]")
+    .replace(/\bpit-[A-Za-z0-9-]+/gi, "[redacted]")
+    .replace(/\bbot\d+:[A-Za-z0-9_-]+/gi, "bot[redacted]")
+    .slice(0, 200);
+}
+
 export async function sendTelegramMessage({ botToken, chatId, text, fetchImpl = fetch }) {
   const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendMessage`, {
     method: "POST",
@@ -189,7 +198,16 @@ export async function sendTelegramMessage({ botToken, chatId, text, fetchImpl = 
     }),
     signal: AbortSignal.timeout(20_000)
   });
-  if (!response.ok) throw new Error(`Telegram send failed with HTTP ${response.status}`);
+  let body = null;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  if (!response.ok) {
+    const sanitizedDescription = sanitizeTelegramErrorDescription(body?.description);
+    throw new Error(`Telegram send failed: HTTP ${response.status} to chat ${chatId}, Telegram error: ${sanitizedDescription}`);
+  }
 }
 
 export async function registerTelegramWebhook({ botToken, webhookSecret, webhookUrl, fetchImpl = fetch }) {
