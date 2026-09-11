@@ -3,8 +3,19 @@ import { claimsToBeYahoska, floridaClock, wantsOwnTeamCalendar } from "./identit
 const REFUSAL_RE = /only yahoska|don.t have your calendar|can.t put it on yours|i only have yahoska|i don.t have your calendar/i;
 const CANNED_OWN_RE = /on it — it.?s on your calendar.*not yahoska/i;
 const CALENDAR_INTENT_RE = /calendar|remind|appoint|\b\d{1,2}:\d{2}\b|put (it )?(on )?mine|put mine|am i free|what.?s on|book |add (it|this)|not (ok )?yahoska/i;
-const ADD_INTENT_RE = /put |add |remind|book |on mine|my calendar/i;
+const ADD_INTENT_RE = /\b(put |add |remind|book |on mine|put mine)\b/i;
+const LIST_INTENT_RE = /\b(what['’]?s on|what is on|am i free|show (me )?(my )?calendar|anything (on|today|this))\b/i;
 const CLARIFY_RE = /\b(pls|please)?\s*clarify\b/i;
+
+export function isListOnlyCalendarIntent(text) {
+  return LIST_INTENT_RE.test(String(text ?? ""));
+}
+
+export function isAddCalendarIntent(text) {
+  const raw = String(text ?? "");
+  if (isListOnlyCalendarIntent(raw)) return false;
+  return ADD_INTENT_RE.test(raw);
+}
 
 function userAuthoredText(text, history = []) {
   const userTurns = (history ?? [])
@@ -83,7 +94,8 @@ export function ownCalendarBookingArgs({ text, history = [], speaker, now = new 
   const whose = resolveWhose(speaker, blob);
   if (!whose) return null;
   if (!wantsOwnTeamCalendar(blob) && speaker?.role !== "katy" && speaker?.role !== "carolina") return null;
-  if (!wantsOwnTeamCalendar(blob) && !ADD_INTENT_RE.test(String(text ?? ""))) return null;
+  if (isListOnlyCalendarIntent(text)) return null;
+  if (!wantsOwnTeamCalendar(blob) && !isAddCalendarIntent(text)) return null;
   const start = parseLocalStart(blob, now, timeZone);
   if (!start) return null;
   return {
@@ -141,7 +153,7 @@ export async function handleOwnCalendarTurn({
     return { args, result, reply: ownCalendarBookedReply(result, args) };
   }
 
-  if (wantsOwnTeamCalendar(blob) || ADD_INTENT_RE.test(String(text ?? ""))) {
+  if (isAddCalendarIntent(text) || (wantsOwnTeamCalendar(blob) && !isListOnlyCalendarIntent(text))) {
     return { reply: "I have your calendar — not Yahoska’s. What time should I add?" };
   }
 
