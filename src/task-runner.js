@@ -1,4 +1,4 @@
-import { processTask } from "./worker-core.js";
+import { processTask } from "./process-task-personal.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 
 export function alertChatIds(environment = process.env) {
@@ -101,14 +101,15 @@ export async function runClaimedTask({
 
 export async function workOnce({
   store,
+  task,
   notify,
   environment = process.env,
   processFn = processTask
 }) {
-  const task = await store.claimQueuedTask();
-  if (!task) return false;
+  const claimed = task ?? await store.claimQueuedTask();
+  if (!claimed) return false;
   try {
-    await runClaimedTask({ store, task, notify, environment, processFn });
+    await runClaimedTask({ store, task: claimed, notify, environment, processFn });
   } catch {
     // Failure is persisted and Telegram-alerted; keep polling.
   }
