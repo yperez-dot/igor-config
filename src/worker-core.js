@@ -23,14 +23,6 @@ function agentPulseMessage(result) {
   return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).${hub}`;
 }
 
-function carrierDigestMessage(result) {
-  if (result.status === "clear") return "✅ Carrier inbox digest: clear (no email).";
-  if (result.status === "dry_run") return `✅ Carrier inbox digest dry-run: ${result.findingCount} item(s).`;
-  if (result.status === "skipped") return `✅ Carrier inbox digest skipped: ${result.reason}.`;
-  const hub = result.hub?.status === "published" ? " Hub ticker updated." : "";
-  return `✅ Carrier inbox digest sent: ${result.findingCount} item(s).${hub}`;
-}
-
 const MORNING_CHECKINS = [
   "Morning — any open leads you need to follow up with today? Send me the names and when you want me to remind you. Also: is each one already in GHL?",
   "Good morning. Quick lead check: anyone still waiting on a call or follow-up? Tell me who + when, and make sure they made it into GHL.",
@@ -79,6 +71,15 @@ function formatLeadWhen(value) {
   }).format(new Date(value));
 }
 
+function compactLeadField(value, maxLength) {
+  const text = String(value ?? "")
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
+}
+
 function ghlLooseEnd(lead) {
   const value = String(lead?.ghlStatus ?? "").trim();
   return !value || /unknown|not.?in.?ghl/i.test(value);
@@ -93,7 +94,7 @@ function leadTimingLabel(lead, now = new Date()) {
 }
 
 export function leadBriefText(phase, leads = [], now = new Date()) {
-  const open = [...leads].slice(0, 20);
+  const open = [...leads].slice(0, 12);
   if (!open.length) {
     return phase === "evening"
       ? "Evening lead closeout: your personal ledger is clear — no open leads to chase tonight. If anything new came in today, send me the name + next step and I’ll track it."
@@ -107,9 +108,10 @@ export function leadBriefText(phase, leads = [], now = new Date()) {
 
   const header = phase === "evening" ? "Evening lead closeout — still open:" : "Morning lead brief — here’s what needs attention:";
   const lines = open.map((lead) => {
-    const action = String(lead.nextAction ?? "follow up").trim() || "follow up";
-    const ghl = ghlLooseEnd(lead) ? "GHL needs attention" : `GHL: ${lead.ghlStatus}`;
-    return `• ${lead.subject} — ${action}; ${leadTimingLabel(lead, now)}; ${ghl}`;
+    const subject = compactLeadField(lead.subject || "Unnamed lead", 90);
+    const action = compactLeadField(lead.nextAction || "follow up", 80) || "follow up";
+    const ghl = ghlLooseEnd(lead) ? "GHL needs attention" : `GHL: ${compactLeadField(lead.ghlStatus, 40)}`;
+    return `• ${subject} — ${action}; ${leadTimingLabel(lead, now)}; ${ghl}`;
   });
 
   const summary = [];
@@ -210,6 +212,7 @@ export async function processTask(task, {
     const phase = task.payload?.phase === "evening" ? "evening" : "morning";
     const targets = leadCheckinTargets(environment);
     let sent = 0;
+    const failures = [];
     for (const chatId of targets) {
       let text = leadCheckinText(phase);
       if (store?.listAgentMemories) {
@@ -220,10 +223,22 @@ export async function processTask(task, {
           // Keep the automatic check-in alive even if the ledger read has a transient failure.
         }
       }
-      await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
-      sent += 1;
+      try {
+        await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
+        sent += 1;
+      } catch (error) {
+        failures.push({ chatId: String(chatId), reason: error.message });
+        if (store?.record) {
+          try {
+            await store.record("lead_checkin.delivery_failed", String(chatId), { phase, reason: error.message });
+          } catch {
+            // Continue delivering to the remaining recipients.
+          }
+        }
+      }
     }
-    return { status: "sent", channel: "telegram", phase, recipientCount: sent };
+    if (!sent && failures.length) throw new Error(`Lead check-in failed for all ${failures.length} recipient(s).`);
+    return { status: "sent", channel: "telegram", phase, recipientCount: sent, failedRecipientCount: failures.length };
   }
 
   if (workflow === "sales_tracker_sync") {
@@ -251,9 +266,7 @@ export async function processTask(task, {
   }
 
   if (workflow === "carrier_inbox_digest") {
-    const result = await runCarrierDigest({ environment: withModeOverride(environment, task, "CARRIER_DIGEST_MODE") });
-    await notify(carrierDigestMessage(result));
-    return result;
+    return runCarrierDigest({ environment: withModeOverride(environment, task, "CARRIER_DIGEST_MODE") });
   }
 
   if (workflow === "igor_heartbeat") {
