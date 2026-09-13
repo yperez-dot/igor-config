@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 const LEAD_TAG = "lead-ledger";
 const CLOSED_STATES = new Set(["completed", "enrolled", "not_interested", "closed"]);
+const GENERIC_ACTIONS = new Set(["follow up", "follow-up", "follow up again", "call", "contact"]);
 
 function normalize(value) {
   return String(value ?? "")
@@ -12,8 +13,34 @@ function normalize(value) {
     .trim();
 }
 
+function compactWhitespace(value) {
+  return String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export function canonicalLeadSubject(value) {
+  const raw = compactWhitespace(value);
+  if (!raw) return null;
+
+  if (/^(?:let['’]?s\s+)?check\s+in(?:\s*[.,-]?\s*(?:around|at)?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?[.!]?$/i.test(raw)) return null;
+  if (/^(?:around|at)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?[.!]?$/i.test(raw)) return null;
+
+  let match = raw.match(/^(.+?)\s+is\s+(?:a\s+)?new\s+lead\b/i);
+  if (match?.[1]) return compactWhitespace(match[1]);
+
+  match = raw.match(/^(?:to\s+)?follow[- ]?up\s+(?:with|w)\s+(.+?)(?:\s+next)?[.!]?$/i);
+  if (match?.[1]) return compactWhitespace(match[1]);
+
+  match = raw.match(/^no[,\s]+(.+?)\s+(?:hasn['’]?t|has\s+not|isn['’]?t|is\s+not)\s+enrolled\b/i);
+  if (match?.[1]) return compactWhitespace(match[1]);
+
+  match = raw.match(/^(.+?)\s+(?:hasn['’]?t|has\s+not|isn['’]?t|is\s+not)\s+enrolled\b/i);
+  if (match?.[1] && match[1].split(/\s+/).length <= 4) return compactWhitespace(match[1]);
+
+  return raw;
+}
+
 function leadKey(ownerSenderId, subject) {
-  const normalized = normalize(subject).slice(0, 120) || "unknown lead";
+  const normalized = normalize(canonicalLeadSubject(subject) ?? subject).slice(0, 120) || "unknown lead";
   return `${String(ownerSenderId ?? "").trim()}:${normalized}`;
 }
 
@@ -24,6 +51,49 @@ function parseSnapshot(row) {
   } catch {
     return null;
   }
+}
+
+function knownGhlStatus(value) {
+  const text = String(value ?? "").trim();
+  return Boolean(text && !/unknown|not.?in.?ghl/i.test(text));
+}
+
+function actionSpecificity(value) {
+  const text = normalize(value);
+  if (!text) return 0;
+  return GENERIC_ACTIONS.has(text) ? 1 : 2;
+}
+
+function dateMs(value) {
+  const ms = value ? Date.parse(value) : NaN;
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function mergeDuplicateLead(current, candidate) {
+  if (!current) return { ...candidate };
+  const merged = { ...current };
+
+  const currentUpdated = dateMs(current.updatedAt) ?? 0;
+  const candidateUpdated = dateMs(candidate.updatedAt) ?? 0;
+  if (candidateUpdated > currentUpdated) {
+    merged.state = candidate.state;
+    merged.ownerRole = candidate.ownerRole ?? merged.ownerRole;
+    merged.reminderTaskId = candidate.reminderTaskId ?? merged.reminderTaskId;
+    merged.updatedAt = candidate.updatedAt ?? merged.updatedAt;
+  }
+
+  const currentFollow = dateMs(merged.followUpAt);
+  const candidateFollow = dateMs(candidate.followUpAt);
+  if (candidateFollow !== null && (currentFollow === null || candidateFollow > currentFollow)) {
+    merged.followUpAt = candidate.followUpAt;
+    merged.reminderTaskId = candidate.reminderTaskId ?? merged.reminderTaskId;
+  }
+
+  if (actionSpecificity(candidate.nextAction) > actionSpecificity(merged.nextAction)) merged.nextAction = candidate.nextAction;
+  if (knownGhlStatus(candidate.ghlStatus) && !knownGhlStatus(merged.ghlStatus)) merged.ghlStatus = candidate.ghlStatus;
+  if (/[^\x00-\x7F]/.test(candidate.subject ?? "") && !/[^\x00-\x7F]/.test(merged.subject ?? "")) merged.subject = candidate.subject;
+
+  return merged;
 }
 
 export async function saveLeadSnapshot({
@@ -41,14 +111,15 @@ export async function saveLeadSnapshot({
 }) {
   if (!store?.saveAgentMemory) return null;
   const id = leadId || crypto.randomUUID();
+  const cleanedSubject = canonicalLeadSubject(subject) ?? compactWhitespace(subject);
   const snapshot = {
     kind: "lead_snapshot",
     leadId: id,
-    leadKey: leadKey(ownerSenderId, subject),
+    leadKey: leadKey(ownerSenderId, cleanedSubject),
     ownerSenderId: String(ownerSenderId ?? ""),
     ownerRole: ownerRole || null,
-    subject: String(subject ?? "").trim(),
-    nextAction: String(nextAction ?? "follow up").trim(),
+    subject: cleanedSubject,
+    nextAction: compactWhitespace(nextAction ?? "follow up"),
     followUpAt: followUpAt ? new Date(followUpAt).toISOString() : null,
     ghlStatus,
     state,
@@ -66,22 +137,33 @@ export async function saveLeadSnapshot({
 export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = false, limit = 500 } = {}) {
   if (!store?.listAgentMemories) return [];
   const rows = await store.listAgentMemories({ limit });
-  const latest = new Map();
+  const latestById = new Map();
+
   for (const row of rows) {
     if (!String(row.tags ?? "").includes(LEAD_TAG)) continue;
     const snapshot = parseSnapshot(row);
     if (!snapshot) continue;
     if (ownerSenderId && String(snapshot.ownerSenderId) !== String(ownerSenderId)) continue;
     const identity = snapshot.leadId || `${snapshot.ownerSenderId}:${normalize(snapshot.subject)}`;
-    if (!latest.has(identity)) latest.set(identity, snapshot);
+    if (!latestById.has(identity)) latestById.set(identity, snapshot);
   }
-  return [...latest.values()]
+
+  const canonical = new Map();
+  for (const snapshot of latestById.values()) {
+    const subject = canonicalLeadSubject(snapshot.subject);
+    if (!subject) continue;
+    const cleaned = { ...snapshot, subject, leadKey: leadKey(snapshot.ownerSenderId, subject) };
+    const identity = `${String(snapshot.ownerSenderId ?? "")}:${normalize(subject)}`;
+    canonical.set(identity, mergeDuplicateLead(canonical.get(identity), cleaned));
+  }
+
+  return [...canonical.values()]
     .filter((lead) => includeClosed || !CLOSED_STATES.has(lead.state))
     .sort((a, b) => String(a.followUpAt ?? "9999").localeCompare(String(b.followUpAt ?? "9999")));
 }
 
 export async function findLeadBySubject(store, { ownerSenderId, subject } = {}) {
-  const target = normalize(subject);
+  const target = normalize(canonicalLeadSubject(subject) ?? subject);
   if (!target) return null;
   const leads = await listLeadSnapshots(store, { ownerSenderId, includeClosed: true });
   return leads.find((lead) => {
