@@ -8,6 +8,7 @@ import { easternMondayIso } from "./hub-ticker.js";
 import { pulseHealthFields } from "./pulse-readiness.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 import { listLeadSnapshots } from "./lead-ledger.js";
+import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
 
 const LEAD_TZ = "America/New_York";
 
@@ -24,15 +25,15 @@ function agentPulseMessage(result) {
 }
 
 const MORNING_CHECKINS = [
-  "Morning — any open leads you need to follow up with today? Send me the names and when you want me to remind you. Also: is each one already in GHL?",
-  "Good morning. Quick lead check: anyone still waiting on a call or follow-up? Tell me who + when, and make sure they made it into GHL.",
-  "Lead check-in: who needs attention today? Give me a name and a time and I’ll remind you. If they’re not in GHL yet, let’s catch that too."
+  "Morning — any open leads you need to follow up with today? Send me the names and when you want me to remind you.",
+  "Good morning. Quick lead check: anyone still waiting on a call or follow-up? Tell me who + when.",
+  "Lead check-in: who needs attention today? Give me a name and a time and I’ll remind you."
 ];
 
 const EVENING_CHECKINS = [
-  "End-of-day lead check: any new leads today, anyone you still owe a follow-up, or any sales that need their GHL status updated? Tell me who and when you want the reminder.",
-  "How was the day? Before we wrap: any new leads to add to GHL, follow-ups to schedule, or enrollments whose CRM status still needs updating?",
-  "Quick closeout: did any leads come in today? Anyone I should remind you to call tomorrow? And is GHL current for the leads you worked or sold?"
+  "End-of-day lead check: any new leads today or anyone you still owe a follow-up? Tell me who and when you want the reminder.",
+  "How was the day? Before we wrap: any new leads or follow-ups to schedule?",
+  "Quick closeout: did any leads come in today? Anyone I should remind you to call tomorrow?"
 ];
 
 function leadCheckinTargets(environment) {
@@ -71,6 +72,15 @@ function formatLeadWhen(value) {
   }).format(new Date(value));
 }
 
+function formatShortWhen(value) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: LEAD_TZ,
+    weekday: "short",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
 function compactLeadField(value, maxLength) {
   const text = String(value ?? "")
     .replace(/[\u0000-\u001F\u007F]/g, " ")
@@ -78,11 +88,6 @@ function compactLeadField(value, maxLength) {
     .trim();
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(1, maxLength - 1)).trimEnd()}…`;
-}
-
-function ghlLooseEnd(lead) {
-  const value = String(lead?.ghlStatus ?? "").trim();
-  return !value || /unknown|not.?in.?ghl/i.test(value);
 }
 
 function leadTimingLabel(lead, now = new Date()) {
@@ -104,27 +109,58 @@ export function leadBriefText(phase, leads = [], now = new Date()) {
   const overdue = open.filter((lead) => lead.followUpAt && new Date(lead.followUpAt).getTime() < now.getTime());
   const dueToday = open.filter((lead) => lead.followUpAt && new Date(lead.followUpAt).getTime() >= now.getTime() && easternDayKey(lead.followUpAt) === easternDayKey(now));
   const unscheduled = open.filter((lead) => !lead.followUpAt);
-  const crmLooseEnds = open.filter(ghlLooseEnd);
 
   const header = phase === "evening" ? "Evening lead closeout — still open:" : "Morning lead brief — here’s what needs attention:";
   const lines = open.map((lead) => {
     const subject = compactLeadField(lead.subject || "Unnamed lead", 90);
     const action = compactLeadField(lead.nextAction || "follow up", 80) || "follow up";
-    const ghl = ghlLooseEnd(lead) ? "GHL needs attention" : `GHL: ${compactLeadField(lead.ghlStatus, 40)}`;
-    return `• ${subject} — ${action}; ${leadTimingLabel(lead, now)}; ${ghl}`;
+    return `• ${subject} — ${action}; ${leadTimingLabel(lead, now)}`;
   });
 
   const summary = [];
   if (overdue.length) summary.push(`${overdue.length} overdue`);
   if (dueToday.length) summary.push(`${dueToday.length} due today`);
   if (unscheduled.length) summary.push(`${unscheduled.length} without a reminder`);
-  if (crmLooseEnds.length) summary.push(`${crmLooseEnds.length} GHL loose end${crmLooseEnds.length === 1 ? "" : "s"}`);
 
   const tail = phase === "evening"
     ? "Reply with what happened — for example: “Ayda no answer, remind me Friday at 10” or “Maria enrolled.”"
     : "Reply with any update or tell me when you want the next follow-up. I’ll keep the ledger current.";
   const more = leads.length > open.length ? `\n• +${leads.length - open.length} more open lead(s)` : "";
   return `${header}\n${lines.join("\n")}${more}${summary.length ? `\n\nPriority: ${summary.join(" • ")}.` : ""}\n\n${tail}`;
+}
+
+export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {}) {
+  if (!snapshot) return "";
+  const lines = ["GHL live check:"];
+
+  if (snapshot.taskError) {
+    lines.push("• Pending tasks: unavailable from GHL");
+  } else {
+    const tasks = snapshot.tasks ?? [];
+    lines.push(`• Pending tasks: ${tasks.length}${snapshot.overdueTaskCount ? ` (${snapshot.overdueTaskCount} overdue)` : ""}`);
+    const sorted = [...tasks].sort((a, b) => (taskDueAt(a)?.getTime() ?? Infinity) - (taskDueAt(b)?.getTime() ?? Infinity));
+    for (const task of sorted.slice(0, maxItems)) {
+      const due = taskDueAt(task);
+      const when = due ? `${due < now ? "OVERDUE " : ""}${formatShortWhen(due)}` : "no due date";
+      lines.push(`  - ${compactLeadField(task.title ?? task.name ?? "Task", 70)} — ${when}`);
+    }
+    if (tasks.length > maxItems) lines.push(`  - +${tasks.length - maxItems} more pending task(s)`);
+  }
+
+  if (snapshot.appointmentError) {
+    lines.push("• Upcoming appointments: unavailable from GHL");
+  } else {
+    const appointments = snapshot.appointments ?? [];
+    lines.push(`• Upcoming appointments (next 48h): ${appointments.length}`);
+    for (const event of appointments.slice(0, maxItems)) {
+      lines.push(`  - ${formatShortWhen(event.start)} — ${compactLeadField(event.calendarName ?? "Appointment calendar", 60)}`);
+    }
+    if (appointments.length > maxItems) lines.push(`  - +${appointments.length - maxItems} more appointment(s)`);
+    if (snapshot.calendarsTruncated) lines.push(`  - checked ${snapshot.checkedCalendarCount} of ${snapshot.calendarCount} calendars`);
+    else if (snapshot.failedCalendarCount) lines.push(`  - ${snapshot.failedCalendarCount} calendar check(s) failed`);
+  }
+
+  return lines.join("\n");
 }
 
 export const WORKER_WORKFLOWS = new Set([
@@ -188,6 +224,7 @@ export async function processTask(task, {
   runCarrierDigest = runCarrierInboxDigest,
   runHeartbeatFn = runHeartbeat,
   runSiteLookoutFn = runSiteLookout,
+  runGhlOps = ghlOpsSnapshot,
   emailOps = sendOpsAlert,
   store
 } = {}) {
@@ -211,6 +248,17 @@ export async function processTask(task, {
   if (workflow === "lead_followup_checkin") {
     const phase = task.payload?.phase === "evening" ? "evening" : "morning";
     const targets = leadCheckinTargets(environment);
+    let ghlText = "";
+    const ghl = ghlConfig(environment);
+    if (ghl.token) {
+      try {
+        const snapshot = await runGhlOps({ token: ghl.token, locationId: ghl.locationId, now: new Date() });
+        ghlText = ghlOpsBriefText(snapshot);
+      } catch {
+        ghlText = "GHL live check:\n• Pending tasks: unavailable from GHL\n• Upcoming appointments: unavailable from GHL";
+      }
+    }
+
     let sent = 0;
     const failures = [];
     for (const chatId of targets) {
@@ -223,6 +271,7 @@ export async function processTask(task, {
           // Keep the automatic check-in alive even if the ledger read has a transient failure.
         }
       }
+      if (ghlText) text = `${text}\n\n${ghlText}`;
       try {
         await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
         sent += 1;

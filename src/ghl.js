@@ -2,6 +2,7 @@ import { last4, maskName, emailDomain } from "./redact.js";
 
 const GHL_API = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
+const GHL_V3 = "v3";
 
 export function ghlConfig(environment = process.env) {
   return {
@@ -10,24 +11,27 @@ export function ghlConfig(environment = process.env) {
   };
 }
 
-function ghlHeaders(token) {
+function ghlHeaders(token, version = GHL_VERSION, hasBody = false) {
   return {
     Authorization: `Bearer ${token}`,
-    Version: GHL_VERSION,
-    Accept: "application/json"
+    Version: version,
+    Accept: "application/json",
+    ...(hasBody ? { "Content-Type": "application/json" } : {})
   };
 }
 
-async function ghlJson(url, { token, fetchImpl = fetch }) {
+async function ghlJson(url, { token, fetchImpl = fetch, version = GHL_VERSION, method = "GET", body } = {}) {
   const response = await fetchImpl(url, {
-    headers: ghlHeaders(token),
+    method,
+    headers: ghlHeaders(token, version, body !== undefined),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(25_000)
   });
-  const body = await response.json().catch(() => ({}));
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(body.message || body.error || `GHL request failed with HTTP ${response.status}`);
+    throw new Error(payload.message || payload.error || `GHL request failed with HTTP ${response.status}`);
   }
-  return body;
+  return payload;
 }
 
 export function opportunityTimestamp(opportunity) {
@@ -114,6 +118,122 @@ export async function ghlSearchContacts({ token, locationId, query, limit = 20, 
     lastActivity: contact.dateUpdated ?? contact.lastActivity ?? null,
     tags: contact.tags ?? []
   }));
+}
+
+export function taskDueAt(task) {
+  const raw = task?.dueDate ?? task?.dueDateTime ?? task?.dueAt ?? task?.date;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+export async function ghlPendingTasks({ token, locationId, limit = 100, fetchImpl = fetch }) {
+  const body = await ghlJson(
+    `${GHL_API}/locations/${encodeURIComponent(locationId)}/tasks/search`,
+    {
+      token,
+      fetchImpl,
+      version: GHL_V3,
+      method: "POST",
+      body: { completed: false, limit: Math.min(Math.max(Number(limit) || 25, 1), 100), skip: 0 }
+    }
+  );
+  return (body.tasks ?? []).filter((task) => task && task.completed !== true);
+}
+
+export async function ghlListCalendars({ token, locationId, fetchImpl = fetch }) {
+  const params = new URLSearchParams({ locationId, showDrafted: "false" });
+  const body = await ghlJson(`${GHL_API}/calendars/?${params}`, {
+    token,
+    fetchImpl,
+    version: GHL_V3
+  });
+  return (body.calendars ?? []).filter((calendar) => calendar && calendar.isActive !== false);
+}
+
+function calendarEventStart(event) {
+  const raw = event?.startTime ?? event?.start ?? event?.startDateTime ?? event?.startDate;
+  if (!raw) return null;
+  const date = new Date(raw);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+export async function ghlUpcomingAppointments({
+  token,
+  locationId,
+  now = new Date(),
+  hours = 48,
+  maxCalendars = 25,
+  fetchImpl = fetch
+}) {
+  const calendars = await ghlListCalendars({ token, locationId, fetchImpl });
+  const selected = calendars.slice(0, Math.max(1, maxCalendars));
+  const end = new Date(now.getTime() + Math.max(1, Number(hours) || 48) * 3_600_000);
+  const settled = await Promise.allSettled(selected.map(async (calendar) => {
+    const params = new URLSearchParams({
+      locationId,
+      calendarId: String(calendar.id),
+      startTime: String(now.getTime()),
+      endTime: String(end.getTime())
+    });
+    const body = await ghlJson(`${GHL_API}/calendars/events?${params}`, {
+      token,
+      fetchImpl,
+      version: GHL_V3
+    });
+    return (body.events ?? []).map((event) => ({
+      ...event,
+      calendarName: calendar.name ?? "Calendar"
+    }));
+  }));
+
+  const unique = new Map();
+  for (const result of settled) {
+    if (result.status !== "fulfilled") continue;
+    for (const event of result.value) {
+      const start = calendarEventStart(event);
+      if (!start || start < now || start > end) continue;
+      const status = String(event?.appointmentStatus ?? event?.status ?? "").toLowerCase();
+      if (/cancel|invalid/.test(status)) continue;
+      const key = String(event?.id ?? `${event.calendarId ?? ""}:${start.toISOString()}:${event.title ?? ""}`);
+      if (!unique.has(key)) unique.set(key, { ...event, start });
+    }
+  }
+
+  return {
+    appointments: [...unique.values()].sort((a, b) => a.start - b.start),
+    calendarCount: calendars.length,
+    checkedCalendarCount: selected.length,
+    calendarsTruncated: calendars.length > selected.length,
+    failedCalendarCount: settled.filter((result) => result.status === "rejected").length
+  };
+}
+
+export async function ghlOpsSnapshot({ token, locationId, now = new Date(), fetchImpl = fetch }) {
+  const [tasksResult, appointmentsResult] = await Promise.allSettled([
+    ghlPendingTasks({ token, locationId, fetchImpl }),
+    ghlUpcomingAppointments({ token, locationId, now, fetchImpl })
+  ]);
+
+  const tasks = tasksResult.status === "fulfilled" ? tasksResult.value : [];
+  const appointmentResult = appointmentsResult.status === "fulfilled"
+    ? appointmentsResult.value
+    : { appointments: [], calendarCount: 0, checkedCalendarCount: 0, calendarsTruncated: false, failedCalendarCount: 0 };
+
+  return {
+    tasks,
+    overdueTaskCount: tasks.filter((task) => {
+      const due = taskDueAt(task);
+      return due && due.getTime() < now.getTime();
+    }).length,
+    appointments: appointmentResult.appointments,
+    calendarCount: appointmentResult.calendarCount,
+    checkedCalendarCount: appointmentResult.checkedCalendarCount,
+    calendarsTruncated: appointmentResult.calendarsTruncated,
+    failedCalendarCount: appointmentResult.failedCalendarCount,
+    taskError: tasksResult.status === "rejected" ? tasksResult.reason?.message ?? "Task check failed" : null,
+    appointmentError: appointmentsResult.status === "rejected" ? appointmentsResult.reason?.message ?? "Appointment check failed" : null
+  };
 }
 
 export function csvEscape(value) {
