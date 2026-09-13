@@ -104,9 +104,10 @@ export async function workOnce({
   task,
   notify,
   environment = process.env,
-  processFn = processTask
+  processFn = processTask,
+  claimOptions = {}
 }) {
-  const claimed = task ?? await store.claimQueuedTask();
+  const claimed = task ?? await store.claimQueuedTask(claimOptions);
   if (!claimed) return false;
   try {
     await runClaimedTask({ store, task: claimed, notify, environment, processFn });
@@ -121,12 +122,13 @@ export function startTaskPoller({
   notify,
   environment = process.env,
   intervalMs = Number(environment.WORKER_POLL_INTERVAL_MS ?? 5_000),
-  shouldContinue = () => true
+  shouldContinue = () => true,
+  claimOptions = {}
 } = {}) {
   let stopped = false;
   const loop = (async () => {
     while (!stopped && shouldContinue()) {
-      const worked = await workOnce({ store, notify, environment });
+      const worked = await workOnce({ store, notify, environment, claimOptions });
       if (!worked) await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
   })();
