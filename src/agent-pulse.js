@@ -153,7 +153,30 @@ export async function runAgentPulseWeekly({
   publishHub = publishHubTicker,
   fetchImpl = fetch
 } = {}) {
+  // Production bilingual mode: detect and split into EN + ES
   const mode = environment.AGENT_PULSE_MODE ?? "send";
+  const lang = environment.AGENT_PULSE_LANG;
+
+  if (mode === "send" && !lang) {
+    // Bilingual production send: call self twice with each locale
+    const savedLang = environment.AGENT_PULSE_LANG;
+
+    const enEnv = { ...environment, AGENT_PULSE_LANG: "en" };
+    const enResult = await runAgentPulseWeekly({ environment: enEnv, now, askModel, deliver, scanInbox, publishHub, fetchImpl });
+
+    const esEnv = { ...environment, AGENT_PULSE_LANG: "es" };
+    const esResult = await runAgentPulseWeekly({ environment: esEnv, now, askModel, deliver, scanInbox, publishHub, fetchImpl });
+
+    // Aggregate results
+    const totalRecipientCount = enResult.recipientCount + esResult.recipientCount;
+    return {
+      ...enResult,
+      status: "sent",
+      recipientCount: totalRecipientCount,
+      recipientCounts: { en: enResult.recipientCount, es: esResult.recipientCount }
+    };
+  }
+
   if (!["dry-run", "test", "send"].includes(mode)) {
     throw new Error("Agent Pulse mode must be dry-run, test, or send.");
   }
