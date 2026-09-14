@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { processTask, runtimeIdentity } from "../src/worker-core.js";
+import { agentPulseMessage, processTask, runtimeIdentity } from "../src/worker-core.js";
 
 test("sales sync uses the public sheet default and payload apply mode", async () => {
   let received;
@@ -276,4 +276,20 @@ test("runtime identity reports pulse send-path readiness without leaking secrets
   assert.equal(wired.pulseConfigured, true);
   assert.equal(wired.pulseReady, false);
   assert.equal(JSON.stringify(wired).includes("secret-pass"), false);
+});
+
+test("should format recipientCounts in Telegram message", async () => {
+  const result = {
+    status: "sent",
+    issue: 11,
+    recipientCount: 3,
+    recipientCounts: { en: 2, es: 1 },
+    hub: { status: "published" }
+  };
+
+  const message = agentPulseMessage(result);
+  assert.match(message, /Issue #11/);
+  assert.match(message, /3 recipient/);
+  assert.match(message, /EN: 2/);
+  assert.match(message, /ES: 1/);
 });

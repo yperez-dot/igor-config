@@ -18,9 +18,12 @@ function salesTrackerMessage(result, environment) {
     : `✅ Sales Tracker Sync ${result.status}: ${result.createdCount ?? 0} records created; ${result.missingCount} records were missing.`;
 }
 
-function agentPulseMessage(result) {
+export function agentPulseMessage(result) {
   if (result.status === "dry_run") return `✅ Agent Pulse dry-run: Issue #${result.issue} (${result.length} chars, ${result.findingCount} inbox items).`;
   const hub = result.hub?.status === "published" ? " Hub ticker updated." : result.hub?.status === "failed" ? " Hub ticker failed." : "";
+  if (result.recipientCounts) {
+    return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s) (EN: ${result.recipientCounts.en} | ES: ${result.recipientCounts.es}).${hub}`;
+  }
   return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).${hub}`;
 }
 
@@ -307,7 +310,10 @@ export async function processTask(task, {
     const result = await runAgentPulse({ environment: withAgentPulseEnv(environment, task) });
     if (store?.record && result.status === "sent") {
       await store.record("agent_pulse.sent", String(result.issue), {
-        mondayIso: result.mondayIso ?? easternMondayIso(), issue: result.issue, recipientCount: result.recipientCount
+        mondayIso: result.mondayIso ?? easternMondayIso(),
+        issue: result.issue,
+        recipientCount: result.recipientCount,
+        recipientCounts: result.recipientCounts
       });
     }
     await notify(agentPulseMessage(result));
