@@ -190,6 +190,38 @@ test("processes agent pulse weekly tasks", async () => {
   assert.equal(events[0].detail.mondayIso, "2026-08-31");
 });
 
+test("processes agent pulse dual-locale send with EN/ES counts", async () => {
+  const notifications = [];
+  const events = [];
+  const result = await processTask(
+    { payload: { workflow: "agent_pulse_weekly" } },
+    {
+      runAgentPulse: async () => ({
+        status: "sent",
+        issue: 13,
+        mondayIso: "2026-09-07",
+        enRecipientCount: 5,
+        esRecipientCount: 3,
+        enMessageId: "msg-en",
+        esMessageId: "msg-es",
+        lang: "dual",
+        hub: { status: "published" }
+      }),
+      store: {
+        async record(type, subject, detail) { events.push({ type, subject, detail }); }
+      },
+      notify: async (message) => notifications.push(message)
+    }
+  );
+  assert.equal(result.status, "sent");
+  assert.match(notifications[0], /EN 5 \/ ES 3/);
+  assert.match(notifications[0], /Hub ticker updated/);
+  assert.equal(events[0].type, "agent_pulse.sent");
+  assert.equal(events[0].detail.enRecipientCount, 5);
+  assert.equal(events[0].detail.esRecipientCount, 3);
+  assert.equal(events[0].detail.recipientCount, 8);
+});
+
 test("passes correction banner and subject note from the pulse task payload", async () => {
   let seen;
   await processTask(
