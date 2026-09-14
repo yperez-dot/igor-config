@@ -59,3 +59,21 @@ test('stale morning task cannot deliver a previous day brief', async () => {
 test('lookup rejection propagates for fail-open handler',async()=>{
   await assert.rejects(boundedGhlLookup(async()=>{throw new Error('GHL unavailable');}),/GHL unavailable/);
 });
+
+test('check-ins use their dedicated bot and record Telegram receipts', async () => {
+  const events=[];
+  const result=await processTask(task,{now, environment:{...environment,GHL_API_TOKEN:'',LEAD_CHECKIN_TELEGRAM_BOT_TOKEN:'current-bot'},
+    store:{record:async(type,id,detail)=>events.push({type,id,detail})},
+    sendTelegram:async({botToken,chatId})=>{assert.equal(botToken,'current-bot');return {messageId:100+Number(chatId),botId:8677526045};}
+  });
+  assert.equal(result.recipientCount,3);
+  assert.deepEqual(events.map(e=>e.detail.messageId),[101,102,103]);
+});
+test('other workflows keep their original Telegram bot', async () => {
+  await processTask({payload:{workflow:'telegram_reminder',chatId:'1',text:'test'}},{environment:{...environment,LEAD_CHECKIN_TELEGRAM_BOT_TOKEN:'current-bot'},sendTelegram:async({botToken})=>assert.equal(botToken,'test')});
+});
+test('Telegram application-level failure cannot be recorded as delivered',async()=>{
+  const {sendLeadCheckinTelegram}=await import('../src/process-task-personal.js');
+  await assert.rejects(sendLeadCheckinTelegram({botToken:'test',chatId:'1',text:'test',fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:false,error_code:400})})}),/rejected/);
+  assert.deepEqual(await sendLeadCheckinTelegram({botToken:'test',chatId:'1',text:'test',fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:true,result:{message_id:123,from:{id:456},chat:{id:1}}})})}),{messageId:123,botId:456,chatId:1});
+});
