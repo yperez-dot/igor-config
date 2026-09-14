@@ -50,6 +50,15 @@ test("GHL clinical tools are available when GHL is connected", () => {
   assert.equal(names.includes("ghl_update_clinical_profile"), true);
 });
 
+test("connected-systems status exposes approval-gated GHL clinical readiness", async () => {
+  const result = await executeTool("list_connected_systems", {}, { environment });
+  assert.equal(result.capabilities.ghlClinical.available, true);
+  assert.equal(result.capabilities.ghlClinical.readRecentSmsAndEmail, true);
+  assert.equal(result.capabilities.ghlClinical.updateDoctorsAndMedications, true);
+  assert.equal(result.capabilities.ghlClinical.writeMode, "approval-gated");
+  assert.deepEqual(result.capabilities.ghlClinical.approvers, ["Yahoska", "Katy", "Carolina"]);
+});
+
 test("GHL clinical update previews exact values and requires approval", async () => {
   const result = await executeTool("ghl_update_clinical_profile", {
     contactQuery: "Maria Lopez",
