@@ -202,10 +202,19 @@ export async function probeSiteGroup(group, { fetchImpl = fetch } = {}) {
 
 export function lookoutFingerprint(findings) {
   const keys = findings
-    .filter((item) => item.status && item.status !== "ok" && item.status !== "secret_missing")
+    .filter((item) => item.status && item.status !== "ok" && item.status !== "secret_missing" && item.status !== "timeout")
     .map((item) => `${item.id}:${item.status}`)
     .sort();
   return keys.join("|") || "clear";
+}
+
+export function lookoutHasTimeout(probes = []) {
+  return (probes ?? []).some((item) => item?.status === "timeout");
+}
+
+export function holdLookoutFingerprint({ fingerprint, probes = [], lastFingerprint } = {}) {
+  if (lookoutHasTimeout(probes) && lastFingerprint) return lastFingerprint;
+  return fingerprint || "clear";
 }
 
 export function formatLookoutAlert(findings, { recovered = false, sitesOnly = false, lastFingerprint } = {}) {

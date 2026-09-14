@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { blockYahoskaOnlyRefusal, handleOwnCalendarTurn, ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
+import { blockYahoskaOnlyRefusal, handleOwnCalendarTurn, isListOnlyCalendarIntent, ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
 
 test("Put it on mine today 6:40 books Katy at 18:40 Florida time", () => {
   const args = ownCalendarBookingArgs({
@@ -71,6 +71,30 @@ test("canned Not Yahoska reply is stripped when the speaker is Yahoska", () => {
   ], { role: "yahoska" });
   assert.match(cleaned[0].content, /this chat is Yahoska/i);
   assert.doesNotMatch(cleaned[0].content, /On it/);
+});
+
+test("what’s on my calendar at 2:30 lists instead of booking a Reminder", async () => {
+  assert.equal(isListOnlyCalendarIntent("what’s on my calendar at 2:30"), true);
+  assert.equal(ownCalendarBookingArgs({
+    text: "what’s on my calendar at 2:30",
+    speaker: { role: "katy" },
+    now: new Date("2026-09-04T14:00:00.000Z")
+  }), null);
+
+  const toolCalls = [];
+  const result = await handleOwnCalendarTurn({
+    text: "what’s on my calendar at 2:30",
+    speaker: { role: "katy" },
+    now: new Date("2026-09-04T14:00:00.000Z"),
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { events: [] };
+    }
+  });
+  assert.equal(toolCalls[0].name, "calendar_list_events");
+  assert.equal(toolCalls[0].args.whose, "katy");
+  assert.match(result.reply, /your calendar/i);
+  assert.doesNotMatch(result.reply, /On it/);
 });
 
 test("follow-up after the canned line goes back to the model", async () => {
