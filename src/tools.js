@@ -20,7 +20,15 @@ import {
   smtpConfig,
   smtpTransportReady
 } from "./email.js";
-import { ghlConfig, ghlListPipelines, ghlSearchContacts, ghlStaleLeads } from "./ghl.js";
+import {
+  ghlApplyClinicalUpdate,
+  ghlConfig,
+  ghlListPipelines,
+  ghlPrepareClinicalUpdate,
+  ghlRecentClientMessages,
+  ghlSearchContacts,
+  ghlStaleLeads
+} from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
 import {
   findLatestMailAlert,
@@ -72,6 +80,7 @@ import {
 } from "./github-workflow.js";
 
 const WRITE_TOOLS = new Set([
+  "ghl_update_clinical_profile",
   "send_internal_email",
   "netlify_deploy",
   "railway_redeploy_service",
@@ -184,6 +193,26 @@ export function grokTools(environment = process.env) {
       functionTool("ghl_list_pipelines", "List GHL pipelines and stage names for the THEI location.", {
         type: "object",
         properties: {},
+        additionalProperties: false
+      }),
+      functionTool("ghl_recent_client_messages", "Read a client's recent inbound GHL SMS and email messages when the team asks Igor to pull medications or doctors from their conversation. Keep the reply PHI-light.", {
+        type: "object",
+        properties: {
+          contactQuery: { type: "string", description: "Client name, phone fragment, or email fragment." },
+          contactId: { type: "string", description: "Exact GHL contact id when already known." },
+          limit: { type: "integer", description: "Maximum recent messages. Default 20." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("ghl_update_clinical_profile", "Add doctor/provider and medication/Rx records to a GHL contact using the existing custom objects and associations. First call without confirmed to show the exact proposed names and ask for approval. Only call again with confirmed=true after Yahoska, Katy, or Carolina explicitly approves that exact client and list.", {
+        type: "object",
+        properties: {
+          contactQuery: { type: "string", description: "Client name, phone fragment, or email fragment." },
+          contactId: { type: "string", description: "Exact GHL contact id when already known." },
+          doctors: { type: "array", items: { type: "string" }, description: "Doctor or provider names to associate." },
+          medications: { type: "array", items: { type: "string" }, description: "Medication or Rx names to associate." },
+          confirmed: { type: "boolean", description: "True only after the user approves this exact proposal in chat." }
+        },
         additionalProperties: false
       })
     );
@@ -607,6 +636,13 @@ function allowedEmail(environment, email) {
   return isAllowedEmail(environment, email);
 }
 
+function clinicalAccess(environment, senderId, senderProfile) {
+  const speaker = telegramSpeaker(environment, senderId, senderProfile);
+  return ["yahoska", "katy", "carolina"].includes(speaker.role)
+    ? null
+    : { error: "Only Yahoska, Katy, or Carolina can read or approve client doctor and medication updates." };
+}
+
 function allowedGithubPath(environment, path) {
   const owners = String(environment.GITHUB_ALLOWED_OWNERS ?? DEFAULT_GITHUB_OWNERS.join(","))
     .split(",")
@@ -654,7 +690,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload") return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && name !== "ghl_update_clinical_profile") return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -855,6 +891,50 @@ export async function executeTool(name, rawArgs, {
           stages: (pipeline.stages ?? []).map((stage) => ({ id: stage.id, name: stage.name }))
         }))
       };
+    }
+
+    if (name === "ghl_recent_client_messages") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      return ghlRecentClientMessages({
+        token: config.token,
+        locationId: config.locationId,
+        contactId: args.contactId,
+        query: args.contactQuery,
+        limit: args.limit,
+        fetchImpl
+      });
+    }
+
+    if (name === "ghl_update_clinical_profile") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        token: config.token,
+        locationId: config.locationId,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        doctors: args.doctors ?? [],
+        medications: args.medications ?? [],
+        environment,
+        fetchImpl
+      };
+      if (blocked) {
+        const plan = await ghlPrepareClinicalUpdate(request);
+        if (plan.error) return plan;
+        return {
+          ...blocked,
+          proposed: {
+            contact: plan.contact.name,
+            doctors: plan.values.doctors,
+            medications: plan.values.medications
+          },
+          hint: "Show this exact client and list in chat. After Yahoska, Katy, or Carolina says yes, call again with confirmed=true."
+        };
+      }
+      return ghlApplyClinicalUpdate(request);
     }
 
     if (name === "notion_search") {
