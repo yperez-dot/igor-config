@@ -694,13 +694,32 @@ export async function executeTool(name, rawArgs, {
 
   try {
     if (name === "list_connected_systems") {
+      const systems = connectedSystems(environment).map((system) => ({
+        id: system.id,
+        label: system.label,
+        connected: system.connected,
+        missingEnv: system.missingEnv
+      }));
+      const ghlConnected = systems.some((system) => system.id === "ghl" && system.connected);
       return {
-        systems: connectedSystems(environment).map((system) => ({
-          id: system.id,
-          label: system.label,
-          connected: system.connected,
-          missingEnv: system.missingEnv
-        }))
+        systems,
+        capabilities: {
+          ghlClinical: ghlConnected
+            ? {
+                available: true,
+                readRecentSmsAndEmail: true,
+                updateDoctorsAndMedications: true,
+                writeMode: "approval-gated",
+                approvers: ["Yahoska", "Katy", "Carolina"],
+                instruction: "The clinical GHL tools are available. Ask for a client and exact doctors/medications, or pull the client's recent messages. Preview the exact update and obtain approval before writing."
+              }
+            : {
+                available: false,
+                readRecentSmsAndEmail: false,
+                updateDoctorsAndMedications: false,
+                missingEnv: ["GHL_API_TOKEN"]
+              }
+        }
       };
     }
 
