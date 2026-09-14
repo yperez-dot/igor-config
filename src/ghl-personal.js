@@ -134,8 +134,16 @@ export async function personalGhlOpsSnapshotForChat({
   environment = process.env,
   chatId,
   now = new Date(),
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  signal
 }) {
+  if (signal) {
+    const originalFetch = fetchImpl;
+    fetchImpl = (url, init = {}) => originalFetch(url, {
+      ...init,
+      signal: init.signal ? AbortSignal.any([signal, init.signal]) : signal
+    });
+  }
   const config = ghlConfig(environment);
   if (!config.token) throw new Error("GHL token is not configured.");
 

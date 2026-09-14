@@ -5,6 +5,7 @@ export const EMAIL_LIVE_SCHEDULE_IDS = [
 ];
 export const LEAD_LIVE_SCHEDULE_IDS = [
   "v2-lead-followup-morning",
+  "v2-lead-followup-morning-catchup",
   "v2-lead-followup-evening"
 ];
 export const LIVE_SCHEDULE_IDS = [
@@ -160,6 +161,14 @@ export const legacySchedules = [
     cron: "0 9 * * *",
     timezone: "America/New_York",
     payload: { workflow: "lead_followup_checkin", phase: "morning", mode: "live", source: "v2" }
+  },
+  {
+    id: "v2-lead-followup-morning-catchup",
+    title: "Morning lead follow-up catch-up",
+    taskType: "lead_management",
+    cron: "10 9 * * *",
+    timezone: "America/New_York",
+    payload: { workflow: "lead_followup_checkin", phase: "morning", catchup: true, mode: "live", source: "v2" }
   },
   {
     id: "v2-lead-followup-evening",

@@ -3,6 +3,12 @@ import pg from "pg";
 
 export function createStore({ connectionString, pool = new pg.Pool({ connectionString }) }) {
   const ready = pool.query(`
+    CREATE TABLE IF NOT EXISTS lead_checkin_deliveries (
+      delivery_key TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -77,6 +83,21 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
 
   return {
     ready,
+    async claimLeadCheckin(key, ownerId) {
+      await pool.query(`
+        INSERT INTO lead_checkin_deliveries (delivery_key, owner_id, status)
+        VALUES ($1, $2, 'failed') ON CONFLICT (delivery_key) DO NOTHING`, [key, ownerId]);
+      const { rows } = await pool.query(`
+        UPDATE lead_checkin_deliveries SET owner_id = $2, status = 'sending', updated_at = NOW()
+        WHERE delivery_key = $1 AND (status = 'failed'
+          OR (status = 'sending' AND updated_at < NOW() - INTERVAL '5 minutes'))
+        RETURNING delivery_key`, [key, ownerId]);
+      return rows.length > 0;
+    },
+    async finishLeadCheckin(key, ownerId, status) {
+      await pool.query(`UPDATE lead_checkin_deliveries SET status = $3, updated_at = NOW()
+        WHERE delivery_key = $1 AND owner_id = $2`, [key, ownerId, status]);
+    },
     async createTask({ id, type, payload, runAt = new Date() }) {
       await pool.query(
         "INSERT INTO tasks (id, type, status, payload, run_at) VALUES ($1, $2, 'queued', $3, $4)",
