@@ -86,7 +86,8 @@ async function personalPendingTasks({ token, locationId, userId, fetchImpl = fet
     .filter((task) => task && task.completed !== true)
     .map((task) => ({
       dueDate: task.dueDate ?? task.dueDateTime ?? task.dueAt ?? task.date ?? null,
-      title: "Task"
+      title: task.title || task.name || "Untitled task",
+      description: task.body || task.description || ""
     }));
 }
 

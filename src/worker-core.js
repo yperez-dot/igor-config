@@ -142,7 +142,12 @@ export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {
     for (const task of sorted.slice(0, maxItems)) {
       const due = taskDueAt(task);
       const when = due ? `${due < now ? "OVERDUE " : ""}${formatShortWhen(due)}` : "no due date";
-      lines.push(`  - ${compactLeadField(task.title ?? task.name ?? "Task", 70)} — ${when}`);
+      const title = plainGhlTaskText(task.title || task.name || "Untitled task");
+      const description = plainGhlTaskText(task.description || task.body || "");
+      lines.push(`  - ${compactLeadField(title, 100)} — ${when}`);
+      if (description && description.toLowerCase() !== title.toLowerCase()) {
+        lines.push(`    ${compactLeadField(description, 240)}`);
+      }
     }
     if (tasks.length > maxItems) lines.push(`  - +${tasks.length - maxItems} more pending task(s)`);
   }
@@ -161,6 +166,21 @@ export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {
   }
 
   return lines.join("\n");
+}
+
+function plainGhlTaskText(value) {
+  return String(value ?? "")
+    .replace(/<\s*(script|style)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&(#x[0-9a-f]+|#\d+|nbsp|amp|lt|gt|quot|apos);/gi, (match, entity) => {
+      const key = entity.toLowerCase();
+      if (!key.startsWith("#")) return { nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" }[key];
+      const code = key.startsWith("#x") ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : " ";
+    })
+    .replace(/[\u0000-\u001F\u007F]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export const WORKER_WORKFLOWS = new Set([
