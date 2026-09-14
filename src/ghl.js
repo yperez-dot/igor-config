@@ -120,6 +120,303 @@ export async function ghlSearchContacts({ token, locationId, query, limit = 20, 
   }));
 }
 
+async function ghlRawContacts({ token, locationId, query, limit = 20, fetchImpl = fetch }) {
+  const params = new URLSearchParams({ locationId, limit: String(Math.min(limit, 50)) });
+  if (query) params.set("query", query);
+  const body = await ghlJson(`${GHL_API}/contacts/?${params}`, { token, fetchImpl });
+  return body.contacts ?? [];
+}
+
+function contactDisplayName(contact) {
+  return `${contact?.firstName ?? ""} ${contact?.lastName ?? ""}`.trim()
+    || contact?.contactName
+    || contact?.name
+    || "Unknown contact";
+}
+
+export async function ghlResolveContact({ token, locationId, contactId, query, fetchImpl = fetch }) {
+  if (contactId) return { id: String(contactId), name: "Selected contact" };
+  const contacts = await ghlRawContacts({ token, locationId, query, limit: 10, fetchImpl });
+  if (!contacts.length) return { error: "No GHL contact matched that client." };
+  if (contacts.length > 1) {
+    return {
+      error: "More than one GHL contact matched that client. Use a phone/email fragment or select the exact contact first.",
+      candidates: contacts.slice(0, 5).map((contact) => ({
+        id: contact.id,
+        name: maskName(contactDisplayName(contact)),
+        phoneLast4: last4(contact.phone),
+        emailDomain: emailDomain(contact.email)
+      }))
+    };
+  }
+  return { id: contacts[0].id, name: maskName(contactDisplayName(contacts[0])) };
+}
+
+export async function ghlRecentClientMessages({
+  token,
+  locationId,
+  contactId,
+  query,
+  limit = 20,
+  fetchImpl = fetch
+}) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query, fetchImpl });
+  if (contact.error) return contact;
+  const params = new URLSearchParams({ locationId, contactId: contact.id, sort: "desc", limit: "10" });
+  const conversations = await ghlJson(`${GHL_API}/conversations/search?${params}`, {
+    token,
+    fetchImpl,
+    version: "2021-04-15"
+  });
+  const conversation = (conversations.conversations ?? conversations.data ?? [])[0];
+  if (!conversation?.id) return { contact, messages: [] };
+  const messageParams = new URLSearchParams({
+    limit: String(Math.min(Math.max(Number(limit) || 20, 1), 50)),
+    type: "TYPE_SMS,TYPE_EMAIL"
+  });
+  const body = await ghlJson(
+    `${GHL_API}/conversations/${encodeURIComponent(conversation.id)}/messages?${messageParams}`,
+    { token, fetchImpl, version: GHL_V3 }
+  );
+  const messages = body.messages?.messages ?? body.messages ?? [];
+  return {
+    contact,
+    conversationId: conversation.id,
+    messages: messages
+      .filter((message) => String(message.direction ?? "").toLowerCase() === "inbound")
+      .map((message) => ({
+        id: message.id,
+        type: message.messageType ?? message.type,
+        dateAdded: message.dateAdded,
+        body: message.body ?? ""
+      }))
+  };
+}
+
+function normalizedName(value) {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+}
+
+function clinicalObjectScore(object, kind) {
+  const text = [object?.key, object?.labels?.singular, object?.labels?.plural, object?.name]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const terms = kind === "doctors"
+    ? ["provider", "doctor", "physician", "pcp"]
+    : ["rx", "medication", "medicine", "prescription", "drug"];
+  return terms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
+}
+
+function pickClinicalObject(objects, kind, overrideKey) {
+  if (overrideKey) return objects.find((object) => object.key === overrideKey) ?? { key: overrideKey };
+  return [...objects]
+    .map((object) => ({ object, score: clinicalObjectScore(object, kind) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.object;
+}
+
+function primaryPropertyKey(object) {
+  const full = String(object?.primaryDisplayProperty ?? object?.primaryDisplayPropertyDetails?.key ?? "name");
+  return full.split(".").at(-1) || "name";
+}
+
+async function ghlClinicalObjects({ token, locationId, environment = {}, fetchImpl = fetch }) {
+  const body = await ghlJson(`${GHL_API}/objects/?locationId=${encodeURIComponent(locationId)}`, {
+    token,
+    fetchImpl,
+    version: GHL_V3
+  });
+  const objects = body.objects ?? [];
+  return {
+    doctors: pickClinicalObject(objects, "doctors", environment.GHL_PROVIDER_OBJECT_KEY),
+    medications: pickClinicalObject(objects, "medications", environment.GHL_RX_OBJECT_KEY)
+  };
+}
+
+async function ghlAssociationsForObject({ token, locationId, objectKey, fetchImpl = fetch }) {
+  const body = await ghlJson(
+    `${GHL_API}/associations/objectKey/${encodeURIComponent(objectKey)}?locationId=${encodeURIComponent(locationId)}`,
+    { token, fetchImpl, version: GHL_V3 }
+  );
+  if (Array.isArray(body)) return body;
+  if (Array.isArray(body.associations)) return body.associations;
+  if (Array.isArray(body.data)) return body.data;
+  if (body.association?.id) return [body.association];
+  if (body.id) return [body];
+  return [];
+}
+
+function isContactKey(key) {
+  return key === "contact" || key === "contacts";
+}
+
+function contactAssociation(associations, objectKey) {
+  return associations.find((association) => {
+    const keys = [association.firstObjectKey, association.secondObjectKey];
+    return keys.some(isContactKey) && keys.includes(objectKey);
+  });
+}
+
+async function ghlSearchClinicalRecords({ token, locationId, object, names, fetchImpl = fetch }) {
+  const found = new Map();
+  for (const name of names) {
+    const body = await ghlJson(`${GHL_API}/objects/${encodeURIComponent(object.key)}/records/search`, {
+      token,
+      fetchImpl,
+      version: GHL_V3,
+      method: "POST",
+      body: { locationId, page: 1, pageLimit: 20, query: name, searchAfter: [] }
+    });
+    const key = primaryPropertyKey(object);
+    const fullKey = String(object?.primaryDisplayProperty ?? "");
+    const exact = (body.records ?? []).find((record) => {
+      const value = record?.properties?.[key] ?? record?.properties?.[fullKey];
+      return normalizedName(value).toLowerCase() === normalizedName(name).toLowerCase();
+    });
+    if (exact) found.set(name, exact);
+  }
+  return found;
+}
+
+export async function ghlPrepareClinicalUpdate({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  doctors = [],
+  medications = [],
+  environment = {},
+  fetchImpl = fetch
+}) {
+  const clean = {
+    doctors: [...new Set(doctors.map(normalizedName).filter(Boolean))],
+    medications: [...new Set(medications.map(normalizedName).filter(Boolean))]
+  };
+  if (!clean.doctors.length && !clean.medications.length) {
+    return { error: "No doctors or medications were provided." };
+  }
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const objects = await ghlClinicalObjects({ token, locationId, environment, fetchImpl });
+  for (const kind of ["doctors", "medications"]) {
+    if (clean[kind].length && !objects[kind]?.key) {
+      return { error: `Could not find the GHL custom object for ${kind}. Set the matching Railway object-key variable.` };
+    }
+  }
+  const associations = {};
+  for (const kind of ["doctors", "medications"]) {
+    if (!clean[kind].length) continue;
+    const list = await ghlAssociationsForObject({ token, locationId, objectKey: objects[kind].key, fetchImpl });
+    associations[kind] = contactAssociation(list, objects[kind].key);
+    if (!associations[kind]?.id) {
+      return { error: `The GHL ${kind} object is not associated with contacts.` };
+    }
+  }
+  return { contact, values: clean, objects, associations };
+}
+
+async function ghlCreateClinicalRecord({ token, locationId, object, name, fetchImpl = fetch }) {
+  const key = primaryPropertyKey(object);
+  const body = await ghlJson(`${GHL_API}/objects/${encodeURIComponent(object.key)}/records`, {
+    token,
+    fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: { locationId, properties: { [key]: name } }
+  });
+  return body.record ?? body;
+}
+
+async function ghlCreateRelation({ token, locationId, association, object, contactId, recordId, fetchImpl = fetch }) {
+  const contactFirst = isContactKey(association.firstObjectKey);
+  return ghlJson(`${GHL_API}/associations/relations`, {
+    token,
+    fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: {
+      locationId,
+      associationId: association.id,
+      firstRecordId: contactFirst ? contactId : recordId,
+      secondRecordId: contactFirst ? recordId : contactId
+    }
+  });
+}
+
+async function ghlLinkedRecordIds({ token, locationId, associationId, contactId, fetchImpl = fetch }) {
+  const params = new URLSearchParams({
+    locationId,
+    skip: "0",
+    limit: "100",
+    associationIds: associationId
+  });
+  const body = await ghlJson(
+    `${GHL_API}/associations/relations/${encodeURIComponent(contactId)}?${params}`,
+    { token, fetchImpl, version: GHL_V3 }
+  );
+  const relations = body.relations ?? body.data ?? (Array.isArray(body) ? body : []);
+  const ids = new Set();
+  for (const relation of relations) {
+    if (relation.associationId && relation.associationId !== associationId) continue;
+    if (relation.firstRecordId && relation.firstRecordId !== contactId) ids.add(relation.firstRecordId);
+    if (relation.secondRecordId && relation.secondRecordId !== contactId) ids.add(relation.secondRecordId);
+  }
+  return ids;
+}
+
+export async function ghlApplyClinicalUpdate(options) {
+  const plan = await ghlPrepareClinicalUpdate(options);
+  if (plan.error) return plan;
+  const result = { contact: plan.contact, doctors: [], medications: [] };
+  for (const kind of ["doctors", "medications"]) {
+    const names = plan.values[kind];
+    if (!names.length) continue;
+    const existing = await ghlSearchClinicalRecords({
+      token: options.token,
+      locationId: options.locationId,
+      object: plan.objects[kind],
+      names,
+      fetchImpl: options.fetchImpl
+    });
+    const linkedIds = await ghlLinkedRecordIds({
+      token: options.token,
+      locationId: options.locationId,
+      associationId: plan.associations[kind].id,
+      contactId: plan.contact.id,
+      fetchImpl: options.fetchImpl
+    });
+    for (const name of names) {
+      const record = existing.get(name) ?? await ghlCreateClinicalRecord({
+        token: options.token,
+        locationId: options.locationId,
+        object: plan.objects[kind],
+        name,
+        fetchImpl: options.fetchImpl
+      });
+      const alreadyLinked = linkedIds.has(record.id);
+      if (!alreadyLinked) {
+        await ghlCreateRelation({
+          token: options.token,
+          locationId: options.locationId,
+          association: plan.associations[kind],
+          object: plan.objects[kind],
+          contactId: plan.contact.id,
+          recordId: record.id,
+          fetchImpl: options.fetchImpl
+        });
+      }
+      result[kind].push({
+        name,
+        recordCreated: !existing.has(name),
+        linked: true,
+        relationCreated: !alreadyLinked
+      });
+    }
+  }
+  return { updated: true, ...result };
+}
+
 export function taskDueAt(task) {
   const raw = task?.dueDate ?? task?.dueDateTime ?? task?.dueAt ?? task?.date;
   if (!raw) return null;
