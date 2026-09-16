@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { removedLeadFor } from "./lead-removal.js";
 
 const LEAD_TAG = "lead-ledger";
 const CLOSED_STATES = new Set(["completed", "enrolled", "not_interested", "closed"]);
@@ -138,11 +139,17 @@ export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = 
   if (!store?.listAgentMemories) return [];
   const rows = await store.listAgentMemories({ limit });
   const latestById = new Map();
+  const removalsByOwner = new Map();
+  const removalStore = store.listLeadRemovals ? { listLeadRemovals(owner) {
+    if (!removalsByOwner.has(owner)) removalsByOwner.set(owner, store.listLeadRemovals(owner));
+    return removalsByOwner.get(owner);
+  } } : store;
 
   for (const row of rows) {
     if (!String(row.tags ?? "").includes(LEAD_TAG)) continue;
     const snapshot = parseSnapshot(row);
     if (!snapshot) continue;
+    if (await removedLeadFor(removalStore, snapshot)) continue;
     if (ownerSenderId && String(snapshot.ownerSenderId) !== String(ownerSenderId)) continue;
     const identity = snapshot.leadId || `${snapshot.ownerSenderId}:${normalize(snapshot.subject)}`;
     if (!latestById.has(identity)) latestById.set(identity, snapshot);

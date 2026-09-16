@@ -8,6 +8,7 @@ import { easternMondayIso } from "./hub-ticker.js";
 import { pulseHealthFields } from "./pulse-readiness.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 import { listLeadSnapshots } from "./lead-ledger.js";
+import { removedLeadFor } from "./lead-removal.js";
 import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
 
 const LEAD_TZ = "America/New_York";
@@ -256,6 +257,9 @@ export async function processTask(task, {
   }
 
   if (workflow === "telegram_reminder") {
+    if (await removedLeadFor(store, { ...task.payload, ownerSenderId: task.payload.ownerSenderId || task.payload.chatId })) {
+      return { status: "skipped", reason: "lead_removed" };
+    }
     const text = String(task.payload?.text ?? "").trim();
     const chatId = String(task.payload?.chatId ?? "").trim();
     if (!text) throw new Error("Telegram reminder text is required.");

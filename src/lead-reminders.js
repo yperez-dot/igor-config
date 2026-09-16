@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { removedLeadFor } from "./lead-removal.js";
 import {
   findLeadBySubject,
   findMentionedLead,
@@ -164,6 +165,26 @@ async function resolveExistingLead(store, { ownerSenderId, text, history = [] } 
 export async function maybeScheduleLeadReminder({ text, subjectText, history = [], store, chatId, senderId, ownerRole, now = new Date(), timeZone = TZ }) {
   const raw = sanitizeReminderInput(text);
   if (!raw || !store?.createTask || !chatId) return null;
+
+  const removalRequest = /\b(remove|delete|forget)\b/i.test(raw) && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw);
+  if (removalRequest) {
+    const lead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
+    if (lead && store.removeLead) {
+      const result = await store.removeLead({ ownerSenderId: senderId, subject: lead.subject });
+      return { task: null, reply: `Removed ${lead.subject} from your lead ledger and cancelled ${result.taskIds.length} pending reminder(s).` };
+    }
+    const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
+    if (removed) return { task: null, reply: "That lead is already removed; no follow-up will be scheduled." };
+    if (/\blead\b/i.test(raw)) return { task: null, reply: "Which lead should I remove? Please send the full name." };
+  }
+  const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
+  if (removed) return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
+  if (/\b(him|her|them)\b/i.test(raw)) {
+    const prior = latestLeadReminderSubject(history);
+    if (prior && await removedLeadFor(store, { ownerSenderId: senderId, subject: prior })) {
+      return { task: null, reply: "That lead was removed. Please name the active lead you want to follow up with." };
+    }
+  }
 
   if (STATUS_CORRECTION_RE.test(raw)) {
     const lead = await findMentionedLead(store, { ownerSenderId: senderId, text: raw });
