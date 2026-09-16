@@ -13,4 +13,5 @@ test("worker.js imports the store and poller it boots with", () => {
   assert.match(src, /pulseReadinessAlert\(/);
   assert.match(src, /queueMissedAgentPulse\(/);
   assert.match(src, /pulseBootCatchupMessage\(/);
+  assert.match(src, /pulseBootCatchupFailureMessage\(/);
 });
