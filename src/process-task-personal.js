@@ -73,13 +73,13 @@ export async function processTask(task, options = {}) {
   const day = easternCheckinDay(new Date(task.created_at ?? task.createdAt ?? now));
   const morning = task.payload?.phase !== "evening";
   if (morning && day !== easternCheckinDay(now)) return { status: "skipped", reason: "stale morning check-in" };
-  const deliveryStore = morning && options.store?.claimLeadCheckin ? options.store : null;
+  const deliveryStore = options.store?.claimLeadCheckin ? options.store : null;
   let recipientCount = 0;
   let failedRecipientCount = 0;
   let firstError = null;
 
   for (const chatId of targets) {
-    const key = `${day}:morning:${chatId}`;
+    const key = `${day}:${morning ? "morning" : "evening"}:${chatId}`;
     const ownerId = crypto.randomUUID();
     let delivered = false;
     let receipt;

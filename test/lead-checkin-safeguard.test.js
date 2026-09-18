@@ -77,3 +77,22 @@ test('Telegram application-level failure cannot be recorded as delivered',async(
   await assert.rejects(sendLeadCheckinTelegram({botToken:'test',chatId:'1',text:'test',fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:false,error_code:400})})}),/rejected/);
   assert.deepEqual(await sendLeadCheckinTelegram({botToken:'test',chatId:'1',text:'test',fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:true,result:{message_id:123,from:{id:456},chat:{id:1}}})})}),{messageId:123,botId:456,chatId:1});
 });
+test('early evening delivery replaces only those recipients at six and resets next day', async () => {
+  const store = await fixture();
+  for (const id of ['2','3']) {
+    const key = `${easternCheckinDay(now)}:evening:${id}`;
+    await store.claimLeadCheckin(key, 'early');
+    await store.finishLeadCheckin(key, 'early', 'sent');
+  }
+  const sent=[];
+  const opts={now,store,environment:{...environment,GHL_API_TOKEN:''},sendTelegram:async({chatId})=>sent.push(chatId)};
+  const evening={...task,payload:{workflow:'lead_followup_checkin',phase:'evening'}};
+  await processTask(evening,opts);
+  assert.deepEqual(sent,['1']);
+  await processTask(evening,opts);
+  assert.deepEqual(sent,['1']);
+  const tomorrow=new Date('2026-09-15T22:00Z');
+  await processTask({...evening,created_at:tomorrow},{...opts,now:tomorrow});
+  assert.deepEqual(sent,['1','1','2','3']);
+  await store.close();
+});
