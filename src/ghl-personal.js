@@ -1,4 +1,36 @@
 import { ghlConfig } from "./ghl.js";
+import { mentionsLead } from "./lead-removal.js";
+
+// Mirrors Contacts > Open Leads: Tag Is active_prospect, scoped to the recipient.
+export async function personalOpenLeads({ token, locationId, userId, fetchImpl = fetch, removals = [] }) {
+  const leads = [];
+  const seen = new Set();
+  let truncated = false;
+  for (let page = 1; page <= 10; page++) {
+    const body = await ghlJson(`${GHL_API}/contacts/search`, {
+      token, fetchImpl, method: "POST",
+      body: { locationId, page, pageLimit: 100, filters: [
+        { field: "tags", operator: "eq", value: "active_prospect" },
+        { field: "assignedTo", operator: "eq", value: String(userId) }
+      ] }
+    });
+    const rows = body.contacts;
+    if (!Array.isArray(rows)) throw new Error("GHL contact search returned an invalid response.");
+    let added = 0;
+    for (const row of rows) {
+      if (!row.id || seen.has(row.id)) continue;
+      seen.add(row.id);
+      added++;
+      if (String(row.assignedTo) !== String(userId) || !row.tags?.includes("active_prospect")) continue;
+      const name = row.contactName || [row.firstName, row.lastName].filter(Boolean).join(" ") || row.name || "Unnamed lead";
+      if (removals.some(r => mentionsLead(name, r.subject))) continue;
+      leads.push({ id: row.id, name });
+    }
+    if (rows.length < 100 || (Number.isFinite(body.total) && seen.size >= body.total)) break;
+    if (!added || page === 10) { truncated = true; break; }
+  }
+  return { leads: leads.sort((a, b) => a.name.localeCompare(b.name)), truncated };
+}
 
 const GHL_API = "https://services.leadconnectorhq.com";
 const GHL_V3 = "v3";
@@ -136,7 +168,8 @@ export async function personalGhlOpsSnapshotForChat({
   chatId,
   now = new Date(),
   fetchImpl = fetch,
-  signal
+  signal,
+  store
 }) {
   if (signal) {
     const originalFetch = fetchImpl;
@@ -155,6 +188,7 @@ export async function personalGhlOpsSnapshotForChat({
       appointments: [],
       overdueTaskCount: 0,
       taskError: "No personal GHL user mapping is configured for this Telegram user.",
+      openLeadError: "No personal GHL user mapping is configured for this Telegram user.",
       appointmentError: "No personal GHL user mapping is configured for this Telegram user."
     };
   }
@@ -173,6 +207,7 @@ export async function personalGhlOpsSnapshotForChat({
       appointments: [],
       overdueTaskCount: 0,
       taskError: `GHL user lookup failed: ${error.message}`,
+      openLeadError: `GHL user lookup failed: ${error.message}`,
       appointmentError: `GHL user lookup failed: ${error.message}`
     };
   }
@@ -183,19 +218,24 @@ export async function personalGhlOpsSnapshotForChat({
       appointments: [],
       overdueTaskCount: 0,
       taskError: "GHL user was not found for this team member.",
+      openLeadError: "GHL user was not found for this team member.",
       appointmentError: "GHL user was not found for this team member."
     };
   }
 
-  const [tasksResult, appointmentsResult] = await Promise.allSettled([
+  const [tasksResult, appointmentsResult, leadsResult] = await Promise.allSettled([
     personalPendingTasks({ token: config.token, locationId: config.locationId, userId: user.id, fetchImpl }),
-    personalUpcomingAppointments({ token: config.token, locationId: config.locationId, userId: user.id, now, fetchImpl })
+    personalUpcomingAppointments({ token: config.token, locationId: config.locationId, userId: user.id, now, fetchImpl }),
+    (async () => personalOpenLeads({ token: config.token, locationId: config.locationId, userId: user.id, fetchImpl, removals: store?.listLeadRemovals ? await store.listLeadRemovals(String(chatId)) : [] }))()
   ]);
   const tasks = tasksResult.status === "fulfilled" ? tasksResult.value : [];
   const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value : [];
 
   return {
     tasks,
+    openLeads: leadsResult.status === "fulfilled" ? leadsResult.value.leads : [],
+    openLeadsTruncated: leadsResult.status === "fulfilled" && leadsResult.value.truncated,
+    openLeadError: leadsResult.status === "rejected" ? leadsResult.reason?.message ?? "Open lead check failed" : null,
     appointments,
     overdueTaskCount: tasks.filter((task) => {
       const due = taskDueAt(task);

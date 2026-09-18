@@ -94,7 +94,8 @@ export async function processTask(task, options = {}) {
           environment,
           chatId,
           now,
-          signal
+          signal,
+          store: options.store
         }), { timeoutMs: options.ghlTimeoutMs ?? 15_000 })
       });
       delivered = Number(result?.recipientCount ?? 0) > 0;

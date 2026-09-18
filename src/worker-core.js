@@ -133,6 +133,16 @@ export function leadBriefText(phase, leads = [], now = new Date()) {
 export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {}) {
   if (!snapshot) return "";
   const lines = ["GHL live check:"];
+  if (snapshot.openLeadError) {
+    lines.push("• Open leads: unavailable from GHL");
+  } else if (Array.isArray(snapshot.openLeads)) {
+    const leads = snapshot.openLeads;
+    lines.push(`• Open Leads (GHL Smart List): ${leads.length}${snapshot.openLeadsTruncated ? "+ (partial check)" : ""}`);
+    for (const lead of leads.slice(0, maxItems)) {
+      lines.push(`  - ${compactLeadField(plainGhlTaskText(lead.name), 70)}`);
+    }
+    if (leads.length > maxItems) lines.push(`  - +${leads.length - maxItems} more open lead(s)`);
+  }
 
   if (snapshot.taskError) {
     lines.push("• Pending tasks: unavailable from GHL");
@@ -279,7 +289,7 @@ export async function processTask(task, {
         const snapshot = await runGhlOps({ token: ghl.token, locationId: ghl.locationId, now: new Date() });
         ghlText = ghlOpsBriefText(snapshot);
       } catch {
-        ghlText = "GHL live check:\n• Pending tasks: unavailable from GHL\n• Upcoming appointments: unavailable from GHL";
+        ghlText = "GHL live check:\n• Open leads: unavailable from GHL\n• Pending tasks: unavailable from GHL\n• Upcoming appointments: unavailable from GHL";
       }
     }
 
