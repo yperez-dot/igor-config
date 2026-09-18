@@ -22,9 +22,14 @@ import {
 } from "./email.js";
 import {
   ghlApplyClinicalUpdate,
+  ghlApplyTagChange,
   ghlConfig,
+  ghlCreateContract,
+  ghlListContractTemplates,
   ghlListPipelines,
   ghlPrepareClinicalUpdate,
+  ghlPrepareContract,
+  ghlPrepareTagChange,
   ghlRecentClientMessages,
   ghlSearchContacts,
   ghlStaleLeads
@@ -81,6 +86,8 @@ import {
 
 const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
+  "ghl_manage_contact_tags",
+  "ghl_create_contract",
   "send_internal_email",
   "netlify_deploy",
   "railway_redeploy_service",
@@ -212,6 +219,37 @@ export function grokTools(environment = process.env) {
           doctors: { type: "array", items: { type: "string" }, description: "Doctor or provider names to associate." },
           medications: { type: "array", items: { type: "string" }, description: "Medication or Rx names to associate." },
           confirmed: { type: "boolean", description: "True only after the user approves this exact proposal in chat." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("ghl_list_contract_templates", "List the available GHL Documents & Contracts templates before creating a client contract.", {
+        type: "object",
+        properties: { name: { type: "string", description: "Optional template-name filter." } },
+        additionalProperties: false
+      }),
+      functionTool("ghl_manage_contact_tags", "Add or remove GHL contact tags. First call previews the exact contact and tags; write only after Yahoska, Katy, or Carolina confirms.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          contactQuery: { type: "string" },
+          action: { type: "string", enum: ["add", "remove"] },
+          tags: { type: "array", items: { type: "string" } },
+          confirmed: { type: "boolean" }
+        },
+        required: ["action", "tags"],
+        additionalProperties: false
+      }),
+      functionTool("ghl_create_contract", "Create a GHL contract from an existing Documents & Contracts template for one exact contact. Defaults to a draft; sendNow=true sends it to the client. Always preview and get confirmation before creating or sending.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          contactQuery: { type: "string" },
+          templateId: { type: "string" },
+          templateName: { type: "string" },
+          userId: { type: "string", description: "Optional GHL creator user id; defaults to the contact owner." },
+          opportunityId: { type: "string" },
+          sendNow: { type: "boolean", description: "False creates a draft; true sends it to the client." },
+          confirmed: { type: "boolean" }
         },
         additionalProperties: false
       })
@@ -690,7 +728,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && name !== "ghl_update_clinical_profile") return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_create_contract"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -719,6 +757,16 @@ export async function executeTool(name, rawArgs, {
                 updateDoctorsAndMedications: false,
                 missingEnv: ["GHL_API_TOKEN"]
               }
+          ,
+          ghlCrmWrites: ghlConnected
+            ? {
+                available: true,
+                contactTags: "approval-gated",
+                contracts: "approval-gated",
+                contractMode: "existing GHL template; draft by default",
+                requiredScopes: ["contacts.write", "documents_contracts_templates/list.readonly", "documents_contracts_templates/sendlink.write"]
+              }
+            : { available: false, missingEnv: ["GHL_API_TOKEN"] }
         }
       };
     }
@@ -954,6 +1002,52 @@ export async function executeTool(name, rawArgs, {
         };
       }
       return ghlApplyClinicalUpdate(request);
+    }
+
+    if (name === "ghl_list_contract_templates") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      return { templates: await ghlListContractTemplates({ ...config, name: args.name, fetchImpl }) };
+    }
+
+    if (name === "ghl_manage_contact_tags") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, action: args.action, tags: args.tags, fetchImpl };
+      if (blocked) {
+        const plan = await ghlPrepareTagChange(request);
+        if (plan.error) return plan;
+        return { ...blocked, proposed: { contact: plan.contact.name, action: plan.action, tags: plan.tags } };
+      }
+      return ghlApplyTagChange(request);
+    }
+
+    if (name === "ghl_create_contract") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        templateId: args.templateId,
+        templateName: args.templateName,
+        userId: args.userId,
+        opportunityId: args.opportunityId,
+        sendNow: args.sendNow === true,
+        fetchImpl
+      };
+      if (blocked) {
+        const plan = await ghlPrepareContract(request);
+        if (plan.error) return plan;
+        return {
+          ...blocked,
+          proposed: { contact: plan.contact.name, template: plan.template.name, mode: plan.sendNow ? "create and send" : "create draft" }
+        };
+      }
+      return ghlCreateContract(request);
     }
 
     if (name === "notion_search") {
