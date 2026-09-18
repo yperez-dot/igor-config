@@ -18,6 +18,9 @@ function fixture(calls = []) {
     if (target.includes("/proposals/templates?")) return json({ data: [{ id: "template-1", name: "Agent Contract", type: "proposal" }] });
     if (target.endsWith("/contacts/contact-1/tags")) return json({ tags: ["lead", "contract-sent"] }, 201);
     if (target.endsWith("/contacts/contact-1/notes")) return json({ note: { id: "note-1" } }, 201);
+    if (target.endsWith("/contacts/contact-1/tasks")) return json({ task: { id: "task-1" } }, 201);
+    if (target.includes("/calendars/?")) return json({ calendars: [{ id: "calendar-1", name: "Jane's Personal Calendar", calendarType: "personal", slotDuration: 30, teamMembers: [{ userId: "user-1" }] }] });
+    if (target.endsWith("/calendars/events/appointments")) return json({ id: "appointment-1" });
     if (target.endsWith("/proposals/templates/send")) return json({ success: true, links: [{ documentId: "document-1" }] });
     throw new Error(`Unexpected request: ${target}`);
   };
@@ -29,6 +32,44 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_list_contract_templates"), true);
   assert.equal(names.includes("ghl_create_contract"), true);
   assert.equal(names.includes("ghl_add_contact_note"), true);
+  assert.equal(names.includes("ghl_create_contact_task"), true);
+  assert.equal(names.includes("ghl_create_appointment"), true);
+});
+
+test("GHL task previews and writes only after confirmation", async () => {
+  const previewCalls = [];
+  const input = { contactQuery: "Jane Doe", title: "Call client", body: "Review plan options", dueDate: "2026-09-21T14:00:00-04:00" };
+  const preview = await executeTool("ghl_create_contact_task", input, { environment, senderProfile: speaker, fetchImpl: fixture(previewCalls) });
+  assert.equal(preview.needsConfirmation, true);
+  assert.equal(preview.proposed.contact, "Jane D.");
+  assert.equal(preview.proposed.assignedTo, "user-1");
+  assert.equal(previewCalls.some((call) => call.target.endsWith("/tasks")), false);
+
+  const calls = [];
+  const saved = await executeTool("ghl_create_contact_task", { ...input, confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(saved.created, true);
+  const write = calls.find((call) => call.target.endsWith("/contacts/contact-1/tasks"));
+  assert.deepEqual(write.body, { title: "Call client", body: "Review plan options", dueDate: input.dueDate, completed: false, assignedTo: "user-1" });
+});
+
+test("GHL appointment uses the contact owner's calendar and enables CRM automations", async () => {
+  const input = { contactQuery: "Jane Doe", title: "Plan review", startTime: "2026-09-22T10:00:00-04:00" };
+  const previewCalls = [];
+  const preview = await executeTool("ghl_create_appointment", input, { environment, senderProfile: speaker, fetchImpl: fixture(previewCalls) });
+  assert.equal(preview.needsConfirmation, true);
+  assert.equal(preview.proposed.calendar, "Jane's Personal Calendar");
+  assert.equal(preview.proposed.ghlAutomationsEnabled, true);
+  assert.equal(previewCalls.some((call) => call.target.endsWith("/calendars/events/appointments")), false);
+
+  const calls = [];
+  const saved = await executeTool("ghl_create_appointment", { ...input, confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(saved.created, true);
+  assert.equal(saved.ghlAutomationsEnabled, true);
+  const write = calls.find((call) => call.target.endsWith("/calendars/events/appointments"));
+  assert.equal(write.body.calendarId, "calendar-1");
+  assert.equal(write.body.contactId, "contact-1");
+  assert.equal(write.body.assignedUserId, "user-1");
+  assert.equal(write.body.toNotify, true);
 });
 
 test("contact notes preview the complete note before writing", async () => {

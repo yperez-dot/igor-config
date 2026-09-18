@@ -26,11 +26,16 @@ import {
   ghlConfig,
   ghlCreateContract,
   ghlCreateContactNote,
+  ghlCreateContactTask,
+  ghlCreateAppointment,
+  ghlListCalendars,
   ghlListContractTemplates,
   ghlListPipelines,
   ghlPrepareClinicalUpdate,
   ghlPrepareContract,
   ghlPrepareContactNote,
+  ghlPrepareContactTask,
+  ghlPrepareAppointment,
   ghlPrepareTagChange,
   ghlRecentClientMessages,
   ghlSearchContacts,
@@ -90,6 +95,8 @@ const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
   "ghl_manage_contact_tags",
   "ghl_add_contact_note",
+  "ghl_create_contact_task",
+  "ghl_create_appointment",
   "ghl_create_contract",
   "send_internal_email",
   "netlify_deploy",
@@ -254,6 +261,29 @@ export function grokTools(environment = process.env) {
           confirmed: { type: "boolean" }
         },
         required: ["body"],
+        additionalProperties: false
+      }),
+      functionTool("ghl_create_contact_task", "Create a pending task on one exact GHL contact. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" }, contactQuery: { type: "string" }, title: { type: "string" }, body: { type: "string" },
+          dueDate: { type: "string", description: "ISO date/time for the task deadline." }, assignedTo: { type: "string" }, confirmed: { type: "boolean" }
+        },
+        required: ["title", "dueDate"],
+        additionalProperties: false
+      }),
+      functionTool("ghl_list_calendars", "List GHL calendars so the team can choose where a CRM appointment belongs. Returns names and ids only.", {
+        type: "object", properties: {}, additionalProperties: false
+      }),
+      functionTool("ghl_create_appointment", "Create a real GHL appointment for one exact contact with GHL notifications enabled so configured text-reminder workflows can run. Preview the contact, calendar, time, assignee, and description; save only after approval.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" }, contactQuery: { type: "string" }, calendarId: { type: "string" }, calendarName: { type: "string" },
+          title: { type: "string" }, description: { type: "string" }, startTime: { type: "string", description: "ISO date/time including timezone offset." },
+          endTime: { type: "string" }, durationMinutes: { type: "number" }, assignedUserId: { type: "string" },
+          appointmentStatus: { type: "string", enum: ["new", "confirmed", "active"] }, confirmed: { type: "boolean" }
+        },
+        required: ["startTime"],
         additionalProperties: false
       }),
       functionTool("ghl_create_contract", "Create a GHL contract from an existing Documents & Contracts template for one exact contact. Defaults to a draft; sendNow=true sends it to the client. Always preview and get confirmation before creating or sending.", {
@@ -745,7 +775,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contract"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -780,6 +810,8 @@ export async function executeTool(name, rawArgs, {
                 available: true,
                 contactTags: "approval-gated",
                 contactNotes: "approval-gated",
+                contactTasks: "approval-gated",
+                appointments: "approval-gated; GHL notifications enabled",
                 contracts: "approval-gated",
                 contractMode: "existing GHL template; draft by default",
                 requiredScopes: ["contacts.write", "documents_contracts_templates/list.readonly", "documents_contracts_templates/sendlink.write"]
@@ -1062,6 +1094,44 @@ export async function executeTool(name, rawArgs, {
         return { ...blocked, proposed: { contact: plan.contact.name, ...plan.note } };
       }
       return ghlCreateContactNote(request);
+    }
+
+    if (name === "ghl_create_contact_task") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, title: args.title, body: args.body, dueDate: args.dueDate, assignedTo: args.assignedTo, fetchImpl };
+      if (blocked) {
+        const plan = await ghlPrepareContactTask(request);
+        if (plan.error) return plan;
+        return { ...blocked, proposed: { contact: plan.contact.name, ...plan.task } };
+      }
+      return ghlCreateContactTask(request);
+    }
+
+    if (name === "ghl_list_calendars") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const calendars = await ghlListCalendars({ ...config, fetchImpl });
+      return { calendars: calendars.map(({ id, name, calendarType, slotDuration }) => ({ id, name, calendarType, slotDuration })) };
+    }
+
+    if (name === "ghl_create_appointment") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config, contactId: args.contactId, contactQuery: args.contactQuery, calendarId: args.calendarId, calendarName: args.calendarName,
+        title: args.title, description: args.description, startTime: args.startTime, endTime: args.endTime,
+        durationMinutes: args.durationMinutes, assignedUserId: args.assignedUserId, appointmentStatus: args.appointmentStatus, fetchImpl
+      };
+      if (blocked) {
+        const plan = await ghlPrepareAppointment(request);
+        if (plan.error) return plan;
+        return { ...blocked, proposed: { contact: plan.contact.name, calendar: plan.calendar.name, ...plan.appointment, ghlAutomationsEnabled: true } };
+      }
+      return ghlCreateAppointment(request);
     }
 
     if (name === "ghl_create_contract") {

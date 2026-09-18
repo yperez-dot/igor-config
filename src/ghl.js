@@ -243,6 +243,120 @@ export async function ghlCreateContactNote(options) {
   };
 }
 
+function validDateTime(value) {
+  const text = String(value ?? "").trim();
+  return text && Number.isFinite(Date.parse(text)) ? text : null;
+}
+
+export async function ghlPrepareContactTask({ token, locationId, contactId, contactQuery, title, body, dueDate, assignedTo, fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const cleanTitle = String(title ?? "").trim();
+  if (!cleanTitle) return { error: "The GHL task needs a title." };
+  const cleanDueDate = validDateTime(dueDate);
+  if (!cleanDueDate) return { error: "The GHL task needs a valid due date and time." };
+  const assignee = String(assignedTo ?? contact.assignedTo ?? "").trim();
+  if (!assignee) return { error: "Assign the contact to a GHL user or provide an assignee." };
+  return {
+    contact,
+    task: {
+      title: cleanTitle.slice(0, 200),
+      body: String(body ?? "").trim().slice(0, 5_000),
+      dueDate: cleanDueDate,
+      completed: false,
+      assignedTo: assignee
+    }
+  };
+}
+
+export async function ghlCreateContactTask(options) {
+  const plan = await ghlPrepareContactTask(options);
+  if (plan.error) return plan;
+  const result = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(plan.contact.id)}/tasks`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: plan.task
+  });
+  return {
+    created: Boolean(result.task?.id),
+    contact: plan.contact.name,
+    taskId: result.task?.id ?? null,
+    title: plan.task.title,
+    dueDate: plan.task.dueDate,
+    assignedTo: plan.task.assignedTo
+  };
+}
+
+async function resolveAppointmentCalendar({ token, locationId, contact, calendarId, calendarName, fetchImpl }) {
+  const calendars = await ghlListCalendars({ token, locationId, fetchImpl });
+  let matches;
+  if (calendarId) matches = calendars.filter((calendar) => calendar.id === String(calendarId));
+  else if (calendarName) matches = calendars.filter((calendar) => calendar.name?.toLowerCase() === String(calendarName).trim().toLowerCase());
+  else matches = calendars.filter((calendar) => (calendar.teamMembers ?? []).some((member) => String(member.userId) === String(contact.assignedTo)));
+  if (!matches.length) return { error: "No matching GHL calendar was found. Choose a calendar from Igor’s GHL calendar list." };
+  if (matches.length > 1) return { error: "More than one GHL calendar matched. Choose the exact calendar id.", calendars: matches.map(({ id, name }) => ({ id, name })) };
+  return matches[0];
+}
+
+export async function ghlPrepareAppointment({
+  token, locationId, contactId, contactQuery, calendarId, calendarName, title, description,
+  startTime, endTime, durationMinutes, assignedUserId, appointmentStatus = "confirmed", fetchImpl = fetch
+}) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const calendar = await resolveAppointmentCalendar({ token, locationId, contact, calendarId, calendarName, fetchImpl });
+  if (calendar.error) return calendar;
+  const start = validDateTime(startTime);
+  if (!start || !/[zZ]|[+-]\d\d:\d\d$/.test(start)) return { error: "Use an ISO appointment start time with its timezone offset." };
+  const computedMinutes = Math.max(5, Number(durationMinutes ?? calendar.slotDuration ?? 30));
+  const end = validDateTime(endTime) ?? new Date(Date.parse(start) + computedMinutes * 60_000).toISOString();
+  if (Date.parse(end) <= Date.parse(start)) return { error: "The appointment end time must be after its start time." };
+  const assignee = String(assignedUserId ?? contact.assignedTo ?? calendar.teamMembers?.[0]?.userId ?? "").trim();
+  if (!assignee) return { error: "The GHL appointment needs an assigned user." };
+  const allowedStatuses = new Set(["new", "confirmed", "active"]);
+  const status = allowedStatuses.has(appointmentStatus) ? appointmentStatus : "confirmed";
+  return {
+    contact,
+    calendar: { id: calendar.id, name: calendar.name },
+    appointment: {
+      title: String(title ?? "Appointment").trim().slice(0, 200) || "Appointment",
+      appointmentStatus: status,
+      assignedUserId: assignee,
+      description: String(description ?? "").trim().slice(0, 5_000),
+      toNotify: true,
+      calendarId: calendar.id,
+      locationId,
+      contactId: contact.id,
+      startTime: start,
+      endTime: end
+    }
+  };
+}
+
+export async function ghlCreateAppointment(options) {
+  const plan = await ghlPrepareAppointment(options);
+  if (plan.error) return plan;
+  const result = await ghlJson(`${GHL_API}/calendars/events/appointments`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: plan.appointment
+  });
+  return {
+    created: Boolean(result.id),
+    appointmentId: result.id ?? null,
+    contact: plan.contact.name,
+    calendar: plan.calendar.name,
+    title: plan.appointment.title,
+    startTime: plan.appointment.startTime,
+    endTime: plan.appointment.endTime,
+    ghlAutomationsEnabled: plan.appointment.toNotify
+  };
+}
+
 export async function ghlListContractTemplates({ token, locationId, name, fetchImpl = fetch }) {
   const params = new URLSearchParams({ locationId, limit: "20", skip: "0" });
   if (name) params.set("name", String(name));
