@@ -132,14 +132,14 @@ export function leadBriefText(phase, leads = [], now = new Date()) {
 
 export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {}) {
   if (!snapshot) return "";
-  const lines = ["GHL live check:"];
+  const lines = ["📋 YOUR GHL CHECK-IN", ""];
   if (snapshot.openLeadError) {
     lines.push("• Open leads: unavailable from GHL");
   } else if (Array.isArray(snapshot.openLeads)) {
     const leads = snapshot.openLeads;
-    lines.push(`• Open Leads (GHL Smart List): ${leads.length}${snapshot.openLeadsTruncated ? "+ (partial check)" : ""}`);
+    lines.push(`👥 Open Leads (GHL Smart List): ${leads.length}${snapshot.openLeadsTruncated ? "+ (partial check)" : ""}`);
     for (const lead of leads.slice(0, maxItems)) {
-      lines.push(`  - ${compactLeadField(plainGhlTaskText(lead.name), 70)}`);
+      lines.push(`• ${compactLeadField(plainGhlTaskText(lead.name), 70).replace(/\b[a-z]/g, c => c.toUpperCase())}`);
     }
     if (leads.length > maxItems) lines.push(`  - +${leads.length - maxItems} more open lead(s)`);
   }
@@ -148,16 +148,16 @@ export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {
     lines.push("• Pending tasks: unavailable from GHL");
   } else {
     const tasks = snapshot.tasks ?? [];
-    lines.push(`• Pending tasks: ${tasks.length}${snapshot.overdueTaskCount ? ` (${snapshot.overdueTaskCount} overdue)` : ""}`);
+    lines.push("", `✅ Pending tasks: ${tasks.length}${snapshot.overdueTaskCount ? ` (${snapshot.overdueTaskCount} overdue)` : ""}`);
     const sorted = [...tasks].sort((a, b) => (taskDueAt(a)?.getTime() ?? Infinity) - (taskDueAt(b)?.getTime() ?? Infinity));
     for (const task of sorted.slice(0, maxItems)) {
       const due = taskDueAt(task);
       const when = due ? `${due < now ? "OVERDUE " : ""}${formatShortWhen(due)}` : "no due date";
       const title = plainGhlTaskText(task.title || task.name || "Untitled task");
       const description = plainGhlTaskText(task.description || task.body || "");
-      lines.push(`  - ${compactLeadField(title, 100)} — ${when}`);
+      lines.push("", `${due && due < now ? "🔴" : "🔹"} ${compactLeadField(title, 100)} — ${when}`);
       if (description && description.toLowerCase() !== title.toLowerCase()) {
-        lines.push(`    ${compactLeadField(description, 240)}`);
+        lines.push(`↳ ${compactLeadField(description, 240)}`);
       }
     }
     if (tasks.length > maxItems) lines.push(`  - +${tasks.length - maxItems} more pending task(s)`);
@@ -167,7 +167,7 @@ export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {
     lines.push("• Upcoming appointments: unavailable from GHL");
   } else {
     const appointments = snapshot.appointments ?? [];
-    lines.push(`• Upcoming appointments (next 48h): ${appointments.length}`);
+    lines.push("", `📅 Upcoming appointments (next 48h): ${appointments.length}`);
     for (const event of appointments.slice(0, maxItems)) {
       lines.push(`  - ${formatShortWhen(event.start)} — ${compactLeadField(event.calendarName ?? "Appointment calendar", 60)}`);
     }

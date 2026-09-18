@@ -6,10 +6,12 @@ import { stripTelegramMarkdown } from "./telegram.js";
 // Check-ins may be claimed by the legacy worker; keep their bot separate from
 // that worker's other notifications and newsletter workflows.
 export async function sendLeadCheckinTelegram({ botToken, chatId, text, fetchImpl = fetch }) {
+  const bodyText = stripTelegramMarkdown(text).slice(0, 4096);
+  const entities = [...bodyText.matchAll(/^(?:📋|👥|✅|📅|🔴|🔹)[^\n]+/gm)].map(match => ({ type: "bold", offset: match.index, length: match[0].length }));
   const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: stripTelegramMarkdown(text).slice(0, 4096), disable_web_page_preview: true }),
+    body: JSON.stringify({ chat_id: chatId, text: bodyText, entities, disable_web_page_preview: true }),
     signal: AbortSignal.timeout(20_000)
   });
   const body = await response.json();
