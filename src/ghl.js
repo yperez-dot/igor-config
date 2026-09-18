@@ -135,7 +135,20 @@ function contactDisplayName(contact) {
 }
 
 export async function ghlResolveContact({ token, locationId, contactId, query, fetchImpl = fetch }) {
-  if (contactId) return { id: String(contactId), name: "Selected contact" };
+  if (contactId) {
+    const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(contactId)}`, {
+      token,
+      fetchImpl,
+      version: GHL_V3
+    });
+    const contact = body.contact ?? body;
+    return {
+      id: String(contactId),
+      name: maskName(contactDisplayName(contact)),
+      assignedTo: contact.assignedTo ?? null,
+      tags: contact.tags ?? []
+    };
+  }
   const contacts = await ghlRawContacts({ token, locationId, query, limit: 10, fetchImpl });
   if (!contacts.length) return { error: "No GHL contact matched that client." };
   if (contacts.length > 1) {
@@ -149,7 +162,119 @@ export async function ghlResolveContact({ token, locationId, contactId, query, f
       }))
     };
   }
-  return { id: contacts[0].id, name: maskName(contactDisplayName(contacts[0])) };
+  return {
+    id: contacts[0].id,
+    name: maskName(contactDisplayName(contacts[0])),
+    assignedTo: contacts[0].assignedTo ?? null,
+    tags: contacts[0].tags ?? []
+  };
+}
+
+function cleanTags(tags) {
+  return [...new Set((Array.isArray(tags) ? tags : [])
+    .map((tag) => String(tag ?? "").trim())
+    .filter(Boolean))].slice(0, 25);
+}
+
+export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, tags, action = "add", fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const normalizedTags = cleanTags(tags);
+  if (!normalizedTags.length) return { error: "At least one tag is required." };
+  if (!['add', 'remove'].includes(action)) return { error: "Tag action must be add or remove." };
+  return { contact, tags: normalizedTags, action };
+}
+
+export async function ghlApplyTagChange(options) {
+  const plan = await ghlPrepareTagChange(options);
+  if (plan.error) return plan;
+  const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(plan.contact.id)}/tags`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: plan.action === "remove" ? "DELETE" : "POST",
+    body: { tags: plan.tags }
+  });
+  return {
+    updated: true,
+    contact: plan.contact.name,
+    action: plan.action,
+    tags: plan.tags,
+    currentTags: body.tags ?? []
+  };
+}
+
+export async function ghlListContractTemplates({ token, locationId, name, fetchImpl = fetch }) {
+  const params = new URLSearchParams({ locationId, limit: "100", skip: "0" });
+  if (name) params.set("name", String(name));
+  const body = await ghlJson(`${GHL_API}/proposals/templates?${params}`, {
+    token,
+    fetchImpl,
+    version: GHL_V3
+  });
+  return (body.data ?? []).filter((template) => !template.deleted).map((template) => ({
+    id: template.id ?? template._id,
+    name: template.name,
+    type: template.type ?? "proposal",
+    updatedAt: template.updatedAt ?? null
+  }));
+}
+
+export async function ghlPrepareContract({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  templateId,
+  templateName,
+  userId,
+  sendNow = false,
+  opportunityId,
+  fetchImpl = fetch
+}) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const templates = await ghlListContractTemplates({ token, locationId, name: templateName, fetchImpl });
+  const matches = templateId
+    ? templates.filter((template) => template.id === String(templateId))
+    : templates.filter((template) => template.name?.toLowerCase() === String(templateName ?? "").trim().toLowerCase());
+  if (!matches.length) return { error: "No GHL contract template matched. Ask me to list the available templates." };
+  if (matches.length > 1) return { error: "More than one GHL contract template matched. Choose the exact template id.", templates: matches };
+  const creatorUserId = String(userId ?? contact.assignedTo ?? "").trim();
+  if (!creatorUserId) return { error: "GHL needs a user for this contract. Assign the contact to a GHL user or provide the user id." };
+  return {
+    contact,
+    template: matches[0],
+    userId: creatorUserId,
+    sendNow: sendNow === true,
+    opportunityId: opportunityId ? String(opportunityId) : undefined
+  };
+}
+
+export async function ghlCreateContract(options) {
+  const plan = await ghlPrepareContract(options);
+  if (plan.error) return plan;
+  const body = await ghlJson(`${GHL_API}/proposals/templates/send`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: {
+      templateId: plan.template.id,
+      userId: plan.userId,
+      sendDocument: plan.sendNow,
+      locationId: options.locationId,
+      contactId: plan.contact.id,
+      ...(plan.opportunityId ? { opportunityId: plan.opportunityId } : {})
+    }
+  });
+  return {
+    created: body.success === true,
+    sent: plan.sendNow && body.success === true,
+    contact: plan.contact.name,
+    template: plan.template.name,
+    documentIds: (body.links ?? []).map((link) => link.documentId).filter(Boolean)
+  };
 }
 
 export async function ghlRecentClientMessages({
