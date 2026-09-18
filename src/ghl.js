@@ -205,7 +205,7 @@ export async function ghlApplyTagChange(options) {
 }
 
 export async function ghlListContractTemplates({ token, locationId, name, fetchImpl = fetch }) {
-  const params = new URLSearchParams({ locationId, limit: "100", skip: "0" });
+  const params = new URLSearchParams({ locationId, limit: "20", skip: "0" });
   if (name) params.set("name", String(name));
   const body = await ghlJson(`${GHL_API}/proposals/templates?${params}`, {
     token,
