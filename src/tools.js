@@ -30,16 +30,19 @@ import {
   ghlCreateAppointment,
   ghlListCalendars,
   ghlListContractTemplates,
+  ghlListSoaSnippets,
   ghlListPipelines,
   ghlPrepareClinicalUpdate,
   ghlPrepareContract,
   ghlPrepareContactNote,
   ghlPrepareContactTask,
   ghlPrepareAppointment,
+  ghlPrepareSoaMessage,
   ghlPrepareTagChange,
   ghlRecentClientMessages,
   ghlSearchContacts,
   ghlStaleLeads
+  ,ghlSendSoaMessage
 } from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
 import {
@@ -98,6 +101,7 @@ const WRITE_TOOLS = new Set([
   "ghl_create_contact_task",
   "ghl_create_appointment",
   "ghl_create_contract",
+  "ghl_send_soa_message",
   "send_internal_email",
   "netlify_deploy",
   "railway_redeploy_service",
@@ -298,6 +302,20 @@ export function grokTools(environment = process.env) {
           sendNow: { type: "boolean", description: "False creates a draft; true sends it to the client." },
           confirmed: { type: "boolean" }
         },
+        additionalProperties: false
+      }),
+      functionTool("ghl_list_soa_snippets", "List Igor's four approved English/Spanish Scope of Appointment SMS and email snippets.", {
+        type: "object", properties: {}, additionalProperties: false
+      }),
+      functionTool("ghl_send_soa_message", "Send one approved Scope of Appointment SMS or email through GHL. First call previews the exact contact, channel, subject, and complete message. Send only after Yahoska, Katy, or Carolina confirms that exact preview.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          contactQuery: { type: "string" },
+          snippetName: { type: "string", enum: ["SOA ENG", "SOA SPA", "Scope of Appointment", "SPA Scope of Appointment"] },
+          confirmed: { type: "boolean" }
+        },
+        required: ["snippetName"],
         additionalProperties: false
       })
     );
@@ -775,7 +793,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -1158,6 +1176,36 @@ export async function executeTool(name, rawArgs, {
         };
       }
       return ghlCreateContract(request);
+    }
+
+    if (name === "ghl_list_soa_snippets") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      return { snippets: ghlListSoaSnippets() };
+    }
+
+    if (name === "ghl_send_soa_message") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, snippetName: args.snippetName, fetchImpl };
+      if (blocked) {
+        const plan = await ghlPrepareSoaMessage(request);
+        if (plan.error) return plan;
+        return {
+          ...blocked,
+          proposed: {
+            contact: plan.contact.name,
+            snippet: plan.snippet.name,
+            channel: plan.snippet.channel,
+            subject: plan.snippet.subject ?? null,
+            message: plan.snippet.message,
+            link: plan.snippet.link
+          },
+          hint: "Show the complete preview. Send only after Yahoska, Katy, or Carolina approves this exact contact and snippet."
+        };
+      }
+      return ghlSendSoaMessage(request);
     }
 
     if (name === "notion_search") {

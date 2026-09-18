@@ -22,6 +22,7 @@ function fixture(calls = []) {
     if (target.includes("/calendars/?")) return json({ calendars: [{ id: "calendar-1", name: "Jane's Personal Calendar", calendarType: "personal", slotDuration: 30, teamMembers: [{ userId: "user-1" }] }] });
     if (target.endsWith("/calendars/events/appointments")) return json({ id: "appointment-1" });
     if (target.endsWith("/proposals/templates/send")) return json({ success: true, links: [{ documentId: "document-1" }] });
+    if (target.endsWith("/conversations/messages")) return json({ messageId: "message-1", conversationId: "conversation-1", emailMessageId: body?.type === "Email" ? "email-1" : undefined, msg: "Message queued successfully." });
     throw new Error(`Unexpected request: ${target}`);
   };
 }
@@ -34,6 +35,32 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_add_contact_note"), true);
   assert.equal(names.includes("ghl_create_contact_task"), true);
   assert.equal(names.includes("ghl_create_appointment"), true);
+  assert.equal(names.includes("ghl_list_soa_snippets"), true);
+  assert.equal(names.includes("ghl_send_soa_message"), true);
+});
+
+test("SOA text previews the complete personalized message before sending", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_send_soa_message", { contactQuery: "Jane Doe", snippetName: "SOA ENG" }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.contact, "Jane D.");
+  assert.equal(result.proposed.channel, "sms");
+  assert.match(result.proposed.message, /^Hi Jane,/);
+  assert.match(result.proposed.message, /6882a766cb5716e01803bfea/);
+  assert.equal(calls.some((call) => call.target.endsWith("/conversations/messages")), false);
+});
+
+test("confirmed SOA email sends through GHL conversations", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_send_soa_message", { contactQuery: "Jane Doe", snippetName: "SPA Scope of Appointment", confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.sent, true);
+  assert.equal(result.messageId, "message-1");
+  const write = calls.find((call) => call.target.endsWith("/conversations/messages"));
+  assert.equal(write.body.type, "Email");
+  assert.equal(write.body.status, "pending");
+  assert.equal(write.body.subject, "Alcance de la cita- Se necesita su firma");
+  assert.match(write.body.html, /Ver Documento/);
+  assert.match(write.body.html, /6882a11e37c06601fe0c299b/);
 });
 
 test("GHL task previews and writes only after confirmation", async () => {

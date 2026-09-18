@@ -145,6 +145,7 @@ export async function ghlResolveContact({ token, locationId, contactId, query, f
     return {
       id: String(contactId),
       name: maskName(contactDisplayName(contact)),
+      firstName: String(contact.firstName ?? contact.contactName ?? "").trim().split(/\s+/)[0] || "there",
       assignedTo: contact.assignedTo ?? null,
       tags: contact.tags ?? []
     };
@@ -165,8 +166,84 @@ export async function ghlResolveContact({ token, locationId, contactId, query, f
   return {
     id: contacts[0].id,
     name: maskName(contactDisplayName(contacts[0])),
+    firstName: String(contacts[0].firstName ?? contacts[0].contactName ?? "").trim().split(/\s+/)[0] || "there",
     assignedTo: contacts[0].assignedTo ?? null,
     tags: contacts[0].tags ?? []
+  };
+}
+
+const SOA_LINKS = {
+  en: "https://sendlink.co/documents/doc-form/6882a766cb5716e01803bfea?locale=en-US",
+  es: "https://sendlink.co/documents/doc-form/6882a11e37c06601fe0c299b?locale=en-US"
+};
+
+export const GHL_SOA_SNIPPETS = Object.freeze({
+  "SOA ENG": { channel: "sms", language: "en" },
+  "SOA SPA": { channel: "sms", language: "es" },
+  "Scope of Appointment": { channel: "email", language: "en", subject: "Scope of Appointment- Signature Needed" },
+  "SPA Scope of Appointment": { channel: "email", language: "es", subject: "Alcance de la cita- Se necesita su firma" }
+});
+
+function renderSoaSnippet(name, firstName) {
+  const snippet = GHL_SOA_SNIPPETS[name];
+  if (!snippet) return null;
+  const safeName = String(firstName || "there").replace(/[<>]/g, "");
+  const link = SOA_LINKS[snippet.language];
+  if (snippet.channel === "sms") {
+    const message = snippet.language === "es"
+      ? `Hola ${safeName}, le escribe The Health Experts Insurance. Complete su Alcance de la Cita (SOA) aquí: ${link}\n\nResponda a este mensaje si necesita ayuda.`
+      : `Hi ${safeName}, this is The Health Experts Insurance. Please complete your Scope of Appointment here: ${link}\n\nReply if you need help.`;
+    return { ...snippet, name, message, link };
+  }
+  const greeting = snippet.language === "es" ? `Hola ${safeName},` : `Hello ${safeName},`;
+  const request = snippet.language === "es"
+    ? "Complete su Alcance de la Cita (SOA) aquí:"
+    : "Please complete your Scope of Appointment here:";
+  const label = snippet.language === "es" ? "Ver Documento" : "View Document";
+  const html = `<p>${greeting}</p><p>${request}</p><p><a href="${link}">${label}</a></p>`;
+  return { ...snippet, name, html, message: `${greeting}\n\n${request}\n${link}`, link };
+}
+
+export function ghlListSoaSnippets() {
+  return Object.entries(GHL_SOA_SNIPPETS).map(([name, value]) => ({ name, ...value }));
+}
+
+export async function ghlPrepareSoaMessage({ token, locationId, contactId, contactQuery, snippetName, fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const rendered = renderSoaSnippet(String(snippetName ?? "").trim(), contact.firstName);
+  if (!rendered) return { error: "Choose one of the four approved SOA snippets: SOA ENG, SOA SPA, Scope of Appointment, or SPA Scope of Appointment." };
+  return { contact, snippet: rendered };
+}
+
+export async function ghlSendSoaMessage(options) {
+  const plan = await ghlPrepareSoaMessage(options);
+  if (plan.error) return plan;
+  const isEmail = plan.snippet.channel === "email";
+  const payload = {
+    type: isEmail ? "Email" : "SMS",
+    contactId: plan.contact.id,
+    status: "pending",
+    ...(isEmail
+      ? { subject: plan.snippet.subject, html: plan.snippet.html, message: plan.snippet.message }
+      : { message: plan.snippet.message })
+  };
+  const result = await ghlJson(`${GHL_API}/conversations/messages`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: payload
+  });
+  return {
+    sent: Boolean(result.messageId),
+    contact: plan.contact.name,
+    snippet: plan.snippet.name,
+    channel: plan.snippet.channel,
+    messageId: result.messageId ?? null,
+    emailMessageId: result.emailMessageId ?? null,
+    conversationId: result.conversationId ?? null,
+    status: result.msg ?? "queued"
   };
 }
 
