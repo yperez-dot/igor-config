@@ -17,6 +17,7 @@ function fixture(calls = []) {
     if (target.includes("/contacts/?")) return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", assignedTo: "user-1", tags: ["lead"] }] });
     if (target.includes("/proposals/templates?")) return json({ data: [{ id: "template-1", name: "Agent Contract", type: "proposal" }] });
     if (target.endsWith("/contacts/contact-1/tags")) return json({ tags: ["lead", "contract-sent"] }, 201);
+    if (target.endsWith("/contacts/contact-1/notes")) return json({ note: { id: "note-1" } }, 201);
     if (target.endsWith("/proposals/templates/send")) return json({ success: true, links: [{ documentId: "document-1" }] });
     throw new Error(`Unexpected request: ${target}`);
   };
@@ -27,6 +28,31 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_manage_contact_tags"), true);
   assert.equal(names.includes("ghl_list_contract_templates"), true);
   assert.equal(names.includes("ghl_create_contract"), true);
+  assert.equal(names.includes("ghl_add_contact_note"), true);
+});
+
+test("contact notes preview the complete note before writing", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Jane Doe", title: "Follow-up", body: "Client requested a call Friday.", pinned: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.needsConfirmation, true);
+  assert.deepEqual(result.proposed, {
+    contact: "Jane D.", body: "Client requested a call Friday.", title: "Follow-up", pinned: true
+  });
+  assert.equal(calls.some((call) => call.target.endsWith("/notes")), false);
+});
+
+test("confirmed contact note writes through the GHL notes endpoint", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Jane Doe", body: "Client requested a call Friday.", confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  assert.equal(result.noteId, "note-1");
+  const write = calls.find((call) => call.target.endsWith("/contacts/contact-1/notes"));
+  assert.equal(write.method, "POST");
+  assert.deepEqual(write.body, { body: "Client requested a call Friday.", pinned: false });
 });
 
 test("contact tag changes preview before writing", async () => {

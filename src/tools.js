@@ -25,10 +25,12 @@ import {
   ghlApplyTagChange,
   ghlConfig,
   ghlCreateContract,
+  ghlCreateContactNote,
   ghlListContractTemplates,
   ghlListPipelines,
   ghlPrepareClinicalUpdate,
   ghlPrepareContract,
+  ghlPrepareContactNote,
   ghlPrepareTagChange,
   ghlRecentClientMessages,
   ghlSearchContacts,
@@ -87,6 +89,7 @@ import {
 const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
   "ghl_manage_contact_tags",
+  "ghl_add_contact_note",
   "ghl_create_contract",
   "send_internal_email",
   "netlify_deploy",
@@ -237,6 +240,20 @@ export function grokTools(environment = process.env) {
           confirmed: { type: "boolean" }
         },
         required: ["action", "tags"],
+        additionalProperties: false
+      }),
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          contactQuery: { type: "string" },
+          body: { type: "string" },
+          title: { type: "string" },
+          pinned: { type: "boolean" },
+          userId: { type: "string", description: "Optional GHL note-author user id." },
+          confirmed: { type: "boolean" }
+        },
+        required: ["body"],
         additionalProperties: false
       }),
       functionTool("ghl_create_contract", "Create a GHL contract from an existing Documents & Contracts template for one exact contact. Defaults to a draft; sendNow=true sends it to the client. Always preview and get confirmation before creating or sending.", {
@@ -728,7 +745,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_create_contract"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contract"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -762,6 +779,7 @@ export async function executeTool(name, rawArgs, {
             ? {
                 available: true,
                 contactTags: "approval-gated",
+                contactNotes: "approval-gated",
                 contracts: "approval-gated",
                 contractMode: "existing GHL template; draft by default",
                 requiredScopes: ["contacts.write", "documents_contracts_templates/list.readonly", "documents_contracts_templates/sendlink.write"]
@@ -1022,6 +1040,28 @@ export async function executeTool(name, rawArgs, {
         return { ...blocked, proposed: { contact: plan.contact.name, action: plan.action, tags: plan.tags } };
       }
       return ghlApplyTagChange(request);
+    }
+
+    if (name === "ghl_add_contact_note") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        body: args.body,
+        title: args.title,
+        pinned: args.pinned === true,
+        userId: args.userId,
+        fetchImpl
+      };
+      if (blocked) {
+        const plan = await ghlPrepareContactNote(request);
+        if (plan.error) return plan;
+        return { ...blocked, proposed: { contact: plan.contact.name, ...plan.note } };
+      }
+      return ghlCreateContactNote(request);
     }
 
     if (name === "ghl_create_contract") {

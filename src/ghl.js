@@ -204,6 +204,45 @@ export async function ghlApplyTagChange(options) {
   };
 }
 
+export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, body, title, pinned = false, fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  if (contact.error) return contact;
+  const noteBody = String(body ?? "").trim();
+  if (!noteBody) return { error: "The note cannot be empty." };
+  if (noteBody.length > 5_000) return { error: "The note is too long. Keep it under 5,000 characters." };
+  return {
+    contact,
+    note: {
+      body: noteBody,
+      ...(String(title ?? "").trim() ? { title: String(title).trim().slice(0, 160) } : {}),
+      pinned: pinned === true
+    }
+  };
+}
+
+export async function ghlCreateContactNote(options) {
+  const plan = await ghlPrepareContactNote(options);
+  if (plan.error) return plan;
+  const payload = {
+    ...plan.note,
+    ...(options.userId ? { userId: String(options.userId) } : {})
+  };
+  const result = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(plan.contact.id)}/notes`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: payload
+  });
+  return {
+    created: Boolean(result.note?.id),
+    contact: plan.contact.name,
+    noteId: result.note?.id ?? null,
+    title: plan.note.title ?? null,
+    pinned: plan.note.pinned
+  };
+}
+
 export async function ghlListContractTemplates({ token, locationId, name, fetchImpl = fetch }) {
   const params = new URLSearchParams({ locationId, limit: "20", skip: "0" });
   if (name) params.set("name", String(name));
