@@ -26,7 +26,18 @@ function fixture(calls = []) {
         ]
       });
     }
-    if (target.includes("/contacts/?") && (options.method ?? "GET") !== "POST") return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", assignedTo: "user-1", tags: ["lead"] }] });
+    if (target.includes("/contacts/?") && (options.method ?? "GET") !== "POST") return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", phone: "+13055550123", assignedTo: "user-1", tags: ["lead"] }] });
+    if (/\/contacts\/contact-1$/.test(target) && (options.method ?? "GET") === "PUT") {
+      return json({
+        contact: {
+          id: "contact-1",
+          firstName: body.firstName,
+          lastName: body.lastName ?? "Doe",
+          assignedTo: "user-1",
+          tags: ["lead"]
+        }
+      });
+    }
     if (target.endsWith("/contacts/") && options.method === "POST") {
       return json({
         contact: {
@@ -56,6 +67,7 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_list_contract_templates"), true);
   assert.equal(names.includes("ghl_create_contract"), true);
   assert.equal(names.includes("ghl_add_contact_note"), true);
+  assert.equal(names.includes("ghl_update_contact"), true);
   assert.equal(names.includes("ghl_create_contact"), true);
   assert.equal(names.includes("ghl_create_contact_task"), true);
   assert.equal(names.includes("ghl_create_appointment"), true);
@@ -64,12 +76,21 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_check_open_leads"), true);
   const noteTool = grokTools(environment).find((tool) => tool.function.name === "ghl_add_contact_note");
   assert.match(noteTool.function.description, /never Notion/i);
+  assert.match(noteTool.function.description, /NOTION UPDATED/i);
+  const searchTool = grokTools(environment).find((tool) => tool.function.name === "ghl_search_contacts");
+  assert.match(searchTool.function.description, /last-4/i);
+  assert.match(searchTool.function.description, /do not require the first name to match/i);
+  const updateTool = grokTools(environment).find((tool) => tool.function.name === "ghl_update_contact");
+  assert.match(updateTool.function.description, /corrects a name/i);
 });
 
 test("connected systems lists approval-gated GHL contact create", async () => {
   const result = await executeTool("list_connected_systems", {}, { environment });
   assert.equal(result.capabilities.ghlCrmWrites.contactCreate, "approval-gated");
   assert.match(result.capabilities.ghlCrmWrites.openLeadsCheck, /active_prospect/);
+  assert.match(result.capabilities.ghlCrmWrites.openLeadsCheck, /last-4/);
+  assert.equal(result.capabilities.ghlCrmWrites.contactUpdate, "approval-gated name correction");
+  assert.match(result.capabilities.ghlCrmWrites.contactNotes, /never Notion/i);
 });
 
 test("GHL contact create previews Michelle without writing", async () => {
@@ -230,6 +251,51 @@ test("contact notes preview the complete note before writing", async () => {
     contact: "Jane D.", body: "Client requested a call Friday.", title: "Follow-up", pinned: true
   });
   assert.equal(calls.some((call) => call.target.endsWith("/notes")), false);
+});
+
+test("GHL name correction previews without writing", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_update_contact", {
+    contactQuery: "Jane Doe",
+    firstName: "Miriam"
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.firstName, "Miriam");
+  assert.equal(result.proposed.lastName, "Doe");
+  assert.equal(result.proposed.currentName, "Jane D.");
+  assert.equal(calls.some((call) => call.method === "PUT"), false);
+});
+
+test("confirmed GHL name correction updates firstName and keeps the last name", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_update_contact", {
+    contactQuery: "Jane Doe",
+    phone: "0123",
+    firstName: "Miriam",
+    confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.updated, true);
+  assert.equal(result.contactId, "contact-1");
+  assert.equal(result.previousName, "Jane D.");
+  assert.equal(result.contact, "Miriam D.");
+  const write = calls.find((call) => call.method === "PUT" && /\/contacts\/contact-1$/.test(call.target));
+  assert.deepEqual(write.body, {
+    firstName: "Miriam",
+    lastName: "Doe",
+    name: "Miriam Doe"
+  });
+});
+
+test("contact note can resolve by last-4 when the spoken first name is wrong", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Miriam",
+    phone: "0123",
+    body: "Alexa's grandma referred her.",
+    confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  assert.equal(calls.some((call) => call.target.endsWith("/contacts/contact-1/notes")), true);
 });
 
 test("confirmed contact note writes through the GHL notes endpoint", async () => {

@@ -134,6 +134,8 @@ export function looksLikeGhlCrmIntent(text) {
   if (/\b(?:smart\s*list|open\s*leads|active[_\s-]?prospect)\b/i.test(raw)) return true;
   if (/\b(?:ghl|crm|go\s*high\s*level)\b/i.test(raw) && /\b(?:contact|lead|tag|note|list|search|check|confirm)\b/i.test(raw)) return true;
   if (/\b(?:create|add|update|search|find)\b.{0,30}\b(?:ghl\s+)?contact\b/i.test(raw)) return true;
+  if (/\b(?:name is actually|actually named|real (?:first )?name|rename|correct(?:ed)? (?:the )?name)\b/i.test(raw)) return true;
+  if (/\bnot \w+[,.]?\s+(?:her|his|their|the)\s+name\b/i.test(raw)) return true;
   return false;
 }
 
@@ -149,7 +151,7 @@ export function looksLikeVaProjectUpdate(text) {
 export function looksLikeRecentGhlContactContext(history = []) {
   return (Array.isArray(history) ? history : []).slice(-8).some((turn) => {
     const content = String(turn?.content ?? turn?.text ?? "");
-    return /GHL|ghl_|contact id|saved the note|Open Leads|active_prospect|ghl_add_contact_note|ghl_create_contact|GHL record/i.test(content);
+    return /GHL|ghl_|contact id|saved the note|Open Leads|active_prospect|ghl_add_contact_note|ghl_create_contact|ghl_update_contact|GHL record/i.test(content);
   });
 }
 
