@@ -24,7 +24,11 @@ export async function personalOpenLeads({ token, locationId, userId, fetchImpl =
       if (String(row.assignedTo) !== String(userId) || !row.tags?.includes("active_prospect")) continue;
       const name = row.contactName || [row.firstName, row.lastName].filter(Boolean).join(" ") || row.name || "Unnamed lead";
       if (removals.some(r => mentionsLead(name, r.subject))) continue;
-      leads.push({ id: row.id, name });
+      leads.push({
+        id: row.id,
+        name,
+        dateUpdated: row.dateUpdated ?? row.lastActivity ?? row.updatedAt ?? null
+      });
     }
     if (rows.length < 100 || (Number.isFinite(body.total) && seen.size >= body.total)) break;
     if (!added || page === 10) { truncated = true; break; }

@@ -259,15 +259,17 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       );
       return result.rowCount === 1;
     },
-    async recentChatTurns(chatId, { limit = 16 } = {}) {
+    async recentChatTurns(chatId, { limit = 16, includeTimestamps = false } = {}) {
       const { rows } = await pool.query(
-        `SELECT role, content FROM chat_turns
+        `SELECT role, content, created_at FROM chat_turns
          WHERE chat_id = $1
          ORDER BY created_at DESC, id DESC
          LIMIT $2`,
         [String(chatId), limit]
       );
-      return rows.reverse().map((row) => ({ role: row.role, content: row.content }));
+      return rows.reverse().map((row) => includeTimestamps
+        ? { role: row.role, content: row.content, createdAt: row.created_at }
+        : { role: row.role, content: row.content });
     },
     async appendChatTurn({ chatId, senderId, role, content, keep = 40, maxChars = 1500 }) {
       if (role !== "user" && role !== "assistant") throw new Error("Chat turns must use role user or assistant.");
@@ -367,11 +369,15 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       const { rows } = await pool.query("SELECT * FROM tasks WHERE status IN ('queued', 'running')");
       return rows.find((row) => row.payload?.workflow === workflow) ?? null;
     },
-    async latestEvent(eventType) {
-      const { rows } = await pool.query(
-        "SELECT event_type, subject_id, detail, created_at FROM audit_events WHERE event_type = $1 ORDER BY created_at DESC, id DESC LIMIT 1",
-        [eventType]
-      );
+    async latestEvent(eventType, subjectId) {
+      const params = [eventType];
+      let sql = "SELECT event_type, subject_id, detail, created_at FROM audit_events WHERE event_type = $1";
+      if (subjectId != null && String(subjectId).trim()) {
+        sql += " AND subject_id = $2";
+        params.push(String(subjectId));
+      }
+      sql += " ORDER BY created_at DESC, id DESC LIMIT 1";
+      const { rows } = await pool.query(sql, params);
       if (!rows[0]) return null;
       return {
         eventType: rows[0].event_type,

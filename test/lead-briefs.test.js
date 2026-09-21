@@ -51,3 +51,17 @@ test("clear ledger produces a short proactive check-in", () => {
   assert.match(leadBriefText("morning", []), /ledger is clear/i);
   assert.match(leadBriefText("evening", []), /ledger is clear/i);
 });
+
+test("morning brief can append a still-quiet chase without markdown", () => {
+  const now = new Date("2026-09-10T13:00:00Z");
+  const text = leadBriefText("morning", [{
+    subject: "Ayda",
+    nextAction: "follow up",
+    followUpAt: null,
+    state: "open"
+  }], now, {
+    stillQuiet: { leads: [{ subject: "Ayda", nextAction: "follow up" }], overflow: 0, total: 1 }
+  });
+  assert.match(text, /🔁 Still quiet since yesterday/);
+  assert.doesNotMatch(text, /\*\*/);
+});
