@@ -8,7 +8,7 @@ import { migrationCapabilities, migrationSummary } from "./migration.js";
 import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
 import { probeTeamCalendarAccess } from "./calendar.js";
-import { INACTIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, legacySchedules } from "./legacy-schedules.js";
+import { inactiveScheduleIds, liveScheduleIds, legacySchedules } from "./legacy-schedules.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
@@ -83,11 +83,11 @@ function scheduleTask(schedule) {
 
 await store.ready;
 for (const schedule of legacySchedules) await store.seedSchedule(schedule);
-for (const id of LIVE_SCHEDULE_IDS) {
+for (const id of liveScheduleIds(process.env)) {
   const schedule = legacySchedules.find((row) => row.id === id);
   if (schedule) await store.ensureActiveSchedule(schedule);
 }
-for (const id of INACTIVE_SCHEDULE_IDS) {
+for (const id of inactiveScheduleIds(process.env)) {
   const schedule = legacySchedules.find((row) => row.id === id);
   if (schedule) await store.ensureInactiveSchedule(schedule);
 }

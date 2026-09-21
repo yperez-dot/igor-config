@@ -1,3 +1,5 @@
+import { isVaCheckinEnabled } from "./va-checkin-flag.js";
+
 export const LOOKOUT_LIVE_SCHEDULE_IDS = ["v2-igor-heartbeat", "v2-site-uptime"];
 export const EMAIL_LIVE_SCHEDULE_IDS = [
   "v2-agent-pulse",
@@ -14,15 +16,32 @@ export const VA_CHECKIN_LIVE_SCHEDULE_IDS = [
   "v2-va-checkin-weekly",
   "v2-va-checkin-nudge"
 ];
-export const LIVE_SCHEDULE_IDS = [
+export const ALWAYS_LIVE_SCHEDULE_IDS = [
   ...LOOKOUT_LIVE_SCHEDULE_IDS,
   ...EMAIL_LIVE_SCHEDULE_IDS,
   ...LEAD_LIVE_SCHEDULE_IDS,
-  ...VA_CHECKIN_LIVE_SCHEDULE_IDS,
   "v2-sales-tracker-sync"
 ];
+// Safe default: VA check-in is off unless VA_CHECKIN_ENABLED=true (Igor V2 / live Telegram only).
+export const LIVE_SCHEDULE_IDS = [...ALWAYS_LIVE_SCHEDULE_IDS];
 // Same Monday newsletter as Agent Pulse — old OpenClaw name only. Do not run both.
 export const INACTIVE_SCHEDULE_IDS = ["v2-industry-pulse"];
+
+export function liveScheduleIds(environment = process.env) {
+  if (!isVaCheckinEnabled(environment)) return [...ALWAYS_LIVE_SCHEDULE_IDS];
+  return [
+    ...LOOKOUT_LIVE_SCHEDULE_IDS,
+    ...EMAIL_LIVE_SCHEDULE_IDS,
+    ...LEAD_LIVE_SCHEDULE_IDS,
+    ...VA_CHECKIN_LIVE_SCHEDULE_IDS,
+    "v2-sales-tracker-sync"
+  ];
+}
+
+export function inactiveScheduleIds(environment = process.env) {
+  if (isVaCheckinEnabled(environment)) return [...INACTIVE_SCHEDULE_IDS];
+  return [...INACTIVE_SCHEDULE_IDS, ...VA_CHECKIN_LIVE_SCHEDULE_IDS];
+}
 
 export const legacySchedules = [
   {

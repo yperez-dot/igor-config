@@ -2,6 +2,9 @@ import { easternMondayIso } from "./hub-ticker.js";
 import { telegramSpeaker } from "./identity.js";
 import { normalizeNotionId } from "./sales-sync.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
+import { isVaCheckinEnabled, VA_CHECKIN_ENABLED_ENV } from "./va-checkin-flag.js";
+
+export { isVaCheckinEnabled, VA_CHECKIN_ENABLED_ENV };
 
 export const DEFAULT_OPEN_PROJECTS_DS = "collection://28377cd3-be8e-83ab-a0d0-87c70896eb10";
 export const DEFAULT_MONTHLY_TODOS_DS = "collection://36177cd3-be8e-81b1-bf64-000b7fa6f090";
@@ -468,10 +471,15 @@ export async function readVaCheckinNotion({
   }
 }
 
+export function notionUnavailableLine(header, snapshot) {
+  if (snapshot?.reason === "missing_token") return `${header}: Notion token is missing`;
+  return `${header}: unavailable from Notion`;
+}
+
 export function formatProjectSection(snapshot, { maxItems = 4 } = {}) {
   const lines = [];
   if (snapshot?.ok === false && !snapshot?.projects) {
-    lines.push("📁 Open Projects: unavailable from Notion");
+    lines.push(notionUnavailableLine("📁 Open Projects", snapshot));
     return lines;
   }
   const projects = snapshot?.projects ?? [];
@@ -492,7 +500,7 @@ export function formatProjectSection(snapshot, { maxItems = 4 } = {}) {
 export function formatTodoSection(snapshot, now = new Date(), { maxItems = 4 } = {}) {
   const lines = [];
   if (snapshot?.ok === false && !snapshot?.todos) {
-    lines.push("• Monthly todos: unavailable from Notion");
+    lines.push(notionUnavailableLine("✅ Monthly Todos", snapshot));
     return lines;
   }
   const todos = [...(snapshot?.todos ?? [])].sort((a, b) => {
@@ -538,14 +546,14 @@ export function vaCheckinMessages({ phase, recipient, snapshot, now = new Date()
 
   const projectLines = ["📋 YOUR WEEKLY CHECK-IN", ""];
   if (snapshot?.ok === false) {
-    projectLines.push("📁 Open Projects: unavailable from Notion");
+    projectLines.push(notionUnavailableLine("📁 Open Projects", snapshot));
   } else {
     projectLines.push(...formatProjectSection(snapshot, { maxItems }));
   }
   parts.push(projectLines.join("\n"));
 
   if (snapshot?.ok === false) {
-    parts.push("✅ Monthly Todos: unavailable from Notion");
+    parts.push(notionUnavailableLine("✅ Monthly Todos", snapshot));
   } else if ((snapshot?.todos ?? []).length) {
     parts.push(formatTodoSection(snapshot, now, { maxItems }).join("\n"));
   }
@@ -856,6 +864,9 @@ export async function runVaCheckin(task, {
   readNotion = readVaCheckinNotion,
   sleep = defaultSleep
 } = {}) {
+  if (!isVaCheckinEnabled(environment)) {
+    return { status: "skipped", reason: "disabled" };
+  }
   const phase = task.payload?.phase === "kickoff" || task.payload?.phase === "nudge"
     ? task.payload.phase
     : "weekly";
@@ -958,6 +969,9 @@ export async function queueVaCheckinKickoff({
   now = new Date(),
   createId = () => crypto.randomUUID()
 } = {}) {
+  if (!isVaCheckinEnabled(environment)) {
+    return { queued: false, reason: "disabled" };
+  }
   const recipients = vaCheckinRecipients(environment);
   if (!recipients.length || !store?.createTask) {
     return { queued: false, reason: recipients.length ? "no_store" : "no_recipients" };
@@ -994,6 +1008,7 @@ export async function noteVaCheckinReply({
   speaker,
   now = new Date()
 } = {}) {
+  if (!isVaCheckinEnabled(environment)) return { recorded: false, reason: "disabled" };
   const recipient = recipientForSender(environment, senderId, speaker ?? telegramSpeaker(environment, senderId));
   if (!recipient || !store?.upsertVaCheckin) return { recorded: false };
   const weekKey = vaWeekKey(now);
@@ -1027,6 +1042,9 @@ export async function handleVaCheckinReply({
   readNotion = readVaCheckinNotion,
   writeNotion = writeVaCheckinNotion
 } = {}) {
+  if (!isVaCheckinEnabled(environment)) {
+    return { handled: false, recorded: false, reason: "disabled" };
+  }
   const noted = await noteVaCheckinReply({
     store,
     environment,
