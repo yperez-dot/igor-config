@@ -2,6 +2,28 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { personalOpenLeads } from "../src/ghl-personal.js";
 import { ghlOpsBriefText } from "../src/worker-core.js";
+import { executeTool } from "../src/tools.js";
+import {
+  ghlCheckOpenLeads,
+  ghlResolveContact,
+  ghlSearchContacts,
+  hasOpenLeadsTag
+} from "../src/ghl.js";
+
+const MICHELLE_ID = "j2MTdDxkLpgUNtORZpjc";
+const MICHELLE = {
+  id: MICHELLE_ID,
+  firstName: "Michelle",
+  lastName: "Wang",
+  contactName: "Michelle Wang",
+  phone: "+13054642363",
+  tags: ["active_prospect", "medicare", "prospect"],
+  assignedTo: "owner"
+};
+
+function json(payload, status = 200) {
+  return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
+}
 
 test("Smart List matches exact tag and owner, excludes removed leads and paginates", async () => {
   let pages = 0;
@@ -28,4 +50,123 @@ test("API failure and malformed data never become a false empty Smart List", asy
     await assert.rejects(()=>personalOpenLeads({token:"test",locationId:"loc",userId:"owner",fetchImpl:async()=>response}));
   }
   assert.match(ghlOpsBriefText({openLeadError:"Forbidden",tasks:[],appointments:[]}),/Open leads: unavailable from GHL/);
+});
+
+test("Open Leads tag helper accepts active_prospect aliases", () => {
+  assert.equal(hasOpenLeadsTag(["medicare", "active_prospect"]), true);
+  assert.equal(hasOpenLeadsTag(["active prospect"]), true);
+  assert.equal(hasOpenLeadsTag(["prospect"]), false);
+});
+
+test("contact search looks up a known GHL contact id instead of treating it as a name", async () => {
+  const calls = [];
+  const contacts = await ghlSearchContacts({
+    token: "test",
+    locationId: "RINM4TCnM4hN06UA1aK0",
+    query: MICHELLE_ID,
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      if (String(url).includes(`/contacts/${MICHELLE_ID}`)) return json({ contact: MICHELLE });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(contacts.length, 1);
+  assert.equal(contacts[0].id, MICHELLE_ID);
+  assert.equal(contacts[0].tags.includes("active_prospect"), true);
+  assert.equal(calls.some((url) => url.includes(`/contacts/${MICHELLE_ID}`)), true);
+});
+
+test("resolve contact falls back from a missed id to name and phone", async () => {
+  const calls = [];
+  const contact = await ghlResolveContact({
+    token: "test",
+    locationId: "loc",
+    contactId: MICHELLE_ID,
+    query: "Michelle W",
+    phone: "+13054642363",
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      if (String(url).includes(`/contacts/${MICHELLE_ID}`)) return json({ message: "not found" }, 404);
+      if (String(url).includes("/contacts/?") && String(url).includes("13054642363")) {
+        return json({ contacts: [MICHELLE] });
+      }
+      if (String(url).includes("/contacts/?") && String(url).includes("Michelle")) {
+        return json({ contacts: [MICHELLE] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(contact.error, undefined);
+  assert.equal(contact.id, MICHELLE_ID);
+  assert.equal(contact.resolvedVia, "phone");
+  assert.equal(calls[0].includes(`/contacts/${MICHELLE_ID}`), true);
+});
+
+test("Open Leads check reports on_list after id miss plus name fallback", async () => {
+  const result = await ghlCheckOpenLeads({
+    token: "test",
+    locationId: "loc",
+    contactId: MICHELLE_ID,
+    query: "Michelle W.",
+    fetchImpl: async (url) => {
+      if (String(url).includes(`/contacts/${MICHELLE_ID}`)) return json({}, 404);
+      if (String(url).includes("/contacts/?")) return json({ contacts: [MICHELLE] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.status, "on_list");
+  assert.equal(result.onOpenLeads, true);
+  assert.equal(result.openLeadsTag, "active_prospect");
+  assert.equal(result.resolvedVia, "query");
+  assert.match(result.message, /on Open Leads/);
+});
+
+test("Open Leads check reports not_on_list when the contact exists without the tag", async () => {
+  const result = await ghlCheckOpenLeads({
+    token: "test",
+    locationId: "loc",
+    query: "Michelle Wang",
+    fetchImpl: async (url) => {
+      if (String(url).includes("/contacts/?")) {
+        return json({ contacts: [{ ...MICHELLE, tags: ["medicare", "prospect"] }] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.status, "not_on_list");
+  assert.equal(result.onOpenLeads, false);
+  assert.match(result.message, /not on Open Leads/);
+});
+
+test("Open Leads check reports not_found after id, name, and phone miss", async () => {
+  const result = await ghlCheckOpenLeads({
+    token: "test",
+    locationId: "loc",
+    contactId: MICHELLE_ID,
+    query: "Michelle W",
+    phone: "+13054642363",
+    fetchImpl: async (url) => {
+      if (String(url).includes(`/contacts/${MICHELLE_ID}`)) return json({ message: "missing" }, 404);
+      if (String(url).includes("/contacts/?")) return json({ contacts: [] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.status, "not_found");
+  assert.equal(result.onOpenLeads, false);
+  assert.match(result.message, /not found after id, name, and phone/i);
+});
+
+test("ghl_check_open_leads tool uses the Open Leads helper", async () => {
+  const result = await executeTool("ghl_check_open_leads", {
+    contactId: MICHELLE_ID,
+    contactQuery: "Michelle Wang"
+  }, {
+    environment: { GHL_API_TOKEN: "test", GHL_LOCATION_ID: "RINM4TCnM4hN06UA1aK0" },
+    fetchImpl: async (url) => {
+      if (String(url).includes(`/contacts/${MICHELLE_ID}`)) return json({ contact: MICHELLE });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.status, "on_list");
+  assert.equal(result.contact.id, MICHELLE_ID);
 });

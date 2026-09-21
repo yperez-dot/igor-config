@@ -286,22 +286,44 @@ export async function ghlSearchOpportunities({
   };
 }
 
-export async function ghlSearchContacts({ token, locationId, query, limit = 20, fetchImpl = fetch }) {
+function maskSearchedContact(contact) {
+  return {
+    id: contact.id,
+    name: maskName(`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim() || contact.contactName || contact.name),
+    phoneLast4: last4(contact.phone),
+    emailDomain: emailDomain(contact.email),
+    assignedTo: contact.assignedTo ?? null,
+    lastActivity: contact.dateUpdated ?? contact.lastActivity ?? null,
+    tags: contact.tags ?? []
+  };
+}
+
+export async function ghlSearchContacts({ token, locationId, query, contactId, limit = 20, fetchImpl = fetch }) {
+  const idCandidate = String(contactId ?? "").trim()
+    || (looksLikeGhlContactId(query) ? String(query).trim() : "");
+  if (idCandidate) {
+    const byId = await ghlFetchContactById({ token, contactId: idCandidate, fetchImpl });
+    if (byId) {
+      return [maskSearchedContact({
+        id: byId.id,
+        firstName: byId.firstName,
+        lastName: byId.rawLastName,
+        contactName: byId.rawName,
+        phone: byId.rawPhone,
+        email: byId.rawEmail,
+        assignedTo: byId.assignedTo,
+        dateUpdated: byId.lastActivity,
+        tags: byId.tags
+      })];
+    }
+  }
   const params = new URLSearchParams({
     locationId,
     limit: String(Math.min(limit, 50))
   });
   if (query) params.set("query", query);
   const body = await ghlJson(`${GHL_API}/contacts/?${params}`, { token, fetchImpl });
-  return (body.contacts ?? []).map((contact) => ({
-    id: contact.id,
-    name: maskName(`${contact.firstName ?? ""} ${contact.lastName ?? ""}`.trim() || contact.contactName),
-    phoneLast4: last4(contact.phone),
-    emailDomain: emailDomain(contact.email),
-    assignedTo: contact.assignedTo ?? null,
-    lastActivity: contact.dateUpdated ?? contact.lastActivity ?? null,
-    tags: contact.tags ?? []
-  }));
+  return (body.contacts ?? []).map((contact) => maskSearchedContact(contact));
 }
 
 async function ghlRawContacts({ token, locationId, query, limit = 20, fetchImpl = fetch }) {
@@ -318,41 +340,204 @@ function contactDisplayName(contact) {
     || "Unknown contact";
 }
 
-export async function ghlResolveContact({ token, locationId, contactId, query, fetchImpl = fetch }) {
-  if (contactId) {
-    const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(contactId)}`, {
+export function looksLikeGhlContactId(value) {
+  return /^[A-Za-z0-9]{16,40}$/.test(String(value ?? "").trim());
+}
+
+export function digitsOnlyPhone(value) {
+  return String(value ?? "").replace(/\D/g, "");
+}
+
+function isUsableGhlContact(contact) {
+  if (!contact || typeof contact !== "object" || contact.error) return false;
+  const id = String(contact.id ?? contact.contactId ?? "").trim();
+  const name = contactDisplayName(contact);
+  return Boolean(id || (name && name !== "Unknown contact") || contact.phone || contact.email);
+}
+
+function toResolvedContact(contact, fallbackId, resolvedVia) {
+  const id = String(contact.id ?? contact.contactId ?? fallbackId ?? "").trim();
+  return {
+    id,
+    name: maskName(contactDisplayName(contact)),
+    firstName: String(contact.firstName ?? contact.contactName ?? "").trim().split(/\s+/)[0] || "there",
+    assignedTo: contact.assignedTo ?? null,
+    tags: Array.isArray(contact.tags) ? contact.tags : [],
+    phoneLast4: last4(contact.phone),
+    emailDomain: emailDomain(contact.email),
+    rawName: contactDisplayName(contact),
+    rawLastName: contact.lastName ?? "",
+    rawPhone: contact.phone ?? null,
+    rawEmail: contact.email ?? null,
+    lastActivity: contact.dateUpdated ?? contact.lastActivity ?? null,
+    resolvedVia
+  };
+}
+
+function candidateSummary(contact) {
+  return {
+    id: contact.id,
+    name: maskName(contactDisplayName(contact)),
+    phoneLast4: last4(contact.phone),
+    emailDomain: emailDomain(contact.email)
+  };
+}
+
+function nameTokens(value) {
+  return String(value ?? "").toLowerCase().replace(/[.]/g, "").split(/\s+/).filter(Boolean);
+}
+
+function contactMatchesName(contact, query) {
+  const tokens = nameTokens(query);
+  if (!tokens.length) return false;
+  const first = String(contact.firstName ?? "").toLowerCase();
+  const last = String(contact.lastName ?? "").toLowerCase();
+  const full = nameTokens(contactDisplayName(contact));
+  if (tokens.length === 1) return first === tokens[0] || full[0] === tokens[0];
+  if (tokens[0] === first || tokens[0] === full[0]) {
+    const lastToken = tokens[tokens.length - 1];
+    return last.startsWith(lastToken) || Boolean(full[1] && full[1].startsWith(lastToken));
+  }
+  return full.join(" ").includes(tokens.join(" "));
+}
+
+function contactMatchesPhone(contact, phone) {
+  const wanted = digitsOnlyPhone(phone);
+  const have = digitsOnlyPhone(contact.phone);
+  if (wanted.length < 7 || have.length < 7) return false;
+  return have === wanted || have.endsWith(wanted.slice(-10)) || wanted.endsWith(have.slice(-10)) || have.endsWith(wanted.slice(-7));
+}
+
+function pickUniqueContact(contacts, { query, phone } = {}) {
+  if (!contacts.length) return { error: "No GHL contact matched that client." };
+  if (contacts.length === 1) return contacts[0];
+  const phoneHits = phone || digitsOnlyPhone(query).length >= 7
+    ? contacts.filter((contact) => contactMatchesPhone(contact, phone || query))
+    : [];
+  if (phoneHits.length === 1) return phoneHits[0];
+  const nameHits = query ? contacts.filter((contact) => contactMatchesName(contact, query)) : [];
+  if (nameHits.length === 1) return nameHits[0];
+  return {
+    error: "More than one GHL contact matched that client. Use a phone/email fragment or select the exact contact first.",
+    candidates: contacts.slice(0, 5).map(candidateSummary)
+  };
+}
+
+async function ghlFetchContactById({ token, contactId, fetchImpl = fetch }) {
+  const id = String(contactId ?? "").trim();
+  if (!id) return null;
+  try {
+    const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(id)}`, {
       token,
       fetchImpl,
       version: GHL_V3
     });
     const contact = body.contact ?? body;
-    return {
-      id: String(contactId),
-      name: maskName(contactDisplayName(contact)),
-      firstName: String(contact.firstName ?? contact.contactName ?? "").trim().split(/\s+/)[0] || "there",
-      assignedTo: contact.assignedTo ?? null,
-      tags: contact.tags ?? []
-    };
+    if (!isUsableGhlContact(contact)) return null;
+    return toResolvedContact(contact, id, "contactId");
+  } catch {
+    return null;
   }
-  const contacts = await ghlRawContacts({ token, locationId, query, limit: 10, fetchImpl });
-  if (!contacts.length) return { error: "No GHL contact matched that client." };
-  if (contacts.length > 1) {
-    return {
-      error: "More than one GHL contact matched that client. Use a phone/email fragment or select the exact contact first.",
-      candidates: contacts.slice(0, 5).map((contact) => ({
-        id: contact.id,
-        name: maskName(contactDisplayName(contact)),
-        phoneLast4: last4(contact.phone),
-        emailDomain: emailDomain(contact.email)
-      }))
-    };
+}
+
+export async function ghlResolveContact({
+  token,
+  locationId,
+  contactId,
+  query,
+  phone,
+  fetchImpl = fetch
+}) {
+  const tried = [];
+  const explicitId = String(contactId ?? "").trim();
+  const queryText = String(query ?? "").trim();
+  const phoneText = String(phone ?? "").trim();
+  const queryAsId = !explicitId && looksLikeGhlContactId(queryText) ? queryText : "";
+  const idCandidate = explicitId || queryAsId;
+
+  if (idCandidate) {
+    tried.push("contactId");
+    const byId = await ghlFetchContactById({ token, contactId: idCandidate, fetchImpl });
+    if (byId) return byId;
   }
+
+  const searchQueries = [];
+  if (phoneText) searchQueries.push({ via: "phone", q: phoneText });
+  else if (digitsOnlyPhone(queryText).length >= 10 && !looksLikeGhlContactId(queryText)) {
+    searchQueries.push({ via: "phone", q: queryText });
+  }
+  if (queryText && !looksLikeGhlContactId(queryText) && queryText !== phoneText) {
+    searchQueries.push({ via: "query", q: queryText });
+  }
+
+  let lastMulti = null;
+  for (const search of searchQueries) {
+    tried.push(search.via);
+    const contacts = await ghlRawContacts({ token, locationId, query: search.q, limit: 10, fetchImpl });
+    const picked = pickUniqueContact(contacts, { query: search.q, phone: phoneText || queryText });
+    if (!picked.error) return toResolvedContact(picked, picked.id, search.via);
+    if (picked.candidates) lastMulti = picked;
+  }
+
+  if (lastMulti) return { ...lastMulti, tried };
   return {
-    id: contacts[0].id,
-    name: maskName(contactDisplayName(contacts[0])),
-    firstName: String(contacts[0].firstName ?? contacts[0].contactName ?? "").trim().split(/\s+/)[0] || "there",
-    assignedTo: contacts[0].assignedTo ?? null,
-    tags: contacts[0].tags ?? []
+    error: "No GHL contact matched after id, name, and phone lookup.",
+    tried
+  };
+}
+
+export function hasOpenLeadsTag(tags) {
+  return (Array.isArray(tags) ? tags : []).some((tag) => normalizeGhlTag(tag) === OPEN_LEADS_TAG);
+}
+
+export async function ghlCheckOpenLeads({
+  token,
+  locationId,
+  contactId,
+  query,
+  phone,
+  fetchImpl = fetch
+}) {
+  const contact = await ghlResolveContact({
+    token,
+    locationId,
+    contactId,
+    query,
+    phone,
+    fetchImpl
+  });
+  if (contact.error) {
+    return {
+      status: "not_found",
+      onOpenLeads: false,
+      openLeadsTag: OPEN_LEADS_TAG,
+      contact: null,
+      resolvedVia: null,
+      tried: contact.tried ?? [],
+      candidates: contact.candidates ?? undefined,
+      error: contact.error,
+      message: contact.candidates
+        ? contact.error
+        : "Contact not found after id, name, and phone lookup."
+    };
+  }
+  const onOpenLeads = hasOpenLeadsTag(contact.tags);
+  return {
+    status: onOpenLeads ? "on_list" : "not_on_list",
+    onOpenLeads,
+    openLeadsTag: OPEN_LEADS_TAG,
+    contact: {
+      id: contact.id,
+      name: contact.name,
+      tags: contact.tags,
+      phoneLast4: contact.phoneLast4,
+      assignedTo: contact.assignedTo
+    },
+    resolvedVia: contact.resolvedVia ?? null,
+    tried: contact.resolvedVia ? [contact.resolvedVia] : [],
+    message: onOpenLeads
+      ? `${contact.name} is on Open Leads (tag ${OPEN_LEADS_TAG}).`
+      : `${contact.name} is not on Open Leads — missing tag ${OPEN_LEADS_TAG}.`
   };
 }
 

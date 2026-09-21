@@ -12,6 +12,9 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /do not say you can only email Yahoska/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /ghl_create_contact/);
+  assert.match(SYSTEM_PROMPT, /ghl_check_open_leads/);
+  assert.match(SYSTEM_PROMPT, /ghl_add_contact_note/);
+  assert.match(SYSTEM_PROMPT, /Never use Notion or say NOTION UPDATED for a contact note/);
   assert.match(SYSTEM_PROMPT, /active_prospect/);
   assert.match(SYSTEM_PROMPT, /maps those to GHL user ids/);
   assert.match(SYSTEM_PROMPT, /Never pass a display name as assignedTo/);

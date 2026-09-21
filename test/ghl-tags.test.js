@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cleanTags, normalizeGhlTag, tagsForCreateContact } from "../src/ghl.js";
+import { cleanTags, hasOpenLeadsTag, normalizeGhlTag, tagsForCreateContact } from "../src/ghl.js";
 import { grokTools } from "../src/tools.js";
 
 test("space and alias forms normalize to active_prospect", () => {
@@ -28,6 +28,12 @@ test("new AEP/prospect creates default to Open Leads tags, never the space varia
   assert.deepEqual(tagsForCreateContact(["medicare", "Active Prospect"]), ["medicare", "active_prospect", "prospect"]);
   assert.deepEqual(tagsForCreateContact(["lead"]), ["lead"]);
   assert.equal(tagsForCreateContact(["active prospect"]).includes("active prospect"), false);
+});
+
+test("hasOpenLeadsTag uses the canonical underscore tag", () => {
+  assert.equal(hasOpenLeadsTag(["active_prospect"]), true);
+  assert.equal(hasOpenLeadsTag(["Active Prospect"]), true);
+  assert.equal(hasOpenLeadsTag(["lead"]), false);
 });
 
 test("create-contact tool describes Open Leads as active_prospect", () => {

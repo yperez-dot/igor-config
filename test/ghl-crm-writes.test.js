@@ -61,11 +61,15 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_create_appointment"), true);
   assert.equal(names.includes("ghl_list_soa_snippets"), true);
   assert.equal(names.includes("ghl_send_soa_message"), true);
+  assert.equal(names.includes("ghl_check_open_leads"), true);
+  const noteTool = grokTools(environment).find((tool) => tool.function.name === "ghl_add_contact_note");
+  assert.match(noteTool.function.description, /never Notion/i);
 });
 
 test("connected systems lists approval-gated GHL contact create", async () => {
   const result = await executeTool("list_connected_systems", {}, { environment });
   assert.equal(result.capabilities.ghlCrmWrites.contactCreate, "approval-gated");
+  assert.match(result.capabilities.ghlCrmWrites.openLeadsCheck, /active_prospect/);
 });
 
 test("GHL contact create previews Michelle without writing", async () => {

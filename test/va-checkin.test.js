@@ -11,7 +11,10 @@ import {
   handleVaCheckinReply,
   isVaCheckinEnabled,
   kickoffStateId,
+  looksLikeGhlContactNoteIntent,
+  looksLikeGhlCrmIntent,
   looksLikeVaCheckinPrompt,
+  shouldRouteVaReplyToNotion,
   monthlyTodosDataSourceId,
   notionDataSourceId,
   nudgeStateId,
@@ -420,6 +423,52 @@ test("confirmation stays plain text with the ops-brief header", () => {
   assert.match(text, /^📋 NOTION UPDATED\n/);
   assert.match(text, /• Send Humana recert \[Monthly Todo\] — Status → Completed/);
   assert.doesNotMatch(text, /\*\*/);
+});
+
+test("contact notes and Open Leads checks do not route to Notion", () => {
+  const michelleNotes = "For Michelle in the notes add that Alexa's grandma referred her";
+  const smartList = "Check smart list, confirm that she's on open leads list pls in GHL";
+  assert.equal(looksLikeGhlContactNoteIntent(michelleNotes), true);
+  assert.equal(looksLikeGhlCrmIntent(smartList), true);
+  assert.equal(shouldRouteVaReplyToNotion(michelleNotes), false);
+  assert.equal(shouldRouteVaReplyToNotion("add to Michelle's notes that she is traveling"), false);
+  assert.equal(shouldRouteVaReplyToNotion("Add a GHL note to her contact record"), false);
+  assert.equal(shouldRouteVaReplyToNotion(smartList), false);
+  assert.equal(shouldRouteVaReplyToNotion("This week I'm focused on AEP contracting and callbacks."), true);
+  assert.equal(shouldRouteVaReplyToNotion("Update the notes on AEP contracting."), true);
+});
+
+test("ambiguous notes prefer GHL when a contact was just discussed", () => {
+  const history = [
+    { role: "assistant", content: "Saved the note to Michelle W.'s GHL record successfully." }
+  ];
+  assert.equal(shouldRouteVaReplyToNotion("add that Alexa's grandma referred her", { history }), false);
+  assert.equal(shouldRouteVaReplyToNotion("Finished the AEP contracting project", { history }), true);
+});
+
+test("GHL contact-note replies skip the Notion write card", async () => {
+  const store = memoryVaStore();
+  await store.claimVaCheckin({ id: weeklyStateId(WEEK, "111"), userId: "111", kind: "weekly", weekKey: WEEK, status: "sent" });
+  const result = await handleVaCheckinReply({
+    store,
+    environment: ENV,
+    senderId: "111",
+    chatId: "111",
+    text: "For Michelle in the notes add that Alexa's grandma referred her",
+    speaker: { role: "yahoska", name: "Yahoska Perez" },
+    now: MONDAY,
+    writeNotion: async () => assert.fail("must not write Notion for GHL contact notes")
+  });
+  assert.equal(result.handled, false);
+  assert.equal(result.reason, "ghl_contact_work");
+  assert.equal(result.reply, undefined);
+});
+
+test("failed Notion writes do not look like a success card", () => {
+  const text = formatNotionWriteConfirmation({ ok: false, reason: "Notion token is missing", changes: [] });
+  assert.match(text, /^📋 NOTION UPDATE FAILED\n/);
+  assert.doesNotMatch(text, /NOTION UPDATED/);
+  assert.match(text, /Couldn't write to Notion/);
 });
 
 test("store claims kickoff once", async () => {
