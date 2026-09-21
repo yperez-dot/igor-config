@@ -906,7 +906,7 @@ export async function executeTool(name, rawArgs, {
     if (name === "list_schedules") {
       const live = store ? await store.allSchedules() : [];
       return {
-        note: "Live Railway jobs: v2-site-uptime every 5 min, v2-igor-heartbeat every 30 min, v2-sales-tracker-sync Monday 7:00 AM ET (Sheets → Notion, no Anthropic), daily carrier inbox digest at 7:00 ET, Agent Pulse (THE Health Experts Insider) Mondays at 8:00 ET. Pulse and same-day carrier notices update the Agent Hub live ticker. Sneak peeks on Carrier Info update when she asks. Industry Pulse is the old name for that same Monday email — it is not a second send. OpenClaw/Anthropic sales cron is retired leftover — do not buy Anthropic credits for it.",
+        note: "Live Railway jobs: v2-site-uptime every 5 min, v2-igor-heartbeat every 30 min, v2-sales-tracker-sync Monday 7:00 AM ET (Sheets → Notion, no Anthropic), daily carrier inbox digest at 7:00 ET, Agent Pulse (THE Health Experts Insider) Mondays at 8:00 ET, VA check-in Mondays at 9:00 ET to Yahoska/Katy/Carolina (Notion read then Telegram; writes Notion from their replies), Tuesday 3:00 ET nudge if silent. Pulse and same-day carrier notices update the Agent Hub live ticker. Sneak peeks on Carrier Info update when she asks. Industry Pulse is the old name for that same Monday email — it is not a second send. OpenClaw/Anthropic sales cron is retired leftover — do not buy Anthropic credits for it.",
         live: live.map((row) => ({
           id: row.id,
           cron: row.cron,

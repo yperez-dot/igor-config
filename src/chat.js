@@ -13,6 +13,7 @@ import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
 import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput } from "./lead-reminders.js";
+import { handleVaCheckinReply } from "./va-checkin.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 const LEAD_ONBOARDING_ROLES = new Set(["yahoska", "katy", "carolina"]);
@@ -341,6 +342,21 @@ export async function handleTelegramChat({
       content: tickerEdit.reply
     });
     return tickerEdit.reply;
+  }
+
+  const vaUpdate = await handleVaCheckinReply({
+    store,
+    environment,
+    senderId: message.senderId,
+    chatId: message.chatId,
+    text: inbound.text,
+    replyTo: message.replyTo,
+    speaker
+  });
+  if (vaUpdate?.handled && vaUpdate.reply) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: vaUpdate.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: vaUpdate.reply });
+    return vaUpdate.reply;
   }
 
   const toolRunner = (name, args) => executeTool(name, args, {

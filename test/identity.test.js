@@ -63,6 +63,8 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /5-minute/);
   assert.match(SYSTEM_PROMPT, /Reply target wins/);
   assert.match(SYSTEM_PROMPT, /No phantom pictures/);
+  assert.match(SYSTEM_PROMPT, /Standing VA check-in/);
+  assert.match(SYSTEM_PROMPT, /Katy and Carolina do not have Charlie/);
   assert.doesNotMatch(SYSTEM_PROMPT, /Not friendly\. Not warm/);
   assert.doesNotMatch(SYSTEM_PROMPT, /You do not have the old OpenClaw/);
   assert.doesNotMatch(SYSTEM_PROMPT, /You are Igor v2/);
