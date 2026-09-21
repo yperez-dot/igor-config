@@ -65,7 +65,20 @@ export function normalizeAgentName(name) {
   if (lower.includes("christian munoz") || lower === "chris") return "Christian Munoz";
   if (lower.includes("yahoska")) return "Yahoska Perez";
   if (lower.includes("katy") || lower.includes("katherine")) return "Katy Robles";
-  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  // Sheet typos / ALL CAPS must collapse to the canonical select option.
+  if (lower.includes("paullete") || lower.includes("paulette")) return "Paulette Rostran";
+  // Title-case from lowercase so ALL CAPS sheet values do not stay ALL CAPS.
+  return lower.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/** Case/whitespace-insensitive client name for sales identity keys. */
+export function normalizeClientName(name) {
+  return String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Case/whitespace-insensitive carrier for sales identity keys (CAREPLUS vs CarePlus). */
+export function normalizeCarrierName(name) {
+  return String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 export function toIsoDate(value) {
@@ -77,8 +90,17 @@ export function toIsoDate(value) {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-export function salesKey({ agent, effectiveDate, client }) {
-  return `${normalizeAgentName(agent)}|${effectiveDate}|${String(client).trim().toLowerCase()}`;
+/**
+ * Stable sales identity — Agent is NOT part of the key.
+ * Same member+carrier+dates with different agent casing/typos must not duplicate.
+ */
+export function salesKey({ client, carrier, enrollmentDate, effectiveDate }) {
+  return [
+    normalizeClientName(client),
+    normalizeCarrierName(carrier),
+    enrollmentDate || "",
+    effectiveDate || ""
+  ].join("|");
 }
 
 export function parseSalesCsv(csv) {
@@ -100,18 +122,84 @@ export function parseSalesCsv(csv) {
   }).filter((sale) => sale.agent && sale.client && sale.effectiveDate);
 }
 
+export function pageSalesKey(page) {
+  const properties = page.properties ?? {};
+  const client = properties.Name?.title?.[0]?.plain_text;
+  const carrier = properties.Carrier?.select?.name ?? "";
+  const enrollmentDate = properties["Enrollment Date"]?.date?.start ?? "";
+  const effectiveDate = properties["Effective Date"]?.date?.start;
+  if (!client || !effectiveDate) return null;
+  return salesKey({ client, carrier, enrollmentDate, effectiveDate });
+}
+
 export function notionSalesKeys(pages) {
-  return new Set(pages.flatMap((page) => {
-    const properties = page.properties ?? {};
-    const agent = properties.Agent?.select?.name;
-    const effectiveDate = properties["Effective Date"]?.date?.start;
-    const client = properties.Name?.title?.[0]?.plain_text;
-    return agent && effectiveDate && client ? [salesKey({ agent, effectiveDate, client })] : [];
-  }));
+  return new Set(pages.map(pageSalesKey).filter(Boolean));
+}
+
+/** Map identity key → Notion page. Prefer Status=Enrolled if duplicates linger. */
+export function indexNotionSalesByKey(pages) {
+  const map = new Map();
+  for (const page of pages) {
+    const key = pageSalesKey(page);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, page);
+      continue;
+    }
+    const status = page.properties?.Status?.select?.name;
+    const existingStatus = existing.properties?.Status?.select?.name;
+    if (status === "Enrolled" && existingStatus !== "Enrolled") {
+      map.set(key, page);
+    }
+  }
+  return map;
 }
 
 export function missingSales(sales, existingKeys) {
   return sales.filter((sale) => !existingKeys.has(salesKey(sale)));
+}
+
+export function partitionSales(sales, pageByKey) {
+  const toCreate = [];
+  const toUpdate = [];
+  for (const sale of sales) {
+    const page = pageByKey.get(salesKey(sale));
+    if (page) toUpdate.push({ sale, page });
+    else toCreate.push(sale);
+  }
+  return { toCreate, toUpdate };
+}
+
+/** Display carrier for Notion select (avoid CAREPLUS vs CarePlus option sprawl). */
+export function normalizeCarrierDisplay(name) {
+  const raw = String(name ?? "").trim().replace(/\s+/g, " ");
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower === "careplus") return "CarePlus";
+  if (lower === "humana") return "Humana";
+  if (lower === "aetna") return "Aetna";
+  if (lower === "solis") return "Solis";
+  if (lower === "cigna") return "Cigna";
+  if (lower === "devoted") return "Devoted";
+  if (lower === "healthsun") return "HealthSun";
+  if (lower === "wellcare") return "WellCare";
+  if (lower === "simply") return "Simply";
+  if (lower === "unitedhealthcare") return "UnitedHealthcare";
+  return raw;
+}
+
+export function notionUpdateProperties(sale) {
+  const properties = {
+    Agent: { select: { name: sale.agent } },
+    Status: { select: { name: "Enrolled" } }
+  };
+  if (sale.planType) properties["Plan Type"] = { select: { name: sale.planType } };
+  if (sale.leadSource) properties["Lead Source"] = { select: { name: sale.leadSource } };
+  if (sale.planName) properties["Plan Name"] = { rich_text: [{ text: { content: sale.planName } }] };
+  const carrier = normalizeCarrierDisplay(sale.carrier);
+  if (carrier) properties.Carrier = { select: { name: carrier } };
+  return properties;
 }
 
 export function notionPagePayload(target, sale) {
@@ -121,7 +209,8 @@ export function notionPagePayload(target, sale) {
     "Effective Date": { date: { start: sale.effectiveDate } },
     Status: { select: { name: "Enrolled" } }
   };
-  if (sale.carrier) properties.Carrier = { select: { name: sale.carrier } };
+  const carrier = normalizeCarrierDisplay(sale.carrier);
+  if (carrier) properties.Carrier = { select: { name: carrier } };
   if (sale.planType) properties["Plan Type"] = { select: { name: sale.planType } };
   if (sale.leadSource) properties["Lead Source"] = { select: { name: sale.leadSource } };
   if (sale.planName) properties["Plan Name"] = { rich_text: [{ text: { content: sale.planName } }] };
@@ -243,34 +332,76 @@ export async function runSalesTrackerSync({
     dataSourceId: notionDataSourceId
   });
   const pages = await notionQuery({ fetchImpl, token: notionToken, target });
-  const missing = missingSales(sales, notionSalesKeys(pages));
+  const pageByKey = indexNotionSalesByKey(pages);
+  const { toCreate, toUpdate } = partitionSales(sales, pageByKey);
 
-  if (missing.length > threshold) {
-    return { status: "aborted", reason: "threshold_exceeded", sourceCount: sales.length, existingCount: pages.length, missingCount: missing.length };
-  }
+  const createBlocked = toCreate.length > threshold;
   if (mode === "dry-run") {
-    return { status: "dry_run", sourceCount: sales.length, existingCount: pages.length, missingCount: missing.length };
+    return {
+      status: createBlocked ? "dry_run_aborted_creates" : "dry_run",
+      reason: createBlocked ? "threshold_exceeded" : undefined,
+      sourceCount: sales.length,
+      existingCount: pages.length,
+      missingCount: toCreate.length,
+      updateCount: toUpdate.length
+    };
   }
 
+  const version = target.mode === "data_source" ? NOTION_VERSION_CURRENT : NOTION_VERSION_LEGACY;
+  const headers = notionHeaders(notionToken, version);
   const failures = [];
-  for (const sale of missing) {
+  let createdCount = 0;
+  let updatedCount = 0;
+
+  // Always refresh matched rows (Status/Agent/Plan). Never insert a second copy.
+  for (const { sale, page } of toUpdate) {
+    const response = await fetchImpl(`https://api.notion.com/v1/pages/${normalizeNotionId(page.id)}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ properties: notionUpdateProperties(sale) })
+    });
+    if (!response.ok) {
+      failures.push({ action: "update", client: sale.client, effectiveDate: sale.effectiveDate, status: response.status });
+    } else {
+      updatedCount += 1;
+    }
+  }
+
+  if (createBlocked) {
+    return {
+      status: "aborted",
+      reason: "threshold_exceeded",
+      sourceCount: sales.length,
+      existingCount: pages.length,
+      missingCount: toCreate.length,
+      updateCount: toUpdate.length,
+      createdCount: 0,
+      updatedCount,
+      failureCount: failures.length
+    };
+  }
+
+  for (const sale of toCreate) {
     const response = await fetchImpl("https://api.notion.com/v1/pages", {
       method: "POST",
-      headers: notionHeaders(
-        notionToken,
-        target.mode === "data_source" ? NOTION_VERSION_CURRENT : NOTION_VERSION_LEGACY
-      ),
+      headers,
       body: JSON.stringify(notionPagePayload(target, sale))
     });
-    if (!response.ok) failures.push({ agent: sale.agent, effectiveDate: sale.effectiveDate, status: response.status });
+    if (!response.ok) {
+      failures.push({ action: "create", client: sale.client, effectiveDate: sale.effectiveDate, status: response.status });
+    } else {
+      createdCount += 1;
+    }
   }
 
   return {
     status: failures.length ? "completed_with_errors" : "completed",
     sourceCount: sales.length,
     existingCount: pages.length,
-    missingCount: missing.length,
-    createdCount: missing.length - failures.length,
+    missingCount: toCreate.length,
+    updateCount: toUpdate.length,
+    createdCount,
+    updatedCount,
     failureCount: failures.length
   };
 }
