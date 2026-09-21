@@ -10,10 +10,8 @@ test("personal task lookup retains actionable title and HTML body for the assign
     now: new Date("2026-09-14T15:00:00Z"),
     fetchImpl: async (url, init) => {
       let payload;
-      if (url.endsWith("/locations/location")) payload = { location: { companyId: "company" } };
-      else if (url.includes("/users/search")) payload = { users: [{ id: "assigned-user", email: "yperez@healthexps.com" }] };
-      else if (url.endsWith("/tasks/search")) {
-        assert.deepEqual(JSON.parse(init.body).assignedTo, ["assigned-user"]);
+      if (url.endsWith("/tasks/search")) {
+        assert.deepEqual(JSON.parse(init.body).assignedTo, ["UlTM7S5uLDmQhXQ5zzfN"]);
         payload = { tasks: [
           { title: "Follow up with Juan", body: '<p style="margin:0">Confirm the appointment &amp; next step.</p>', dueDate: "2026-09-11T14:00:00Z" },
           { name: "Call Leo", description: "Ask how the appointment went", dueDate: "2026-09-15T18:00:00Z" },

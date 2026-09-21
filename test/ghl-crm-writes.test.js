@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { executeTool, grokTools } from "../src/tools.js";
+import { DEFAULT_GHL_OWNER_IDS, looksLikeGhlUserId } from "../src/ghl.js";
 
 const environment = { GHL_API_TOKEN: "test", GHL_LOCATION_ID: "location" };
 const speaker = { firstName: "Yahoska" };
+const extraUserId = "AbCdEfGhIjKlMnOpQr12";
 
 function json(payload, status = 200) {
   return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
@@ -14,6 +16,16 @@ function fixture(calls = []) {
     const target = String(url);
     const body = options.body ? JSON.parse(options.body) : undefined;
     calls.push({ target, method: options.method ?? "GET", body });
+    if (target.includes("/users/")) {
+      return json({
+        users: [
+          { id: DEFAULT_GHL_OWNER_IDS.yahoska, firstName: "Yahoska", lastName: "Perez", name: "Yahoska Perez", email: "yperez@healthexps.com" },
+          { id: DEFAULT_GHL_OWNER_IDS.katy, firstName: "Katy", lastName: "Robles", name: "Katy Robles", email: "krobles@healthexps.com" },
+          { id: DEFAULT_GHL_OWNER_IDS.carolina, firstName: "Carolina", lastName: "Robles", name: "Carolina Robles", email: "carolina@healthexps.com" },
+          { id: extraUserId, firstName: "Miguel", lastName: "Santos", name: "Miguel Santos", email: "miguel@example.com" }
+        ]
+      });
+    }
     if (target.includes("/contacts/?") && (options.method ?? "GET") !== "POST") return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", assignedTo: "user-1", tags: ["lead"] }] });
     if (target.endsWith("/contacts/") && options.method === "POST") {
       return json({
@@ -63,7 +75,9 @@ test("GHL contact create previews Michelle without writing", async () => {
   assert.equal(result.proposed.name, "Michelle");
   assert.equal(result.proposed.firstName, "Michelle");
   assert.equal(result.proposed.lastName, null);
-  assert.equal(result.proposed.assignedTo, null);
+  assert.equal(result.proposed.assignedTo, DEFAULT_GHL_OWNER_IDS.yahoska);
+  assert.equal(result.proposed.ownerName, "Yahoska Perez");
+  assert.equal(result.proposed.ownerDefaulted, true);
   assert.deepEqual(result.proposed.tags, []);
   assert.equal(calls.some((call) => call.method === "POST" && call.target.endsWith("/contacts/")), false);
 });
@@ -75,7 +89,13 @@ test("confirmed GHL contact create writes Michelle and returns the new id", asyn
   assert.equal(result.contactId, "contact-new");
   assert.equal(result.contact, "Michelle");
   const write = calls.find((call) => call.method === "POST" && call.target.endsWith("/contacts/"));
-  assert.deepEqual(write.body, { locationId: "location", firstName: "Michelle", name: "Michelle" });
+  assert.deepEqual(write.body, {
+    locationId: "location",
+    firstName: "Michelle",
+    name: "Michelle",
+    assignedTo: DEFAULT_GHL_OWNER_IDS.yahoska
+  });
+  assert.equal(looksLikeGhlUserId(write.body.assignedTo), true);
 });
 
 test("confirmed GHL contact create includes last name, phone, email, tags, and owner", async () => {
@@ -86,7 +106,7 @@ test("confirmed GHL contact create includes last name, phone, email, tags, and o
     phone: "+13055550123",
     email: "michelle@example.com",
     tags: ["lead"],
-    assignedTo: "user-1",
+    assignedTo: extraUserId,
     confirmed: true
   }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
   assert.equal(result.created, true);
@@ -101,16 +121,16 @@ test("confirmed GHL contact create includes last name, phone, email, tags, and o
     email: "michelle@example.com",
     phone: "+13055550123",
     tags: ["lead"],
-    assignedTo: "user-1"
+    assignedTo: extraUserId
   });
 });
 
 test("GHL contact create owner alias maps to assignedTo", async () => {
   const calls = [];
-  const result = await executeTool("ghl_create_contact", { name: "Michelle", owner: "user-9", confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  const result = await executeTool("ghl_create_contact", { name: "Michelle", owner: "Katy", confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
   assert.equal(result.created, true);
   const write = calls.find((call) => call.method === "POST" && call.target.endsWith("/contacts/"));
-  assert.equal(write.body.assignedTo, "user-9");
+  assert.equal(write.body.assignedTo, DEFAULT_GHL_OWNER_IDS.katy);
 });
 
 test("GHL contact create requires a first name before preview or write", async () => {
