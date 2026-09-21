@@ -2,15 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_SALES_SHEET_CSV_URL,
+  indexNotionSalesByKey,
   missingSales,
   normalizeAgentName,
+  normalizeCarrierDisplay,
   normalizeCarrierName,
   normalizeClientName,
   normalizeNotionId,
   notionPagePayload,
   notionSalesKeys,
+  notionUpdateProperties,
   parseNotionTargetInput,
   parseSalesCsv,
+  partitionSales,
   resolveNotionSalesTarget,
   salesKey,
   salesSheetUrl,
@@ -84,6 +88,40 @@ test("sales identity excludes Agent and is case-insensitive on Name/Carrier", ()
     agent: "PAULLETE ROSTRAN"
   }], existing);
   assert.deepEqual(missing, []);
+});
+
+test("on identity match updates Status/Agent/Plan and never treats as create", () => {
+  assert.equal(normalizeCarrierDisplay("CAREPLUS"), "CarePlus");
+  const pages = [{
+    id: "page-luis",
+    properties: {
+      Name: { title: [{ plain_text: "Luis Rodriguez" }] },
+      Agent: { select: { name: "PAULLETE ROSTRAN" } },
+      Carrier: { select: { name: "CarePlus" } },
+      Status: { select: { name: "Enrolled" } },
+      "Enrollment Date": { date: { start: "2026-09-15" } },
+      "Effective Date": { date: { start: "2026-10-01" } }
+    }
+  }];
+  const sale = {
+    client: "Luis Rodriguez",
+    carrier: "CAREPLUS",
+    enrollmentDate: "2026-09-15",
+    effectiveDate: "2026-10-01",
+    agent: normalizeAgentName("PAULLETE ROSTRAN"),
+    planType: "MAPD",
+    leadSource: "NHMD",
+    planName: "CareComplete Platinum"
+  };
+  const { toCreate, toUpdate } = partitionSales([sale], indexNotionSalesByKey(pages));
+  assert.deepEqual(toCreate, []);
+  assert.equal(toUpdate.length, 1);
+  assert.equal(toUpdate[0].page.id, "page-luis");
+  const props = notionUpdateProperties(sale);
+  assert.equal(props.Agent.select.name, "Paulette Rostran");
+  assert.equal(props.Status.select.name, "Enrolled");
+  assert.equal(props.Carrier.select.name, "CarePlus");
+  assert.equal(props["Plan Name"].rich_text[0].text.content, "CareComplete Platinum");
 });
 
 test("builds safe Notion sales payloads", () => {
