@@ -44,7 +44,9 @@ import {
   ghlRecentClientMessages,
   ghlSearchContacts,
   ghlCheckOpenLeads,
-  ghlStaleLeads
+  ghlStaleLeads,
+  ghlPrepareUpdateContact,
+  ghlUpdateContact
   ,ghlSendSoaMessage
 } from "./ghl.js";
 import { telegramSpeaker } from "./identity.js";
@@ -101,6 +103,7 @@ const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
   "ghl_manage_contact_tags",
   "ghl_add_contact_note",
+  "ghl_update_contact",
   "ghl_create_contact",
   "ghl_create_contact_task",
   "ghl_create_appointment",
@@ -207,21 +210,35 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, email, or a known contact id. If query looks like a GHL contact id, lookup by id first, then fall back to name/phone search. Returns masked names and last-4 phone only.", {
+      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
         type: "object",
         properties: {
-          query: { type: "string", description: "Name, phone, email fragment, or GHL contact id from this chat." },
+          query: { type: "string", description: "Name, phone, last-4, email fragment, or GHL contact id from this chat. Phone/last-4 is matched first and does not need the first name to match." },
           contactId: { type: "string", description: "Exact GHL contact id when already known from create-contact or a prior turn." },
+          phone: { type: "string", description: "Full phone or last-4. When present, phone digits win over a first-name mismatch." },
           limit: { type: "integer" }
         },
         additionalProperties: false
       }),
-      functionTool("ghl_check_open_leads", "Confirm whether one GHL contact is on the Open Leads smart list. Open Leads = tag active_prospect (underscore). Reuse a contact id from this chat or the latest ghl_create_contact result; if that id lookup is empty, fall back to name and/or phone. Returns status on_list, not_on_list, or not_found. Never treat an id-only miss as proof the contact does not exist.", {
+      functionTool("ghl_check_open_leads", "Confirm whether one GHL contact is on the Open Leads smart list. Open Leads = tag active_prospect (underscore). Reuse a contact id from this chat or the latest ghl_create_contact result; if that id lookup is empty, fall back to name, then phone/last-4. When last-4 or a full phone is provided, phone wins even if the stored first name differs. Returns status on_list, not_on_list, or not_found. Never treat an id-only miss as proof the contact does not exist.", {
         type: "object",
         properties: {
           contactId: { type: "string", description: "Exact GHL contact id from this chat when known." },
-          contactQuery: { type: "string", description: "Name, phone, or email if the id is missing or the id lookup is empty." },
-          phone: { type: "string", description: "Optional phone to disambiguate when name search is empty or has multiple matches." }
+          contactQuery: { type: "string", description: "Name, phone, last-4, or email if the id is missing or the id lookup is empty." },
+          phone: { type: "string", description: "Full phone or last-4. When present, phone digits win over a first-name mismatch." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("ghl_update_contact", "Update a known GHL contact's first and/or last name. Use this when the user corrects a name (her name is actually Miriam not Michelle). Reuse the contact id from this chat, a last-4 phone match, or ghl_create_contact — do not only re-search the new name and give up. First call previews the rename; write only after Yahoska, Katy, or Carolina confirms.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string", description: "Exact GHL contact id from this chat when known." },
+          contactQuery: { type: "string", description: "Name, phone, or last-4 if the id is missing." },
+          phone: { type: "string", description: "Full phone or last-4 so a first-name mismatch still finds the contact." },
+          firstName: { type: "string", description: "Corrected given name." },
+          lastName: { type: "string", description: "Corrected family name. Omit to keep the stored last name." },
+          name: { type: "string", description: "Full corrected name when first/last are not split." },
+          confirmed: { type: "boolean" }
         },
         additionalProperties: false
       }),
@@ -282,11 +299,12 @@ export function grokTools(environment = process.env) {
         required: ["action", "tags"],
         additionalProperties: false
       }),
-      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes — never Notion. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string" },
-          contactQuery: { type: "string" },
+          contactQuery: { type: "string", description: "Name, phone, or last-4. Phone/last-4 wins if the stored first name differs." },
+          phone: { type: "string", description: "Full phone or last-4 so a first-name mismatch still finds the contact." },
           body: { type: "string" },
           title: { type: "string" },
           pinned: { type: "boolean" },
@@ -351,7 +369,7 @@ export function grokTools(environment = process.env) {
   }
 
   if (connected.has("notion")) {
-    tools.push(functionTool("notion_search", "Search Notion for internal pages and databases. Returns titles only.", {
+    tools.push(functionTool("notion_search", "Search Notion for internal pages and databases (Open projects, monthly todos, ops docs). Returns titles only. Never use this for GHL/CRM contact notes — those go to ghl_add_contact_note.", {
       type: "object",
       properties: { query: { type: "string" } },
       required: ["query"],
@@ -822,7 +840,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_update_contact", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -856,9 +874,10 @@ export async function executeTool(name, rawArgs, {
             ? {
                 available: true,
                 contactTags: "approval-gated",
-                contactNotes: "approval-gated",
-                openLeadsCheck: "active_prospect tag; id then name/phone fallback",
+                contactNotes: "approval-gated; GHL only, never Notion",
+                openLeadsCheck: "active_prospect tag; id then name then phone/last-4; phone wins on last-4",
                 contactCreate: "approval-gated",
+                contactUpdate: "approval-gated name correction",
                 contactTasks: "approval-gated",
                 appointments: "approval-gated; GHL notifications enabled",
                 contracts: "approval-gated",
@@ -1042,6 +1061,7 @@ export async function executeTool(name, rawArgs, {
           locationId: config.locationId,
           query: args.query,
           contactId: args.contactId,
+          phone: args.phone,
           limit: Number(args.limit ?? 20),
           fetchImpl
         })
@@ -1058,6 +1078,32 @@ export async function executeTool(name, rawArgs, {
         phone: args.phone,
         fetchImpl
       });
+    }
+
+    if (name === "ghl_update_contact") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery ?? args.query,
+        phone: args.phone,
+        firstName: args.firstName,
+        lastName: args.lastName,
+        name: args.name,
+        fetchImpl
+      };
+      if (blocked) {
+        const plan = await ghlPrepareUpdateContact(request);
+        if (plan.error) return plan;
+        return {
+          ...blocked,
+          proposed: plan.preview,
+          hint: "Show this exact rename in chat. After Yahoska, Katy, or Carolina says yes, call again with confirmed=true."
+        };
+      }
+      return ghlUpdateContact(request);
     }
 
     if (name === "ghl_create_contact") {
@@ -1155,7 +1201,7 @@ export async function executeTool(name, rawArgs, {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
       const config = ghlConfig(environment);
-      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, action: args.action, tags: args.tags, fetchImpl };
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, phone: args.phone, action: args.action, tags: args.tags, fetchImpl };
       if (blocked) {
         const plan = await ghlPrepareTagChange(request);
         if (plan.error) return plan;
@@ -1172,6 +1218,7 @@ export async function executeTool(name, rawArgs, {
         ...config,
         contactId: args.contactId,
         contactQuery: args.contactQuery,
+        phone: args.phone,
         body: args.body,
         title: args.title,
         pinned: args.pinned === true,

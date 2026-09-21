@@ -432,6 +432,9 @@ test("contact notes and Open Leads checks do not route to Notion", () => {
   assert.equal(looksLikeGhlCrmIntent(smartList), true);
   assert.equal(shouldRouteVaReplyToNotion(michelleNotes), false);
   assert.equal(shouldRouteVaReplyToNotion("add to Michelle's notes that she is traveling"), false);
+  assert.equal(shouldRouteVaReplyToNotion("add to Miriam's notes that she is traveling"), false);
+  assert.equal(shouldRouteVaReplyToNotion("her name is actually Miriam not Michelle"), false);
+  assert.equal(looksLikeGhlCrmIntent("her name is actually Miriam not Michelle"), true);
   assert.equal(shouldRouteVaReplyToNotion("Add a GHL note to her contact record"), false);
   assert.equal(shouldRouteVaReplyToNotion(smartList), false);
   assert.equal(shouldRouteVaReplyToNotion("This week I'm focused on AEP contracting and callbacks."), true);

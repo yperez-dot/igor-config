@@ -298,7 +298,34 @@ function maskSearchedContact(contact) {
   };
 }
 
-export async function ghlSearchContacts({ token, locationId, query, contactId, limit = 20, fetchImpl = fetch }) {
+export function nameQueryWithoutPhone(value) {
+  return String(value ?? "")
+    .replace(/[+\-().]/g, " ")
+    .replace(/\b\d{4,}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function phoneDigitsFromQuery(value) {
+  if (looksLikeGhlContactId(value)) return "";
+  const digits = digitsOnlyPhone(value);
+  return digits.length >= 4 ? digits : "";
+}
+
+function withSearchNameMeta(contact, query) {
+  const searchedFirst = nameTokens(nameQueryWithoutPhone(query))[0];
+  const storedFirst = nameTokens(contact.name)[0];
+  if (searchedFirst && storedFirst && searchedFirst !== storedFirst) {
+    return {
+      ...contact,
+      nameMismatch: true,
+      hint: "Phone matched this contact; the stored first name differs from the name you searched. Use ghl_update_contact to correct it."
+    };
+  }
+  return contact;
+}
+
+export async function ghlSearchContacts({ token, locationId, query, contactId, phone, limit = 20, fetchImpl = fetch }) {
   const idCandidate = String(contactId ?? "").trim()
     || (looksLikeGhlContactId(query) ? String(query).trim() : "");
   if (idCandidate) {
@@ -317,13 +344,43 @@ export async function ghlSearchContacts({ token, locationId, query, contactId, l
       })];
     }
   }
-  const params = new URLSearchParams({
-    locationId,
-    limit: String(Math.min(limit, 50))
-  });
-  if (query) params.set("query", query);
-  const body = await ghlJson(`${GHL_API}/contacts/?${params}`, { token, fetchImpl });
-  return (body.contacts ?? []).map((contact) => maskSearchedContact(contact));
+
+  const queryText = String(query ?? "").trim();
+  const phoneText = String(phone ?? "").trim();
+  const phoneHint = phoneDigitsFromQuery(phoneText) || phoneDigitsFromQuery(queryText);
+  const nameHint = nameQueryWithoutPhone(queryText);
+  const searches = [];
+  if (phoneHint) searches.push(phoneText || phoneHint);
+  if (nameHint && nameHint !== phoneHint && !phoneHint) searches.push(nameHint);
+  if (!searches.length && queryText && !looksLikeGhlContactId(queryText)) searches.push(queryText);
+
+  if (phoneHint) {
+    const phoneContacts = await ghlRawContacts({
+      token,
+      locationId,
+      query: phoneText || phoneHint,
+      limit,
+      fetchImpl
+    });
+    const phoneHits = phoneContacts.filter((contact) => contactMatchesPhone(contact, phoneHint));
+    if (phoneHits.length) {
+      return phoneHits.slice(0, limit).map((contact) => withSearchNameMeta(maskSearchedContact(contact), queryText));
+    }
+  }
+
+  if (!phoneHint && searches.length) {
+    const contacts = await ghlRawContacts({ token, locationId, query: searches[0], limit, fetchImpl });
+    return contacts.map((contact) => maskSearchedContact(contact));
+  }
+
+  if (nameHint && phoneHint) {
+    // Last-4/phone was provided and missed. Do not AND the new first name with the digits —
+    // that is how Miriam+2363 missed Michelle. Return empty so the caller can update the
+    // known contact or ask for a fuller number instead of inventing a miss on the new name.
+    return [];
+  }
+
+  return [];
 }
 
 async function ghlRawContacts({ token, locationId, query, limit = 20, fetchImpl = fetch }) {
@@ -401,21 +458,33 @@ function contactMatchesName(contact, query) {
   return full.join(" ").includes(tokens.join(" "));
 }
 
-function contactMatchesPhone(contact, phone) {
+export function contactMatchesPhone(contact, phone) {
   const wanted = digitsOnlyPhone(phone);
   const have = digitsOnlyPhone(contact.phone);
-  if (wanted.length < 7 || have.length < 7) return false;
-  return have === wanted || have.endsWith(wanted.slice(-10)) || wanted.endsWith(have.slice(-10)) || have.endsWith(wanted.slice(-7));
+  if (!wanted || have.length < 4) return false;
+  if (wanted.length <= 6) return have.endsWith(wanted);
+  return have === wanted
+    || have.endsWith(wanted.slice(-10))
+    || wanted.endsWith(have.slice(-10))
+    || have.endsWith(wanted.slice(-7));
 }
 
 function pickUniqueContact(contacts, { query, phone } = {}) {
   if (!contacts.length) return { error: "No GHL contact matched that client." };
-  if (contacts.length === 1) return contacts[0];
-  const phoneHits = phone || digitsOnlyPhone(query).length >= 7
-    ? contacts.filter((contact) => contactMatchesPhone(contact, phone || query))
+  const phoneHint = phoneDigitsFromQuery(phone) || phoneDigitsFromQuery(query);
+  const phoneHits = phoneHint
+    ? contacts.filter((contact) => contactMatchesPhone(contact, phoneHint))
     : [];
   if (phoneHits.length === 1) return phoneHits[0];
-  const nameHits = query ? contacts.filter((contact) => contactMatchesName(contact, query)) : [];
+  if (phoneHits.length > 1) {
+    return {
+      error: "More than one GHL contact matched that phone. Use a fuller number or select the exact contact first.",
+      candidates: phoneHits.slice(0, 5).map(candidateSummary)
+    };
+  }
+  if (phoneHint) return { error: "No GHL contact matched that phone." };
+  if (contacts.length === 1) return contacts[0];
+  const nameHits = query ? contacts.filter((contact) => contactMatchesName(contact, nameQueryWithoutPhone(query) || query)) : [];
   if (nameHits.length === 1) return nameHits[0];
   return {
     error: "More than one GHL contact matched that client. Use a phone/email fragment or select the exact contact first.",
@@ -454,6 +523,8 @@ export async function ghlResolveContact({
   const phoneText = String(phone ?? "").trim();
   const queryAsId = !explicitId && looksLikeGhlContactId(queryText) ? queryText : "";
   const idCandidate = explicitId || queryAsId;
+  const phoneHint = phoneDigitsFromQuery(phoneText) || phoneDigitsFromQuery(queryText);
+  const nameHint = nameQueryWithoutPhone(queryText);
 
   if (idCandidate) {
     tried.push("contactId");
@@ -461,12 +532,12 @@ export async function ghlResolveContact({
     if (byId) return byId;
   }
 
+  // Phone/last-4 wins over a first-name mismatch. Search digits first so
+  // "Miriam 2363" still finds Michelle W. stored as +13054642363.
   const searchQueries = [];
-  if (phoneText) searchQueries.push({ via: "phone", q: phoneText });
-  else if (digitsOnlyPhone(queryText).length >= 10 && !looksLikeGhlContactId(queryText)) {
-    searchQueries.push({ via: "phone", q: queryText });
-  }
-  if (queryText && !looksLikeGhlContactId(queryText) && queryText !== phoneText) {
+  if (phoneHint) searchQueries.push({ via: "phone", q: phoneText || phoneHint });
+  if (nameHint && nameHint !== phoneText) searchQueries.push({ via: "query", q: nameHint });
+  if (!phoneHint && !nameHint && queryText && !looksLikeGhlContactId(queryText) && queryText !== phoneText) {
     searchQueries.push({ via: "query", q: queryText });
   }
 
@@ -474,9 +545,13 @@ export async function ghlResolveContact({
   for (const search of searchQueries) {
     tried.push(search.via);
     const contacts = await ghlRawContacts({ token, locationId, query: search.q, limit: 10, fetchImpl });
-    const picked = pickUniqueContact(contacts, { query: search.q, phone: phoneText || queryText });
-    if (!picked.error) return toResolvedContact(picked, picked.id, search.via);
+    const picked = pickUniqueContact(contacts, { query: nameHint || search.q, phone: phoneHint });
+    if (!picked.error) {
+      if (phoneHint && search.via === "query" && !contactMatchesPhone(picked, phoneHint)) continue;
+      return toResolvedContact(picked, picked.id, search.via);
+    }
     if (picked.candidates) lastMulti = picked;
+    if (search.via === "phone" && picked.candidates) break;
   }
 
   if (lastMulti) return { ...lastMulti, tried };
@@ -753,8 +828,73 @@ export async function ghlCreateContact(options) {
   };
 }
 
-export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, tags, action = "add", fetchImpl = fetch }) {
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+export async function ghlPrepareUpdateContact({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  phone,
+  firstName,
+  lastName,
+  name,
+  fetchImpl = fetch
+}) {
+  const contact = await ghlResolveContact({
+    token,
+    locationId,
+    contactId,
+    query: contactQuery,
+    phone,
+    fetchImpl
+  });
+  if (contact.error) return contact;
+  const names = splitContactName({ name, firstName, lastName });
+  const nextFirst = names.firstName || contact.firstName;
+  const nextLast = names.lastName || String(contact.rawLastName ?? "").trim();
+  if (!nextFirst) return { error: "A first name is required to update a GHL contact." };
+  const displayName = `${nextFirst} ${nextLast}`.trim();
+  const payload = {
+    firstName: nextFirst.slice(0, 100),
+    ...(nextLast ? { lastName: nextLast.slice(0, 100) } : {}),
+    name: displayName.slice(0, 200)
+  };
+  return {
+    contact,
+    payload,
+    preview: {
+      contactId: contact.id,
+      currentName: contact.name,
+      firstName: payload.firstName,
+      lastName: payload.lastName ?? null,
+      name: maskName(displayName),
+      phoneLast4: contact.phoneLast4
+    }
+  };
+}
+
+export async function ghlUpdateContact(options) {
+  const plan = await ghlPrepareUpdateContact(options);
+  if (plan.error) return plan;
+  const result = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(plan.contact.id)}`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "PUT",
+    body: plan.payload
+  });
+  const updated = result.contact ?? result;
+  return {
+    updated: true,
+    contactId: plan.contact.id,
+    contact: maskName(contactDisplayName(updated) || `${plan.payload.firstName} ${plan.payload.lastName ?? ""}`.trim()),
+    previousName: plan.contact.name,
+    firstName: plan.payload.firstName,
+    lastName: plan.payload.lastName ?? null
+  };
+}
+
+export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, phone, tags, action = "add", fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, phone, fetchImpl });
   if (contact.error) return contact;
   const normalizedTags = cleanTags(tags);
   if (!normalizedTags.length) return { error: "At least one tag is required." };
@@ -781,8 +921,8 @@ export async function ghlApplyTagChange(options) {
   };
 }
 
-export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, body, title, pinned = false, fetchImpl = fetch }) {
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, phone, body, title, pinned = false, fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, phone, fetchImpl });
   if (contact.error) return contact;
   const noteBody = String(body ?? "").trim();
   if (!noteBody) return { error: "The note cannot be empty." };

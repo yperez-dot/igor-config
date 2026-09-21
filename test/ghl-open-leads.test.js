@@ -4,10 +4,13 @@ import { personalOpenLeads } from "../src/ghl-personal.js";
 import { ghlOpsBriefText } from "../src/worker-core.js";
 import { executeTool } from "../src/tools.js";
 import {
+  contactMatchesPhone,
   ghlCheckOpenLeads,
   ghlResolveContact,
   ghlSearchContacts,
-  hasOpenLeadsTag
+  hasOpenLeadsTag,
+  nameQueryWithoutPhone,
+  phoneDigitsFromQuery
 } from "../src/ghl.js";
 
 const MICHELLE_ID = "j2MTdDxkLpgUNtORZpjc";
@@ -154,6 +157,95 @@ test("Open Leads check reports not_found after id, name, and phone miss", async 
   assert.equal(result.status, "not_found");
   assert.equal(result.onOpenLeads, false);
   assert.match(result.message, /not found after id, name, and phone/i);
+});
+
+test("phone helpers treat last-4 as a match and strip digits from mixed name queries", () => {
+  assert.equal(phoneDigitsFromQuery("Miriam 2363"), "2363");
+  assert.equal(phoneDigitsFromQuery("Miriam+2363"), "2363");
+  assert.equal(nameQueryWithoutPhone("Miriam+2363"), "Miriam");
+  assert.equal(contactMatchesPhone(MICHELLE, "2363"), true);
+  assert.equal(contactMatchesPhone(MICHELLE, "+13054642363"), true);
+  assert.equal(contactMatchesPhone(MICHELLE, "1212"), false);
+});
+
+test("contact search matches last-4 even when the first name is wrong", async () => {
+  const calls = [];
+  const contacts = await ghlSearchContacts({
+    token: "test",
+    locationId: "loc",
+    query: "Miriam 2363",
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      const query = new URL(String(url)).searchParams.get("query") ?? "";
+      if (/miriam/i.test(query) && /2363/.test(query)) return json({ contacts: [] });
+      if (query.includes("2363")) return json({ contacts: [MICHELLE] });
+      if (/miriam/i.test(query)) return json({ contacts: [] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(contacts.length, 1);
+  assert.equal(contacts[0].id, MICHELLE_ID);
+  assert.equal(contacts[0].phoneLast4, "2363");
+  assert.equal(contacts[0].name, "Michelle W.");
+  assert.equal(contacts[0].nameMismatch, true);
+  assert.match(contacts[0].hint, /ghl_update_contact/);
+  assert.equal(calls.some((url) => url.includes("2363") && !/Miriam/i.test(url)), true);
+});
+
+test("resolve contact uses last-4 over a first-name mismatch", async () => {
+  const contact = await ghlResolveContact({
+    token: "test",
+    locationId: "loc",
+    query: "Miriam",
+    phone: "2363",
+    fetchImpl: async (url) => {
+      const query = new URL(String(url)).searchParams.get("query") ?? "";
+      if (/miriam/i.test(query)) return json({ contacts: [] });
+      if (query.includes("2363")) return json({ contacts: [MICHELLE] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(contact.error, undefined);
+  assert.equal(contact.id, MICHELLE_ID);
+  assert.equal(contact.resolvedVia, "phone");
+  assert.equal(contact.phoneLast4, "2363");
+});
+
+test("Open Leads check uses last-4 when the stored first name differs", async () => {
+  const result = await ghlCheckOpenLeads({
+    token: "test",
+    locationId: "loc",
+    query: "Miriam Wang",
+    phone: "2363",
+    fetchImpl: async (url) => {
+      const query = new URL(String(url)).searchParams.get("query") ?? "";
+      if (/miriam/i.test(query)) return json({ contacts: [] });
+      if (query.includes("2363")) return json({ contacts: [MICHELLE] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.status, "on_list");
+  assert.equal(result.onOpenLeads, true);
+  assert.equal(result.resolvedVia, "phone");
+  assert.equal(result.contact.id, MICHELLE_ID);
+});
+
+test("ghl_search_contacts tool finds a last-4 match with a corrected first name", async () => {
+  const result = await executeTool("ghl_search_contacts", {
+    query: "Miriam",
+    phone: "2363"
+  }, {
+    environment: { GHL_API_TOKEN: "test", GHL_LOCATION_ID: "loc" },
+    fetchImpl: async (url) => {
+      const query = new URL(String(url)).searchParams.get("query") ?? "";
+      if (/miriam/i.test(query)) return json({ contacts: [] });
+      if (query.includes("2363")) return json({ contacts: [MICHELLE] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.contacts.length, 1);
+  assert.equal(result.contacts[0].id, MICHELLE_ID);
+  assert.equal(result.contacts[0].nameMismatch, true);
 });
 
 test("ghl_check_open_leads tool uses the Open Leads helper", async () => {
