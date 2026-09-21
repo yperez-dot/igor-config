@@ -26,13 +26,29 @@ function fixture(calls = []) {
         ]
       });
     }
+    if (target.includes("/contacts/search") && options.method === "POST") {
+      return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", phone: "+13055550123", assignedTo: "user-1", tags: ["lead"] }] });
+    }
     if (target.includes("/contacts/?") && (options.method ?? "GET") !== "POST") return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", phone: "+13055550123", assignedTo: "user-1", tags: ["lead"] }] });
-    if (/\/contacts\/contact-1$/.test(target) && (options.method ?? "GET") === "PUT") {
+    if (/\/contacts\/contact-1$/.test(target)) {
+      if ((options.method ?? "GET") === "PUT") {
+        return json({
+          contact: {
+            id: "contact-1",
+            firstName: body.firstName,
+            lastName: body.lastName ?? "Doe",
+            phone: body.phone ?? "+13055550123",
+            assignedTo: "user-1",
+            tags: ["lead"]
+          }
+        });
+      }
       return json({
         contact: {
           id: "contact-1",
-          firstName: body.firstName,
-          lastName: body.lastName ?? "Doe",
+          firstName: "Jane",
+          lastName: "Doe",
+          phone: "+13055550123",
           assignedTo: "user-1",
           tags: ["lead"]
         }
@@ -287,8 +303,23 @@ test("confirmed GHL name correction updates firstName and keeps the last name", 
   assert.deepEqual(write.body, {
     firstName: "Miriam",
     lastName: "Doe",
-    name: "Miriam Doe"
+    name: "Miriam Doe",
+    phone: "+13055550123"
   });
+});
+
+test("update firstName does not clear phone in the PUT body", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_update_contact", {
+    contactId: "contact-1",
+    firstName: "Miriam",
+    confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.updated, true);
+  const write = calls.find((call) => call.method === "PUT" && /\/contacts\/contact-1$/.test(call.target));
+  assert.equal(write.body.firstName, "Miriam");
+  assert.equal(write.body.phone, "+13055550123");
+  assert.equal(Object.hasOwn(write.body, "phone"), true);
 });
 
 test("contact note can resolve by last-4 when the spoken first name is wrong", async () => {
