@@ -1,4 +1,4 @@
-import { ghlConfig } from "./ghl.js";
+import { ghlConfig, resolveKnownGhlOwner } from "./ghl.js";
 import { mentionsLead } from "./lead-removal.js";
 
 // Mirrors Contacts > Open Leads: Tag Is active_prospect, scoped to the recipient.
@@ -193,23 +193,26 @@ export async function personalGhlOpsSnapshotForChat({
     };
   }
 
-  let user;
-  try {
-    user = await ghlFindUserByEmail({
-      token: config.token,
-      locationId: config.locationId,
-      email,
-      fetchImpl
-    });
-  } catch (error) {
-    return {
-      tasks: [],
-      appointments: [],
-      overdueTaskCount: 0,
-      taskError: `GHL user lookup failed: ${error.message}`,
-      openLeadError: `GHL user lookup failed: ${error.message}`,
-      appointmentError: `GHL user lookup failed: ${error.message}`
-    };
+  const known = resolveKnownGhlOwner(email, environment);
+  let user = known ? { id: known.id, email, name: known.name } : null;
+  if (!user) {
+    try {
+      user = await ghlFindUserByEmail({
+        token: config.token,
+        locationId: config.locationId,
+        email,
+        fetchImpl
+      });
+    } catch (error) {
+      return {
+        tasks: [],
+        appointments: [],
+        overdueTaskCount: 0,
+        taskError: `GHL user lookup failed: ${error.message}`,
+        openLeadError: `GHL user lookup failed: ${error.message}`,
+        appointmentError: `GHL user lookup failed: ${error.message}`
+      };
+    }
   }
 
   if (!user?.id) {

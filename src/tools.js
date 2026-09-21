@@ -223,8 +223,8 @@ export function grokTools(environment = process.env) {
           phone: { type: "string", description: "Optional phone number." },
           email: { type: "string", description: "Optional email address." },
           tags: { type: "array", items: { type: "string" }, description: "Optional GHL tags to set on create." },
-          assignedTo: { type: "string", description: "Optional GHL user id that should own the contact." },
-          owner: { type: "string", description: "Alias for assignedTo." },
+          assignedTo: { type: "string", description: "Optional owner. Accepts a GHL user id, email, or name (Yahoska, Katy, Carolina, YP). Names and emails resolve to user ids. Defaults to Yahoska." },
+          owner: { type: "string", description: "Alias for assignedTo. Display names are resolved to GHL user ids; never sent raw." },
           confirmed: { type: "boolean" }
         },
         additionalProperties: false

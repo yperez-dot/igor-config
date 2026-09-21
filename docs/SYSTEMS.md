@@ -6,7 +6,7 @@ Set these on **both** the `Igor V2` web service and the `igor-config` worker. Ru
 
 | System | Railway variables | Telegram tools |
 | --- | --- | --- |
-| GoHighLevel | `GHL_API_TOKEN` (required), `GHL_LOCATION_ID` (defaults to the THEI location). Optional `GHL_PROVIDER_OBJECT_KEY` and `GHL_RX_OBJECT_KEY` override automatic custom-object discovery. | `ghl_stale_leads`, `ghl_search_contacts`, `ghl_create_contact` (explicit approval required), `ghl_list_pipelines`, `ghl_recent_client_messages`, `ghl_update_clinical_profile` (explicit approval required) |
+| GoHighLevel | `GHL_API_TOKEN` (required), `GHL_LOCATION_ID` (defaults to the THEI location). Optional `GHL_YAHOSKA_USER_ID`, `GHL_KATY_USER_ID`, and `GHL_CAROLINA_USER_ID` override baked-in contact-owner ids. Optional `GHL_PROVIDER_OBJECT_KEY` and `GHL_RX_OBJECT_KEY` override automatic custom-object discovery. | `ghl_stale_leads`, `ghl_search_contacts`, `ghl_create_contact` (explicit approval required; owner names resolve to GHL user ids, default Yahoska), `ghl_list_pipelines`, `ghl_recent_client_messages`, `ghl_update_clinical_profile` (explicit approval required) |
 | Notion | `NOTION_TOKEN` | `notion_search` |
 | GitHub | `GITHUB_TOKEN`, optional `GITHUB_ALLOWED_OWNERS` (default `yperez-dot`) | `github_get` (read), `github_write` (confirm required) |
 | Netlify | `NETLIFY_AUTH_TOKEN` | `netlify_list_sites`, `netlify_deploy` (confirm required) |

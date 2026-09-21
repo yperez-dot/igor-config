@@ -4,10 +4,194 @@ const GHL_API = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
 const GHL_V3 = "v3";
 
+export const DEFAULT_GHL_LOCATION_ID = "RINM4TCnM4hN06UA1aK0";
+
+export const DEFAULT_GHL_OWNER_IDS = Object.freeze({
+  yahoska: "UlTM7S5uLDmQhXQ5zzfN",
+  katy: "9bovC9opeAgu8Lv7D0MC",
+  carolina: "J9B55ImNTBSf9eIQZMCx"
+});
+
+const GHL_OWNERS = Object.freeze([
+  {
+    key: "yahoska",
+    name: "Yahoska Perez",
+    aliases: Object.freeze(["yahoska perez", "yahoska", "yp", "yperez", "yperez@healthexps.com"])
+  },
+  {
+    key: "katy",
+    name: "Katy Robles",
+    aliases: Object.freeze(["katy robles", "katy", "krobles", "krobles@healthexps.com"])
+  },
+  {
+    key: "carolina",
+    name: "Carolina Robles",
+    aliases: Object.freeze(["carolina robles", "carolina", "carolina@healthexps.com"])
+  }
+]);
+
+export function ghlOwnerIds(environment = process.env) {
+  return {
+    yahoska: String(environment.GHL_YAHOSKA_USER_ID ?? "").trim() || DEFAULT_GHL_OWNER_IDS.yahoska,
+    katy: String(environment.GHL_KATY_USER_ID ?? "").trim() || DEFAULT_GHL_OWNER_IDS.katy,
+    carolina: String(environment.GHL_CAROLINA_USER_ID ?? "").trim() || DEFAULT_GHL_OWNER_IDS.carolina
+  };
+}
+
+export function ghlKnownOwners(environment = process.env) {
+  const ids = ghlOwnerIds(environment);
+  return GHL_OWNERS.map((owner) => ({ ...owner, id: ids[owner.key] }));
+}
+
 export function ghlConfig(environment = process.env) {
   return {
     token: environment.GHL_API_TOKEN,
-    locationId: environment.GHL_LOCATION_ID ?? "RINM4TCnM4hN06UA1aK0"
+    locationId: environment.GHL_LOCATION_ID ?? DEFAULT_GHL_LOCATION_ID,
+    ownerIds: ghlOwnerIds(environment)
+  };
+}
+
+function normalizeOwnerKey(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function looksLikeGhlUserId(value) {
+  return /^[A-Za-z0-9]{16,40}$/.test(String(value ?? "").trim());
+}
+
+export function isSafeGhlAssignedTo(value, ownerIds = DEFAULT_GHL_OWNER_IDS) {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  if (looksLikeGhlUserId(text)) return true;
+  return Object.values(ownerIds).includes(text);
+}
+
+function ownerDisplayName(user) {
+  const first = String(user?.firstName ?? "").trim();
+  const last = String(user?.lastName ?? "").trim();
+  return String(user?.name ?? "").trim() || `${first} ${last}`.trim() || null;
+}
+
+function userMatchKeys(user) {
+  const first = String(user?.firstName ?? "").trim();
+  const last = String(user?.lastName ?? "").trim();
+  const name = ownerDisplayName(user) ?? "";
+  const email = String(user?.email ?? "").trim().toLowerCase();
+  return new Set([
+    name.toLowerCase(),
+    `${first} ${last}`.trim().toLowerCase(),
+    first.toLowerCase(),
+    email
+  ].filter(Boolean));
+}
+
+export function resolveKnownGhlOwner(value, environment = process.env) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const owners = ghlKnownOwners(environment);
+  const normalized = normalizeOwnerKey(text);
+  return owners.find((owner) => (
+    owner.id === text
+    || owner.id.toLowerCase() === normalized
+    || owner.aliases.includes(normalized)
+  )) ?? null;
+}
+
+export async function ghlListLocationUsers({ token, locationId, fetchImpl = fetch }) {
+  const params = new URLSearchParams({ locationId: String(locationId), limit: "100" });
+  try {
+    const body = await ghlJson(`${GHL_API}/users/?${params}`, { token, fetchImpl, version: GHL_V3 });
+    const users = Array.isArray(body.users) ? body.users : Array.isArray(body) ? body : [];
+    if (users.length) return users;
+  } catch {
+    // Location-token setups often need company-scoped /users/search instead.
+  }
+
+  const locationBody = await ghlJson(`${GHL_API}/locations/${encodeURIComponent(locationId)}`, {
+    token,
+    fetchImpl,
+    version: GHL_V3
+  });
+  const companyId = locationBody.location?.companyId ?? locationBody.companyId;
+  if (!companyId) return [];
+  const search = new URLSearchParams({
+    companyId: String(companyId),
+    locationId: String(locationId),
+    limit: "100",
+    skip: "0"
+  });
+  const body = await ghlJson(`${GHL_API}/users/search?${search}`, { token, fetchImpl, version: GHL_V3 });
+  return body.users ?? [];
+}
+
+function matchLocationUser(users, raw) {
+  const text = String(raw ?? "").trim();
+  if (!text || !Array.isArray(users) || !users.length) return null;
+  const byId = users.find((user) => String(user?.id ?? user?.userId ?? "").trim() === text);
+  if (byId) return byId;
+  const normalized = normalizeOwnerKey(text);
+  const exact = users.filter((user) => {
+    const keys = userMatchKeys(user);
+    return keys.has(normalized) || String(user?.id ?? user?.userId ?? "").trim().toLowerCase() === normalized;
+  });
+  if (exact.length === 1) return exact[0];
+  const firstNameHits = users.filter((user) => String(user?.firstName ?? "").trim().toLowerCase() === normalized);
+  if (firstNameHits.length === 1) return firstNameHits[0];
+  return null;
+}
+
+export async function resolveGhlAssignedTo({
+  assignedTo,
+  owner,
+  token,
+  locationId,
+  ownerIds,
+  environment = process.env,
+  fetchImpl = fetch,
+  defaultOwner = true
+} = {}) {
+  const ids = ownerIds ?? ghlOwnerIds(environment);
+  const envForIds = {
+    GHL_YAHOSKA_USER_ID: ids.yahoska,
+    GHL_KATY_USER_ID: ids.katy,
+    GHL_CAROLINA_USER_ID: ids.carolina
+  };
+  const raw = String(assignedTo ?? owner ?? "").trim();
+  if (!raw) {
+    if (!defaultOwner) return { assignedTo: null, ownerName: null };
+    const yahoska = resolveKnownGhlOwner("yahoska", envForIds);
+    return { assignedTo: ids.yahoska, ownerName: yahoska?.name ?? "Yahoska Perez", defaulted: true };
+  }
+
+  const known = resolveKnownGhlOwner(raw, envForIds);
+  if (known) return { assignedTo: known.id, ownerName: known.name };
+
+  let users = [];
+  let lookupFailed = false;
+  if (token) {
+    try {
+      users = await ghlListLocationUsers({ token, locationId, fetchImpl });
+    } catch {
+      lookupFailed = true;
+    }
+  }
+
+  const matched = matchLocationUser(users, raw);
+  if (matched) {
+    const id = String(matched.id ?? matched.userId).trim();
+    if (isSafeGhlAssignedTo(id, ids)) {
+      return { assignedTo: id, ownerName: ownerDisplayName(matched) };
+    }
+  }
+
+  if (looksLikeGhlUserId(raw)) return { assignedTo: raw, ownerName: null };
+
+  return {
+    assignedTo: null,
+    ownerName: null,
+    warning: lookupFailed
+      ? `Could not look up GHL users to resolve owner "${raw}"; creating without an assigned owner.`
+      : `Could not resolve owner "${raw}" to a GHL user id; creating without an assigned owner.`
   };
 }
 
@@ -269,6 +453,7 @@ function splitContactName({ name, firstName, lastName }) {
 }
 
 export async function ghlPrepareCreateContact({
+  token,
   locationId,
   firstName,
   lastName,
@@ -277,14 +462,25 @@ export async function ghlPrepareCreateContact({
   email,
   tags,
   assignedTo,
-  owner
+  owner,
+  ownerIds,
+  fetchImpl = fetch
 }) {
   const names = splitContactName({ name, firstName, lastName });
   if (!names.firstName) return { error: "A first name is required to create a GHL contact." };
   const cleanEmail = String(email ?? "").trim();
   if (cleanEmail && !cleanEmail.includes("@")) return { error: "That email does not look valid." };
   const cleanPhone = String(phone ?? "").trim();
-  const assignee = String(assignedTo ?? owner ?? "").trim();
+  const ids = ownerIds ?? ghlOwnerIds();
+  const resolved = await resolveGhlAssignedTo({
+    assignedTo,
+    owner,
+    token,
+    locationId,
+    ownerIds: ids,
+    fetchImpl
+  });
+  const assignee = isSafeGhlAssignedTo(resolved.assignedTo, ids) ? resolved.assignedTo : null;
   const normalizedTags = cleanTags(tags);
   const displayName = `${names.firstName} ${names.lastName}`.trim();
   const contact = {
@@ -310,7 +506,10 @@ export async function ghlPrepareCreateContact({
       phoneLast4: last4(cleanPhone),
       emailDomain: emailDomain(cleanEmail),
       tags: normalizedTags,
-      assignedTo: assignee || null
+      assignedTo: assignee,
+      ownerName: resolved.ownerName ?? null,
+      ...(resolved.defaulted ? { ownerDefaulted: true } : {}),
+      ...(resolved.warning ? { warning: resolved.warning } : {})
     }
   };
 }
