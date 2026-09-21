@@ -214,7 +214,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_create_contact", "Create a new GHL contact. First call previews the exact name, optional phone/email, tags, and owner; write only after Yahoska, Katy, or Carolina confirms. Returns the new contact id.", {
+      functionTool("ghl_create_contact", "Create a new GHL contact. First call previews the exact name, optional phone/email, tags, and owner; write only after Yahoska, Katy, or Carolina confirms. Returns the new contact id. Open Leads is the GHL smart list for tag active_prospect (underscore). New AEP/prospect creates default to active_prospect and prospect; never use 'active prospect' (space) or active-prospect.", {
         type: "object",
         properties: {
           firstName: { type: "string", description: "Given name. Required unless name is provided." },
@@ -222,7 +222,7 @@ export function grokTools(environment = process.env) {
           name: { type: "string", description: "Full name when first/last are not split. A first name like Michelle is enough." },
           phone: { type: "string", description: "Optional phone number." },
           email: { type: "string", description: "Optional email address." },
-          tags: { type: "array", items: { type: "string" }, description: "Optional GHL tags to set on create." },
+          tags: { type: "array", items: { type: "string" }, description: "GHL tags. Open Leads uses active_prospect (underscore). Aliases like 'active prospect' or active-prospect normalize to active_prospect. New AEP/prospect creates default to active_prospect and prospect." },
           assignedTo: { type: "string", description: "Optional owner. Accepts a GHL user id, email, or name (Yahoska, Katy, Carolina, YP). Names and emails resolve to user ids. Defaults to Yahoska." },
           owner: { type: "string", description: "Alias for assignedTo. Display names are resolved to GHL user ids; never sent raw." },
           confirmed: { type: "boolean" }
@@ -259,7 +259,7 @@ export function grokTools(environment = process.env) {
         properties: { name: { type: "string", description: "Optional template-name filter." } },
         additionalProperties: false
       }),
-      functionTool("ghl_manage_contact_tags", "Add or remove GHL contact tags. First call previews the exact contact and tags; write only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_manage_contact_tags", "Add or remove GHL contact tags. First call previews the exact contact and tags; write only after Yahoska, Katy, or Carolina confirms. Open Leads = tag active_prospect (underscore), never 'active prospect'.", {
         type: "object",
         properties: {
           contactId: { type: "string" },

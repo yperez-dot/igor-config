@@ -431,10 +431,44 @@ export async function ghlSendSoaMessage(options) {
   };
 }
 
-function cleanTags(tags) {
+export const OPEN_LEADS_TAG = "active_prospect";
+export const PROSPECT_TAG = "prospect";
+export const DEFAULT_PROSPECT_CREATE_TAGS = Object.freeze([OPEN_LEADS_TAG, PROSPECT_TAG]);
+
+function canonicalizeTagKey(value) {
+  return String(value ?? "").trim().toLowerCase().replace(/[\s_-]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+export function normalizeGhlTag(tag) {
+  const trimmed = String(tag ?? "").trim();
+  if (!trimmed) return "";
+  if (canonicalizeTagKey(trimmed) === OPEN_LEADS_TAG) return OPEN_LEADS_TAG;
+  return trimmed;
+}
+
+export function cleanTags(tags) {
   return [...new Set((Array.isArray(tags) ? tags : [])
-    .map((tag) => String(tag ?? "").trim())
+    .map((tag) => normalizeGhlTag(tag))
     .filter(Boolean))].slice(0, 25);
+}
+
+function looksLikeProspectTagSet(tags) {
+  return tags.some((tag) => {
+    const key = canonicalizeTagKey(tag);
+    return key === OPEN_LEADS_TAG || key === PROSPECT_TAG || key === "aep";
+  });
+}
+
+export function tagsForCreateContact(tags) {
+  const provided = Array.isArray(tags) ? tags : [];
+  const hasExplicitTags = provided.some((tag) => String(tag ?? "").trim());
+  const cleaned = cleanTags(provided);
+  if (!hasExplicitTags || looksLikeProspectTagSet(cleaned)) {
+    for (const tag of DEFAULT_PROSPECT_CREATE_TAGS) {
+      if (!cleaned.includes(tag)) cleaned.push(tag);
+    }
+  }
+  return cleaned.slice(0, 25);
 }
 
 function splitContactName({ name, firstName, lastName }) {
@@ -481,7 +515,7 @@ export async function ghlPrepareCreateContact({
     fetchImpl
   });
   const assignee = isSafeGhlAssignedTo(resolved.assignedTo, ids) ? resolved.assignedTo : null;
-  const normalizedTags = cleanTags(tags);
+  const normalizedTags = tagsForCreateContact(tags);
   const displayName = `${names.firstName} ${names.lastName}`.trim();
   const contact = {
     firstName: names.firstName.slice(0, 100),
