@@ -14,7 +14,18 @@ function fixture(calls = []) {
     const target = String(url);
     const body = options.body ? JSON.parse(options.body) : undefined;
     calls.push({ target, method: options.method ?? "GET", body });
-    if (target.includes("/contacts/?")) return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", assignedTo: "user-1", tags: ["lead"] }] });
+    if (target.includes("/contacts/?") && (options.method ?? "GET") !== "POST") return json({ contacts: [{ id: "contact-1", firstName: "Jane", lastName: "Doe", assignedTo: "user-1", tags: ["lead"] }] });
+    if (target.endsWith("/contacts/") && options.method === "POST") {
+      return json({
+        contact: {
+          id: "contact-new",
+          firstName: body.firstName,
+          lastName: body.lastName ?? "",
+          assignedTo: body.assignedTo ?? null,
+          tags: body.tags ?? []
+        }
+      }, 201);
+    }
     if (target.includes("/proposals/templates?")) return json({ data: [{ id: "template-1", name: "Agent Contract", type: "proposal" }] });
     if (target.endsWith("/contacts/contact-1/tags")) return json({ tags: ["lead", "contract-sent"] }, 201);
     if (target.endsWith("/contacts/contact-1/notes")) return json({ note: { id: "note-1" } }, 201);
@@ -33,10 +44,82 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_list_contract_templates"), true);
   assert.equal(names.includes("ghl_create_contract"), true);
   assert.equal(names.includes("ghl_add_contact_note"), true);
+  assert.equal(names.includes("ghl_create_contact"), true);
   assert.equal(names.includes("ghl_create_contact_task"), true);
   assert.equal(names.includes("ghl_create_appointment"), true);
   assert.equal(names.includes("ghl_list_soa_snippets"), true);
   assert.equal(names.includes("ghl_send_soa_message"), true);
+});
+
+test("connected systems lists approval-gated GHL contact create", async () => {
+  const result = await executeTool("list_connected_systems", {}, { environment });
+  assert.equal(result.capabilities.ghlCrmWrites.contactCreate, "approval-gated");
+});
+
+test("GHL contact create previews Michelle without writing", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_create_contact", { name: "Michelle" }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.name, "Michelle");
+  assert.equal(result.proposed.firstName, "Michelle");
+  assert.equal(result.proposed.lastName, null);
+  assert.equal(result.proposed.assignedTo, null);
+  assert.deepEqual(result.proposed.tags, []);
+  assert.equal(calls.some((call) => call.method === "POST" && call.target.endsWith("/contacts/")), false);
+});
+
+test("confirmed GHL contact create writes Michelle and returns the new id", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_create_contact", { name: "Michelle", confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  assert.equal(result.contactId, "contact-new");
+  assert.equal(result.contact, "Michelle");
+  const write = calls.find((call) => call.method === "POST" && call.target.endsWith("/contacts/"));
+  assert.deepEqual(write.body, { locationId: "location", firstName: "Michelle", name: "Michelle" });
+});
+
+test("confirmed GHL contact create includes last name, phone, email, tags, and owner", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_create_contact", {
+    firstName: "Michelle",
+    lastName: "Perez",
+    phone: "+13055550123",
+    email: "michelle@example.com",
+    tags: ["lead"],
+    assignedTo: "user-1",
+    confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  assert.equal(result.contactId, "contact-new");
+  assert.equal(result.contact, "Michelle P.");
+  const write = calls.find((call) => call.method === "POST" && call.target.endsWith("/contacts/"));
+  assert.deepEqual(write.body, {
+    locationId: "location",
+    firstName: "Michelle",
+    lastName: "Perez",
+    name: "Michelle Perez",
+    email: "michelle@example.com",
+    phone: "+13055550123",
+    tags: ["lead"],
+    assignedTo: "user-1"
+  });
+});
+
+test("GHL contact create owner alias maps to assignedTo", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_create_contact", { name: "Michelle", owner: "user-9", confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  const write = calls.find((call) => call.method === "POST" && call.target.endsWith("/contacts/"));
+  assert.equal(write.body.assignedTo, "user-9");
+});
+
+test("GHL contact create requires a first name before preview or write", async () => {
+  const result = await executeTool("ghl_create_contact", { email: "nobody@example.com" }, {
+    environment,
+    senderProfile: speaker,
+    fetchImpl: async () => { throw new Error("must not call GHL"); }
+  });
+  assert.match(result.error, /first name/i);
 });
 
 test("SOA text previews the complete personalized message before sending", async () => {

@@ -253,6 +253,88 @@ function cleanTags(tags) {
     .filter(Boolean))].slice(0, 25);
 }
 
+function splitContactName({ name, firstName, lastName }) {
+  const explicitFirst = String(firstName ?? "").trim();
+  const explicitLast = String(lastName ?? "").trim();
+  const full = String(name ?? "").trim().replace(/\s+/g, " ");
+  if (explicitFirst || explicitLast) {
+    return {
+      firstName: explicitFirst || (full ? full.split(" ")[0] : ""),
+      lastName: explicitLast
+    };
+  }
+  if (!full) return { firstName: "", lastName: "" };
+  const parts = full.split(" ");
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+export async function ghlPrepareCreateContact({
+  locationId,
+  firstName,
+  lastName,
+  name,
+  phone,
+  email,
+  tags,
+  assignedTo,
+  owner
+}) {
+  const names = splitContactName({ name, firstName, lastName });
+  if (!names.firstName) return { error: "A first name is required to create a GHL contact." };
+  const cleanEmail = String(email ?? "").trim();
+  if (cleanEmail && !cleanEmail.includes("@")) return { error: "That email does not look valid." };
+  const cleanPhone = String(phone ?? "").trim();
+  const assignee = String(assignedTo ?? owner ?? "").trim();
+  const normalizedTags = cleanTags(tags);
+  const displayName = `${names.firstName} ${names.lastName}`.trim();
+  const contact = {
+    firstName: names.firstName.slice(0, 100),
+    ...(names.lastName ? { lastName: names.lastName.slice(0, 100) } : {}),
+    name: displayName.slice(0, 200)
+  };
+  const payload = {
+    locationId,
+    ...contact,
+    ...(cleanEmail ? { email: cleanEmail } : {}),
+    ...(cleanPhone ? { phone: cleanPhone } : {}),
+    ...(normalizedTags.length ? { tags: normalizedTags } : {}),
+    ...(assignee ? { assignedTo: assignee } : {})
+  };
+  return {
+    contact,
+    payload,
+    preview: {
+      name: maskName(displayName),
+      firstName: contact.firstName,
+      lastName: contact.lastName ?? null,
+      phoneLast4: last4(cleanPhone),
+      emailDomain: emailDomain(cleanEmail),
+      tags: normalizedTags,
+      assignedTo: assignee || null
+    }
+  };
+}
+
+export async function ghlCreateContact(options) {
+  const plan = await ghlPrepareCreateContact(options);
+  if (plan.error) return plan;
+  const result = await ghlJson(`${GHL_API}/contacts/`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: plan.payload
+  });
+  const created = result.contact ?? result;
+  return {
+    created: Boolean(created.id),
+    contactId: created.id ?? null,
+    contact: maskName(contactDisplayName(created) || plan.contact.name),
+    assignedTo: created.assignedTo ?? plan.payload.assignedTo ?? null,
+    tags: created.tags ?? plan.payload.tags ?? []
+  };
+}
+
 export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, tags, action = "add", fetchImpl = fetch }) {
   const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
   if (contact.error) return contact;
