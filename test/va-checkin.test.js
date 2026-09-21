@@ -3,12 +3,13 @@ import test from "node:test";
 import { newDb } from "pg-mem";
 import { processTask } from "../src/worker-core.js";
 import { createStore } from "../src/store.js";
-import { LIVE_SCHEDULE_IDS, legacySchedules } from "../src/legacy-schedules.js";
+import { LIVE_SCHEDULE_IDS, VA_CHECKIN_LIVE_SCHEDULE_IDS, inactiveScheduleIds, liveScheduleIds, legacySchedules } from "../src/legacy-schedules.js";
 import {
   DEFAULT_MONTHLY_TODOS_DS,
   DEFAULT_OPEN_PROJECTS_DS,
   formatNotionWriteConfirmation,
   handleVaCheckinReply,
+  isVaCheckinEnabled,
   kickoffStateId,
   looksLikeVaCheckinPrompt,
   monthlyTodosDataSourceId,
@@ -33,7 +34,8 @@ const ENV = {
   TELEGRAM_YAHOSKA_USER_ID: "111",
   TELEGRAM_KATY_USER_ID: "222",
   TELEGRAM_CAROLINA_USER_ID: "333",
-  NOTION_TOKEN: "notion-token"
+  NOTION_TOKEN: "notion-token",
+  VA_CHECKIN_ENABLED: "true"
 };
 
 const KATY = {
@@ -114,8 +116,25 @@ test("registers Monday 9am ET weekly and Tuesday 3pm ET nudge as live jobs", () 
   assert.equal(weekly.payload.phase, "weekly");
   assert.equal(nudge.cron, "0 15 * * 2");
   assert.equal(nudge.timezone, "America/New_York");
-  assert.ok(LIVE_SCHEDULE_IDS.includes("v2-va-checkin-weekly"));
-  assert.ok(LIVE_SCHEDULE_IDS.includes("v2-va-checkin-nudge"));
+  assert.deepEqual(VA_CHECKIN_LIVE_SCHEDULE_IDS, ["v2-va-checkin-weekly", "v2-va-checkin-nudge"]);
+  assert.ok(!LIVE_SCHEDULE_IDS.includes("v2-va-checkin-weekly"));
+  assert.ok(!LIVE_SCHEDULE_IDS.includes("v2-va-checkin-nudge"));
+  assert.ok(liveScheduleIds({ VA_CHECKIN_ENABLED: "true" }).includes("v2-va-checkin-weekly"));
+  assert.ok(liveScheduleIds({ VA_CHECKIN_ENABLED: "true" }).includes("v2-va-checkin-nudge"));
+});
+
+test("VA schedules stay inactive when VA_CHECKIN_ENABLED is unset or false", () => {
+  assert.equal(isVaCheckinEnabled({}), false);
+  assert.equal(isVaCheckinEnabled({ VA_CHECKIN_ENABLED: "false" }), false);
+  assert.equal(isVaCheckinEnabled({ VA_CHECKIN_ENABLED: "true" }), true);
+  for (const environment of [{}, { VA_CHECKIN_ENABLED: "false" }, { VA_CHECKIN_ENABLED: "0" }]) {
+    const active = liveScheduleIds(environment);
+    const inactive = inactiveScheduleIds(environment);
+    assert.ok(!active.includes("v2-va-checkin-weekly"));
+    assert.ok(!active.includes("v2-va-checkin-nudge"));
+    assert.ok(inactive.includes("v2-va-checkin-weekly"));
+    assert.ok(inactive.includes("v2-va-checkin-nudge"));
+  }
 });
 
 test("uses THEI Open Projects and Open monthly todos collection ids by default", () => {
@@ -297,6 +316,61 @@ test("boot kickoff queues once while any recipient is pending", async () => {
   const again = await queueVaCheckinKickoff({ store, environment: ENV, now: MONDAY, createId: () => "kick-2" });
   assert.equal(again.queued, false);
   assert.equal(again.reason, "already_queued");
+});
+
+test("boot kickoff is not queued when VA_CHECKIN_ENABLED is unset or false", async () => {
+  const store = memoryVaStore();
+  const { VA_CHECKIN_ENABLED: _enabled, ...unsetEnv } = ENV;
+  const unset = await queueVaCheckinKickoff({ store, environment: unsetEnv, now: MONDAY, createId: () => "kick-off" });
+  const disabled = await queueVaCheckinKickoff({
+    store,
+    environment: { ...ENV, VA_CHECKIN_ENABLED: "false" },
+    now: MONDAY,
+    createId: () => "kick-off-2"
+  });
+  assert.equal(unset.queued, false);
+  assert.equal(unset.reason, "disabled");
+  assert.equal(disabled.queued, false);
+  assert.equal(disabled.reason, "disabled");
+  assert.equal(store.tasks.length, 0);
+});
+
+test("disabled va_checkin tasks skip cleanly without a missing-handler alert", async () => {
+  const sent = [];
+  const result = await processTask(
+    { payload: { workflow: "va_checkin", phase: "kickoff", weekKey: WEEK } },
+    {
+      environment: { ...ENV, VA_CHECKIN_ENABLED: "false" },
+      store: memoryVaStore(),
+      now: MONDAY,
+      sendTelegram: async ({ chatId, text }) => sent.push({ chatId, text }),
+      sleep: async () => {}
+    }
+  );
+  assert.equal(result.status, "skipped");
+  assert.equal(result.reason, "disabled");
+  assert.equal(sent.length, 0);
+});
+
+test("Notion unavailable copy distinguishes a missing token from an API error", () => {
+  const missing = vaCheckinMessages({
+    phase: "weekly",
+    recipient: KATY,
+    snapshot: { ok: false, reason: "missing_token", projects: [], todos: [] },
+    now: MONDAY
+  });
+  const failed = vaCheckinMessages({
+    phase: "weekly",
+    recipient: KATY,
+    snapshot: { ok: false, reason: "Notion request failed HTTP 503", projects: [], todos: [] },
+    now: MONDAY
+  });
+  assert.equal(missing.length, 4);
+  assert.match(missing[0], /^📋 YOUR WEEKLY CHECK-IN\n\n📁 Open Projects: Notion token is missing$/);
+  assert.equal(missing[1], "✅ Monthly Todos: Notion token is missing");
+  assert.match(missing[2], /How are you doing on these/);
+  assert.match(failed[0], /^📋 YOUR WEEKLY CHECK-IN\n\n📁 Open Projects: unavailable from Notion$/);
+  assert.equal(failed[1], "✅ Monthly Todos: unavailable from Notion");
 });
 
 test("reply writes a monthly todo owned by the person who answered", async () => {

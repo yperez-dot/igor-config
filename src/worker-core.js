@@ -19,6 +19,7 @@ import {
   stillQuietBriefSection
 } from "./lead-silence.js";
 import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
+import { isVaCheckinEnabled } from "./va-checkin-flag.js";
 import { runVaCheckin } from "./va-checkin.js";
 
 const LEAD_TZ = "America/New_York";
@@ -223,6 +224,7 @@ export function runtimeIdentity(environment = process.env) {
     commit: environment.RAILWAY_GIT_COMMIT_SHA ?? null,
     branch: environment.RAILWAY_GIT_BRANCH ?? null,
     workflows: [...WORKER_WORKFLOWS].sort(),
+    vaCheckinEnabled: isVaCheckinEnabled(environment),
     ...pulseHealthFields(environment)
   };
 }
@@ -426,6 +428,9 @@ export async function processTask(task, {
   }
 
   if (workflow === "va_checkin") {
+    if (!isVaCheckinEnabled(environment)) {
+      return { status: "skipped", reason: "disabled" };
+    }
     return runVaCheckin(task, { environment, sendTelegram, store, now, fetchImpl, readNotion, sleep });
   }
 

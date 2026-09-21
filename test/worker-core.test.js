@@ -260,10 +260,12 @@ test("emails Yahoska when a site-uptime alert fires", async () => {
 });
 
 test("runtime identity lists Pulse on the worker", () => {
-  const identity = runtimeIdentity();
+  const identity = runtimeIdentity({});
   assert.ok(identity.workflows.includes("agent_pulse_weekly"));
   assert.ok(identity.workflows.includes("telegram_reminder"));
   assert.ok(identity.workflows.includes("va_checkin"));
+  assert.equal(identity.vaCheckinEnabled, false);
+  assert.equal(runtimeIdentity({ VA_CHECKIN_ENABLED: "true" }).vaCheckinEnabled, true);
 });
 
 test("runtime identity reports pulse send-path readiness without leaking secrets", () => {

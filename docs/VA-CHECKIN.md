@@ -2,6 +2,21 @@
 
 Yahoska approved a Monday VA cadence for **Yahoska, Katy, and Carolina**. They talk to Igor on Telegram only — Katy and Carolina do not have Charlie. Igor reads and writes Notion himself with `NOTION_TOKEN`. There is no Motion integration.
 
+## Live Telegram only
+
+This workflow must run on the **live** Telegram bot (`Igor_theibot` / Igor.the.great on the **Igor V2** Railway service). The **igor-config** service is the test bot (`igorthegreatv2bot` / Igor V2 Test) and must not DM the team.
+
+Gate: `VA_CHECKIN_ENABLED` (default **false**). Only set `VA_CHECKIN_ENABLED=true` on **Igor V2**. Leave it unset on igor-config.
+
+When disabled (unset / false):
+
+- Boot does **not** queue the kickoff task
+- `v2-va-checkin-weekly` and `v2-va-checkin-nudge` stay inactive
+- A leftover `va_checkin` task is skipped cleanly (`reason: disabled`) — no “no handler” alert
+- Telegram replies do not write Notion
+
+When enabled: current kickoff + Monday brief + Tuesday nudge behavior.
+
 ## Cadence
 
 | Job | Florida time | Schedule id | What it does |
