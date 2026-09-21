@@ -108,7 +108,9 @@ test("next-morning still-quiet section only names leads that stayed untouched", 
   assert.match(text, /any update on/);
   assert.match(text, /Ayda — follow up/);
   assert.match(text, /I still don’t see notes or an Igor update for Ayda/);
-  assert.doesNotMatch(text, /Tomás — follow up[\s\S]*Has anything happened/);
+  const chase = text.slice(text.indexOf("Still quiet since yesterday"));
+  assert.match(chase, /Ayda/);
+  assert.doesNotMatch(chase, /Tomás/);
   assert.match(stillQuietBriefSection({ leads: [], total: 0 }), /^$/);
 });
 

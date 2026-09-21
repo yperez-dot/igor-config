@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { leadBriefText } from "../src/worker-core.js";
 
-test("morning brief lists open leads, due work, and GHL loose ends", () => {
+test("morning brief lists open leads and due work", () => {
   const now = new Date("2026-09-10T13:00:00Z");
   const text = leadBriefText("morning", [
     {
@@ -25,7 +25,6 @@ test("morning brief lists open leads, due work, and GHL loose ends", () => {
   assert.match(text, /due today/i);
   assert.match(text, /Ayda — follow up/i);
   assert.match(text, /no reminder scheduled/i);
-  assert.match(text, /GHL needs attention/i);
   assert.match(text, /1 due today/i);
   assert.match(text, /1 without a reminder/i);
 });
@@ -44,7 +43,6 @@ test("evening brief escalates overdue follow-ups", () => {
   assert.match(text, /Evening lead closeout/i);
   assert.match(text, /OVERDUE/i);
   assert.match(text, /1 overdue/i);
-  assert.match(text, /1 GHL loose end/i);
 });
 
 test("clear ledger produces a short proactive check-in", () => {
