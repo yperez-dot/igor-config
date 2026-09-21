@@ -248,7 +248,12 @@ test("contact notes preview the complete note before writing", async () => {
   }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
   assert.equal(result.needsConfirmation, true);
   assert.deepEqual(result.proposed, {
-    contact: "Jane D.", body: "Client requested a call Friday.", title: "Follow-up", pinned: true
+    contact: "Jane D.",
+    contactId: "contact-1",
+    phoneLast4: "0123",
+    body: "Client requested a call Friday.",
+    title: "Follow-up",
+    pinned: true
   });
   assert.equal(calls.some((call) => call.target.endsWith("/notes")), false);
 });

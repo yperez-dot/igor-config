@@ -68,6 +68,13 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /healthexps.com/);
   assert.match(SYSTEM_PROMPT, /5-minute/);
   assert.match(SYSTEM_PROMPT, /Reply target wins/);
+  assert.match(SYSTEM_PROMPT, /Follow the thread/);
+  assert.match(SYSTEM_PROMPT, /Yes means execute/);
+  assert.match(SYSTEM_PROMPT, /confirmed=true/);
+  assert.match(SYSTEM_PROMPT, /Corrections continue the job/);
+  assert.match(SYSTEM_PROMPT, /Look it up/);
+  assert.match(SYSTEM_PROMPT, /do not ask them to paste a GHL contact id/i);
+  assert.match(SYSTEM_PROMPT, /nameMismatch/);
   assert.match(SYSTEM_PROMPT, /No phantom pictures/);
   assert.match(SYSTEM_PROMPT, /Standing VA check-in/);
   assert.match(SYSTEM_PROMPT, /Katy and Carolina do not have Charlie/);
@@ -190,4 +197,25 @@ test("system prompt injects standing THEI memory", () => {
   const live = systemPromptFor({}, { now: new Date("2026-08-26T14:30:00.000Z") });
   assert.match(live, /Doral FL 33172/);
   assert.match(live, /BSI split/);
+});
+
+test("system prompt packs the active CRM task scratchpad", () => {
+  const prompt = systemPromptFor({}, {
+    standingMemory: "",
+    activeCrmTask: {
+      contactId: "contact-michelle-1",
+      spokenName: "Michelle",
+      phoneLast4: "2363",
+      pending: {
+        tool: "ghl_add_contact_note",
+        approved: true,
+        args: { body: "Alexa’s grandma referred her." }
+      }
+    }
+  });
+  assert.match(prompt, /Active CRM task/);
+  assert.match(prompt, /contact-michelle-1/);
+  assert.match(prompt, /2363/);
+  assert.match(prompt, /Alexa’s grandma referred her/);
+  assert.match(prompt, /confirmed=true/);
 });

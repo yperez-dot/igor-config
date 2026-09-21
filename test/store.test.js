@@ -144,6 +144,32 @@ test("persists agent memories without writing the note text to audit events", as
   await store.close();
 });
 
+test("persists per-chat CRM scratch without writing it to audit events", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+
+  const payload = {
+    contactId: "contact-1",
+    phoneLast4: "2363",
+    spokenName: "Miriam",
+    pending: { tool: "ghl_add_contact_note", approved: true, args: { body: "Grandma referral" } }
+  };
+  await store.saveChatScratch("99", "crm", payload);
+  assert.deepEqual(await store.getChatScratch("99", "crm"), payload);
+
+  await store.saveChatScratch("99", "crm", { ...payload, spokenName: "Michelle" });
+  assert.equal((await store.getChatScratch("99", "crm")).spokenName, "Michelle");
+  assert.equal(await store.getChatScratch("88", "crm"), null);
+
+  const { rows: audit } = await pool.query("SELECT event_type, detail FROM audit_events");
+  assert.equal(audit.length, 0);
+
+  await store.close();
+});
+
 test("persists mail-alert dismissals for the heartbeat to read", async () => {
   const database = newDb();
   const { Pool } = database.adapters.createPg();
