@@ -57,7 +57,8 @@ export function isStaleScheduledTask(task, now = new Date()) {
     site_uptime: 15 * 60 * 1000,
     carrier_inbox_digest: 12 * 60 * 60 * 1000,
     agent_pulse_weekly: 12 * 60 * 60 * 1000,
-    industry_pulse_weekly: 12 * 60 * 60 * 1000
+    industry_pulse_weekly: 12 * 60 * 60 * 1000,
+    va_checkin: 18 * 60 * 60 * 1000
   }[workflow];
   if (!ttlMs) return false;
   return now.getTime() - created.getTime() > ttlMs;

@@ -19,6 +19,7 @@ import {
   stillQuietBriefSection
 } from "./lead-silence.js";
 import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
+import { runVaCheckin } from "./va-checkin.js";
 
 const LEAD_TZ = "America/New_York";
 
@@ -213,7 +214,8 @@ export const WORKER_WORKFLOWS = new Set([
   "igor_heartbeat",
   "site_uptime",
   "telegram_reminder",
-  "lead_followup_checkin"
+  "lead_followup_checkin",
+  "va_checkin"
 ]);
 
 export function runtimeIdentity(environment = process.env) {
@@ -270,7 +272,10 @@ export async function processTask(task, {
   runGhlOps = ghlOpsSnapshot,
   emailOps = sendOpsAlert,
   now = new Date(),
-  store
+  store,
+  fetchImpl,
+  readNotion,
+  sleep
 } = {}) {
   const workflow = task.payload?.workflow;
 
@@ -418,6 +423,10 @@ export async function processTask(task, {
       };
     }
     return { status: "sent", channel: "telegram", phase, recipientCount: sent, failedRecipientCount: failures.length, skippedRecipientCount: skippedQuiet };
+  }
+
+  if (workflow === "va_checkin") {
+    return runVaCheckin(task, { environment, sendTelegram, store, now, fetchImpl, readNotion, sleep });
   }
 
   if (workflow === "sales_tracker_sync") {

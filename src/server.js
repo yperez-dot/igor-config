@@ -12,6 +12,7 @@ import { INACTIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, legacySchedules } from "./leg
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
+import { queueVaCheckinKickoff } from "./va-checkin.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -100,6 +101,9 @@ const inlineWorker = String(process.env.IGOR_INLINE_WORKER ?? "true").toLowerCas
     notify: createTaskNotifier({ store, environment: process.env })
   })
   : null;
+void queueVaCheckinKickoff({ store, environment: process.env }).catch(() => {
+  // Kickoff is idempotent; listen even if the queue write fails.
+});
 
 app.get("/health", async (_request, response) => {
   let teamCalendars = [];

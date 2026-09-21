@@ -7,6 +7,7 @@ This is a working decision log. No legacy job is disabled, changed, or deleted m
 | Netlify credit check | Keep temporarily | Leave active on OpenClaw until its v2 replacement is active and verified; then retire it. |
 | Sales tracker sync | **Live on Railway v2** (2026-08-31) | Monday 7:00 AM ET on `v2-sales-tracker-sync`, no LLM. Auto-sync up to 20 sales Sheets → Notion + Telegram summary. Above 20: abort, no writes. OpenClaw/Anthropic copy is retired leftover — disable it; do not buy Anthropic credits. Executive Dashboard block refresh is still not in v2. |
 | Agent Pulse weekly email | Live on Igor V2 | Monday 8:00 AM ET Insider from info@. Same newsletter OpenClaw called Industry Pulse. Handler must stay on the Railway v2 worker (`agent_pulse_weekly`). |
+| VA Telegram check-in | **Live on Railway v2** | Monday 9:00 AM ET DM to Yahoska, Katy, and Carolina with their Notion Open projects + monthly todos (`va_checkin`). Igor writes Notion from their Telegram replies. Tuesday 3:00 PM ET one nudge if silent. Katy/Carolina have no Charlie. |
 | Industry Pulse weekly email | Same job as Agent Pulse — keep off | Old OpenClaw name only. Do not send a second Monday email. |
 | SEP tracker health/process jobs | Consolidate and auto-publish | Replace the overlapping 9:00/9:15 legacy jobs with one Monday 9:00 AM pipeline: scan, validate, snapshot, deploy, health check, Telegram result, mark processed. |
 | Weekly SEO report | Keep | Monday 8:15 AM ET in v2; sourced performance report with a reviewable action list and Telegram failure alert. |

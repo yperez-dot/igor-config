@@ -3,6 +3,7 @@ import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { pulseBootCatchupMessage, queueMissedAgentPulse } from "./pulse-catchup.js";
 import { pulseReadiness, pulseReadinessAlert } from "./pulse-readiness.js";
+import { queueVaCheckinKickoff } from "./va-checkin.js";
 import http from "node:http";
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -43,6 +44,11 @@ if (!pulse.ready) {
   } catch {
     // Boot must continue even if the catch-up queue fails.
   }
+}
+try {
+  await queueVaCheckinKickoff({ store, environment: process.env });
+} catch {
+  // Kickoff is idempotent; boot must continue if Telegram/Notion is down.
 }
 let running = true;
 process.once("SIGINT", () => { running = false; });
