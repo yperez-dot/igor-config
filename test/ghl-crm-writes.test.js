@@ -78,7 +78,7 @@ test("GHL contact create previews Michelle without writing", async () => {
   assert.equal(result.proposed.assignedTo, DEFAULT_GHL_OWNER_IDS.yahoska);
   assert.equal(result.proposed.ownerName, "Yahoska Perez");
   assert.equal(result.proposed.ownerDefaulted, true);
-  assert.deepEqual(result.proposed.tags, []);
+  assert.deepEqual(result.proposed.tags, ["active_prospect", "prospect"]);
   assert.equal(calls.some((call) => call.method === "POST" && call.target.endsWith("/contacts/")), false);
 });
 
@@ -93,9 +93,23 @@ test("confirmed GHL contact create writes Michelle and returns the new id", asyn
     locationId: "location",
     firstName: "Michelle",
     name: "Michelle",
+    tags: ["active_prospect", "prospect"],
     assignedTo: DEFAULT_GHL_OWNER_IDS.yahoska
   });
   assert.equal(looksLikeGhlUserId(write.body.assignedTo), true);
+});
+
+test("GHL contact create normalizes active prospect aliases onto Open Leads", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_create_contact", {
+    name: "Michelle W.",
+    tags: ["medicare", "active prospect"],
+    confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  const write = calls.find((call) => call.method === "POST" && call.target.endsWith("/contacts/"));
+  assert.deepEqual(write.body.tags, ["medicare", "active_prospect", "prospect"]);
+  assert.equal(write.body.tags.includes("active prospect"), false);
 });
 
 test("confirmed GHL contact create includes last name, phone, email, tags, and owner", async () => {
@@ -224,6 +238,16 @@ test("confirmed contact note writes through the GHL notes endpoint", async () =>
   const write = calls.find((call) => call.target.endsWith("/contacts/contact-1/notes"));
   assert.equal(write.method, "POST");
   assert.deepEqual(write.body, { body: "Client requested a call Friday.", pinned: false });
+});
+
+test("contact tag add normalizes Open Leads aliases before writing", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_manage_contact_tags", {
+    contactQuery: "Jane Doe", action: "add", tags: ["Active Prospect", "active-prospect"], confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.updated, true);
+  const write = calls.find((call) => call.target.endsWith("/contacts/contact-1/tags"));
+  assert.deepEqual(write.body, { tags: ["active_prospect"] });
 });
 
 test("contact tag changes preview before writing", async () => {
