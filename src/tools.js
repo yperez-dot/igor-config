@@ -210,7 +210,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
+      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. Reuse the Active CRM task / this-chat contact id or last-4 instead of asking the user to paste a GHL id. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
         type: "object",
         properties: {
           query: { type: "string", description: "Name, phone, last-4, email fragment, or GHL contact id from this chat. Phone/last-4 is matched first and does not need the first name to match." },
@@ -229,7 +229,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_update_contact", "Update a known GHL contact's first and/or last name. Use this when the user corrects a name (her name is actually Miriam not Michelle). Reuse the contact id from this chat, a last-4 phone match, or ghl_create_contact — do not only re-search the new name and give up. First call previews the rename; write only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_update_contact", "Update a known GHL contact's first and/or last name. Use this when the user corrects a name (her name is actually Miriam not Michelle). Reuse the Active CRM task contact id, a last-4 phone match, or ghl_create_contact — do not only re-search the new name and give up. After the rename, continue the pending note or Open Leads check. First call previews the rename; write only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string", description: "Exact GHL contact id from this chat when known." },
@@ -299,7 +299,7 @@ export function grokTools(environment = process.env) {
         required: ["action", "tags"],
         additionalProperties: false
       }),
-      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. Reuse the Active CRM task contact id, last-4, and drafted note. After they say yes, call again with confirmed=true on that same draft — do not drop it or re-ask for identifiers. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string" },
@@ -1228,7 +1228,15 @@ export async function executeTool(name, rawArgs, {
       if (blocked) {
         const plan = await ghlPrepareContactNote(request);
         if (plan.error) return plan;
-        return { ...blocked, proposed: { contact: plan.contact.name, ...plan.note } };
+        return {
+          ...blocked,
+          proposed: {
+            contact: plan.contact.name,
+            contactId: plan.contact.id,
+            phoneLast4: plan.contact.phoneLast4,
+            ...plan.note
+          }
+        };
       }
       return ghlCreateContactNote(request);
     }

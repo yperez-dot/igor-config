@@ -953,7 +953,9 @@ export async function ghlCreateContactNote(options) {
   });
   return {
     created: Boolean(result.note?.id),
+    contactId: plan.contact.id,
     contact: plan.contact.name,
+    phoneLast4: plan.contact.phoneLast4,
     noteId: result.note?.id ?? null,
     title: plan.note.title ?? null,
     pinned: plan.note.pinned

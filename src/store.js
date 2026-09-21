@@ -76,6 +76,13 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       source TEXT NOT NULL DEFAULT 'inferred',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS chat_scratch (
+      chat_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (chat_id, kind)
+    );
     CREATE TABLE IF NOT EXISTS va_checkin_state (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -339,6 +346,30 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       );
       await record("alert.suppressed", suppressionId, { pattern: normalized });
       return { saved: true, id: suppressionId, pattern: normalized, reason: reason ?? null };
+    },
+    async saveChatScratch(chatId, kind, payload) {
+      const id = String(chatId ?? "").trim();
+      const key = String(kind ?? "crm").trim() || "crm";
+      if (!id) return null;
+      await pool.query(
+        `INSERT INTO chat_scratch (chat_id, kind, payload, updated_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT (chat_id, kind) DO UPDATE SET
+           payload = EXCLUDED.payload,
+           updated_at = NOW()`,
+        [id, key, payload ?? {}]
+      );
+      return payload ?? {};
+    },
+    async getChatScratch(chatId, kind = "crm") {
+      const id = String(chatId ?? "").trim();
+      const key = String(kind ?? "crm").trim() || "crm";
+      if (!id) return null;
+      const { rows } = await pool.query(
+        "SELECT payload FROM chat_scratch WHERE chat_id = $1 AND kind = $2",
+        [id, key]
+      );
+      return rows[0]?.payload ?? null;
     },
     async rememberTelegramSpeaker(senderId, role, source = "inferred") {
       const id = String(senderId ?? "").trim();

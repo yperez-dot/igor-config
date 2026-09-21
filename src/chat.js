@@ -1,3 +1,4 @@
+import { applyCrmToolResult, formatActiveCrmTask, maybeContinueCrmTask, mergeThreadIdentifiers } from "./crm-continuity.js";
 import { resolveInboundUserText } from "./inbound-file.js";
 import { claimsToBeYahoska, systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "./identity.js";
 import {
@@ -115,7 +116,7 @@ export async function handleTelegramChat({
   environment = process.env,
   downloadFile = downloadTelegramFile
 }) {
-  const history = await store.recentChatTurns(message.chatId);
+  const history = await store.recentChatTurns(message.chatId, { limit: 24 });
   const rememberedRole = typeof store.getTelegramSpeaker === "function"
     ? await store.getTelegramSpeaker(message.senderId)
     : null;
@@ -140,10 +141,6 @@ export async function handleTelegramChat({
       claimsToBeYahoska(message.text) ? "claimed" : (introducedRole ? "introduced" : "inferred")
     );
   }
-  const prompt = systemPrompt ?? systemPromptFor(environment, {
-    senderId: message.senderId,
-    senderProfile
-  });
   const inbound = await resolveInboundUserText({
     message,
     botToken,
@@ -360,7 +357,19 @@ export async function handleTelegramChat({
     return vaUpdate.reply;
   }
 
-  const toolRunner = (name, args) => executeTool(name, args, {
+  let scratch = typeof store.getChatScratch === "function"
+    ? await store.getChatScratch(message.chatId, "crm")
+    : null;
+  scratch = mergeThreadIdentifiers(scratch, history, inbound.text);
+
+  const persistScratch = async (next) => {
+    scratch = next;
+    if (next && typeof store.saveChatScratch === "function") {
+      await store.saveChatScratch(message.chatId, "crm", next);
+    }
+  };
+
+  const toolContext = {
     environment,
     chatId: message.chatId,
     botToken,
@@ -368,7 +377,37 @@ export async function handleTelegramChat({
     senderProfile,
     store,
     pendingAttachment: inbound.attachment
-  });
+  };
+  const toolRunner = async (name, args) => {
+    const result = await executeTool(name, args, toolContext);
+    const next = applyCrmToolResult(scratch, name, args, result);
+    if (next) await persistScratch(next);
+    return result;
+  };
+
+  const continued = typeof executeTool === "function"
+    ? await maybeContinueCrmTask({
+      text: inbound.text,
+      history,
+      scratch,
+      speaker,
+      executeTool: toolRunner
+    })
+    : null;
+  if (continued?.reply) {
+    if (continued.scratch) await persistScratch(continued.scratch);
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: continued.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: continued.reply });
+    return continued.reply;
+  }
+
+  const prompt = systemPrompt
+    ? [systemPrompt, formatActiveCrmTask(scratch)].filter(Boolean).join("\n")
+    : systemPromptFor(environment, {
+      senderId: message.senderId,
+      senderProfile,
+      activeCrmTask: scratch
+    });
   const reply = isPlanRecommendationRequest(message.text)
     ? recommendationRefusal(message.text)
     : apiKey
