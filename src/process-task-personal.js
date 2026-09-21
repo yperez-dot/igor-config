@@ -2,12 +2,13 @@ import { processTask as baseProcessTask } from "./worker-core.js";
 import { personalGhlOpsSnapshotForChat } from "./ghl-personal.js";
 import crypto from "node:crypto";
 import { stripTelegramMarkdown } from "./telegram.js";
+import { leadCheckinPhase } from "./lead-silence.js";
 
 // Check-ins may be claimed by the legacy worker; keep their bot separate from
 // that worker's other notifications and newsletter workflows.
 export async function sendLeadCheckinTelegram({ botToken, chatId, text, fetchImpl = fetch }) {
   const bodyText = stripTelegramMarkdown(text).slice(0, 4096);
-  const entities = [...bodyText.matchAll(/^(?:📋|👥|✅|📅|🔴|🔹)[^\n]+/gm)].map(match => ({ type: "bold", offset: match.index, length: match[0].length }));
+  const entities = [...bodyText.matchAll(/^(?:📋|👥|✅|📅|🔴|🔹|👋|🔁)[^\n]+/gm)].map(match => ({ type: "bold", offset: match.index, length: match[0].length }));
   const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -71,15 +72,18 @@ export async function processTask(task, options = {}) {
   if (!targets.length) throw new Error("No lead check-in recipients configured.");
   const now = options.now ?? new Date();
   const day = easternCheckinDay(new Date(task.created_at ?? task.createdAt ?? now));
-  const morning = task.payload?.phase !== "evening";
-  if (morning && day !== easternCheckinDay(now)) return { status: "skipped", reason: "stale morning check-in" };
+  const phase = leadCheckinPhase(task.payload);
+  if ((phase === "morning" || phase === "afternoon") && day !== easternCheckinDay(now)) {
+    return { status: "skipped", reason: `stale ${phase} check-in` };
+  }
   const deliveryStore = options.store?.claimLeadCheckin ? options.store : null;
   let recipientCount = 0;
   let failedRecipientCount = 0;
+  let skippedRecipientCount = 0;
   let firstError = null;
 
   for (const chatId of targets) {
-    const key = `${day}:${morning ? "morning" : "evening"}:${chatId}`;
+    const key = `${day}:${phase}:${chatId}`;
     const ownerId = crypto.randomUUID();
     let delivered = false;
     let receipt;
@@ -87,24 +91,27 @@ export async function processTask(task, options = {}) {
       if (deliveryStore && !await deliveryStore.claimLeadCheckin(key, ownerId)) continue;
       const result = await baseProcessTask(task, {
         ...options,
+        now,
         environment: scopedCheckinEnvironment(environment, chatId),
         sendTelegram: async (args) => {
           receipt = await (options.sendTelegram ?? sendLeadCheckinTelegram)(args);
           return receipt;
         },
-        runGhlOps: async ({ now = new Date() } = {}) => boundedGhlLookup((signal) => (options.personalGhlLookup ?? personalGhlOpsSnapshotForChat)({
+        runGhlOps: async ({ now: lookupNow = now } = {}) => boundedGhlLookup((signal) => (options.personalGhlLookup ?? personalGhlOpsSnapshotForChat)({
           environment,
           chatId,
-          now,
+          now: lookupNow,
           signal,
           store: options.store
         }), { timeoutMs: options.ghlTimeoutMs ?? 15_000 })
       });
       delivered = Number(result?.recipientCount ?? 0) > 0;
-      if (deliveryStore) await deliveryStore.finishLeadCheckin(key, ownerId, delivered ? "sent" : "failed");
-      if (delivered && options.store?.record) await options.store.record("lead_checkin.delivered", chatId, { day, phase: morning ? "morning" : "evening", taskId: task.id, ...receipt });
+      const completedSkip = result?.reason === "no_untouched_leads";
+      if (deliveryStore) await deliveryStore.finishLeadCheckin(key, ownerId, (delivered || completedSkip) ? "sent" : "failed");
+      if (delivered && options.store?.record) await options.store.record("lead_checkin.delivered", chatId, { day, phase, taskId: task.id, ...receipt });
       recipientCount += Number(result?.recipientCount ?? 0);
       failedRecipientCount += Number(result?.failedRecipientCount ?? 0);
+      skippedRecipientCount += Number(result?.skippedRecipientCount ?? 0);
     } catch (error) {
       if (deliveryStore && !delivered) {
         try { await deliveryStore.finishLeadCheckin(key, ownerId, "failed"); } catch { /* Preserve the original error and continue to other recipients. */ }
@@ -116,10 +123,12 @@ export async function processTask(task, options = {}) {
 
   if (firstError) throw firstError;
   return {
-    status: "sent",
+    status: recipientCount ? "sent" : (skippedRecipientCount ? "skipped" : "sent"),
+    reason: recipientCount ? undefined : (skippedRecipientCount ? "no_untouched_leads" : undefined),
     channel: "telegram",
-    phase: task.payload?.phase === "evening" ? "evening" : "morning",
+    phase,
     recipientCount,
-    failedRecipientCount
+    failedRecipientCount,
+    skippedRecipientCount
   };
 }

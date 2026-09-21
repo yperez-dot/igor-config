@@ -27,6 +27,8 @@ test("legacy schedules are Florida-time shadow definitions", () => {
   assert.deepEqual(LEAD_LIVE_SCHEDULE_IDS, [
     "v2-lead-followup-morning",
     "v2-lead-followup-morning-catchup",
+    "v2-lead-followup-afternoon",
+    "v2-lead-followup-afternoon-catchup",
     "v2-lead-followup-evening"
   ]);
   assert.deepEqual(VA_CHECKIN_LIVE_SCHEDULE_IDS, [

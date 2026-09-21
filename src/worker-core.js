@@ -9,6 +9,15 @@ import { pulseHealthFields } from "./pulse-readiness.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 import { listLeadSnapshots } from "./lead-ledger.js";
 import { removedLeadFor } from "./lead-removal.js";
+import {
+  afternoonSilenceText,
+  easternDayKey as silenceEasternDayKey,
+  easternDayStart,
+  leadCheckinPhase,
+  previousEasternDayKey,
+  selectUntouchedLeads,
+  stillQuietBriefSection
+} from "./lead-silence.js";
 import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
 import { runVaCheckin } from "./va-checkin.js";
 
@@ -100,12 +109,14 @@ function leadTimingLabel(lead, now = new Date()) {
   return `scheduled — ${formatLeadWhen(when)}`;
 }
 
-export function leadBriefText(phase, leads = [], now = new Date()) {
+export function leadBriefText(phase, leads = [], now = new Date(), { stillQuiet } = {}) {
   const open = [...leads].slice(0, 12);
+  const stillQuietSection = stillQuietBriefSection(stillQuiet);
   if (!open.length) {
-    return phase === "evening"
+    const empty = phase === "evening"
       ? "Evening lead closeout: your personal ledger is clear — no open leads to chase tonight. If anything new came in today, send me the name + next step and I’ll track it."
       : "Morning lead brief: your personal ledger is clear — no open leads right now. If anything new comes in today, send me the name + next step and I’ll track it.";
+    return stillQuietSection ? `${empty}\n\n${stillQuietSection}` : empty;
   }
 
   const overdue = open.filter((lead) => lead.followUpAt && new Date(lead.followUpAt).getTime() < now.getTime());
@@ -128,7 +139,8 @@ export function leadBriefText(phase, leads = [], now = new Date()) {
     ? "Reply with what happened — for example: “Ayda no answer, remind me Friday at 10” or “Maria enrolled.”"
     : "Reply with any update or tell me when you want the next follow-up. I’ll keep the ledger current.";
   const more = leads.length > open.length ? `\n• +${leads.length - open.length} more open lead(s)` : "";
-  return `${header}\n${lines.join("\n")}${more}${summary.length ? `\n\nPriority: ${summary.join(" • ")}.` : ""}\n\n${tail}`;
+  const chase = stillQuietSection ? `\n\n${stillQuietSection}` : "";
+  return `${header}\n${lines.join("\n")}${more}${summary.length ? `\n\nPriority: ${summary.join(" • ")}.` : ""}${chase}\n\n${tail}`;
 }
 
 export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {}) {
@@ -259,8 +271,8 @@ export async function processTask(task, {
   runSiteLookoutFn = runSiteLookout,
   runGhlOps = ghlOpsSnapshot,
   emailOps = sendOpsAlert,
+  now = new Date(),
   store,
-  now,
   fetchImpl,
   readNotion,
   sleep
@@ -286,27 +298,99 @@ export async function processTask(task, {
   }
 
   if (workflow === "lead_followup_checkin") {
-    const phase = task.payload?.phase === "evening" ? "evening" : "morning";
+    const phase = leadCheckinPhase(task.payload);
     const targets = leadCheckinTargets(environment);
+    let ghlSnapshot = null;
     let ghlText = "";
     const ghl = ghlConfig(environment);
     if (ghl.token) {
       try {
-        const snapshot = await runGhlOps({ token: ghl.token, locationId: ghl.locationId, now: new Date() });
-        ghlText = ghlOpsBriefText(snapshot);
+        ghlSnapshot = await runGhlOps({ token: ghl.token, locationId: ghl.locationId, now });
+        if (phase !== "afternoon") ghlText = ghlOpsBriefText(ghlSnapshot, now);
       } catch {
-        ghlText = "GHL live check:\n• Open leads: unavailable from GHL\n• Pending tasks: unavailable from GHL\n• Upcoming appointments: unavailable from GHL";
+        if (phase !== "afternoon") {
+          ghlText = "GHL live check:\n• Open leads: unavailable from GHL\n• Pending tasks: unavailable from GHL\n• Upcoming appointments: unavailable from GHL";
+        }
       }
     }
 
     let sent = 0;
     const failures = [];
+    let skippedQuiet = 0;
     for (const chatId of targets) {
-      let text = leadCheckinText(phase);
+      let text = leadCheckinText(phase, now);
+      if (phase === "afternoon") {
+        let leads = [];
+        if (store?.listAgentMemories) {
+          try {
+            leads = await listLeadSnapshots(store, { ownerSenderId: chatId });
+          } catch {
+            leads = [];
+          }
+        }
+        if (!leads.length) {
+          skippedQuiet += 1;
+          continue;
+        }
+        const chatTurns = store?.recentChatTurns
+          ? await Promise.resolve(store.recentChatTurns(chatId, { limit: 40, includeTimestamps: true })).catch(() => [])
+          : [];
+        const selected = selectUntouchedLeads(leads, {
+          since: easternDayStart(now),
+          now,
+          ghlLeads: ghlSnapshot?.openLeads ?? [],
+          chatTurns
+        });
+        if (!selected.total) {
+          skippedQuiet += 1;
+          continue;
+        }
+        text = afternoonSilenceText(selected);
+        try {
+          await sendDirectTelegram({ chatId, text, environment, sendTelegram, store });
+          sent += 1;
+          if (store?.record) {
+            await store.record("lead_silence.afternoon", String(chatId), {
+              day: silenceEasternDayKey(now),
+              subjects: selected.subjects,
+              overflow: selected.overflow,
+              total: selected.total
+            });
+          }
+        } catch (error) {
+          failures.push({ chatId: String(chatId), reason: error.message });
+          if (store?.record) {
+            try {
+              await store.record("lead_checkin.delivery_failed", String(chatId), { phase, reason: error.message });
+            } catch {
+              // Continue delivering to the remaining recipients.
+            }
+          }
+        }
+        continue;
+      }
+
       if (store?.listAgentMemories) {
         try {
           const leads = await listLeadSnapshots(store, { ownerSenderId: chatId });
-          text = leadBriefText(phase, leads);
+          let stillQuiet;
+          if (phase === "morning" && store?.latestEvent) {
+            const silence = await store.latestEvent("lead_silence.afternoon", String(chatId));
+            const yesterday = previousEasternDayKey(now);
+            if (silence?.detail?.day === yesterday && Array.isArray(silence.detail.subjects) && silence.detail.subjects.length) {
+              const chatTurns = store?.recentChatTurns
+                ? await Promise.resolve(store.recentChatTurns(chatId, { limit: 40, includeTimestamps: true })).catch(() => [])
+                : [];
+              stillQuiet = selectUntouchedLeads(leads, {
+                since: easternDayStart(silence.detail.day),
+                now,
+                ghlLeads: ghlSnapshot?.openLeads ?? [],
+                chatTurns,
+                subjects: silence.detail.subjects
+              });
+            }
+          }
+          text = leadBriefText(phase, leads, now, { stillQuiet });
         } catch {
           // Keep the automatic check-in alive even if the ledger read has a transient failure.
         }
@@ -327,7 +411,18 @@ export async function processTask(task, {
       }
     }
     if (!sent && failures.length) throw new Error(`Lead check-in failed for all ${failures.length} recipient(s).`);
-    return { status: "sent", channel: "telegram", phase, recipientCount: sent, failedRecipientCount: failures.length };
+    if (!sent && phase === "afternoon") {
+      return {
+        status: "skipped",
+        reason: "no_untouched_leads",
+        channel: "telegram",
+        phase,
+        recipientCount: 0,
+        failedRecipientCount: failures.length,
+        skippedRecipientCount: skippedQuiet
+      };
+    }
+    return { status: "sent", channel: "telegram", phase, recipientCount: sent, failedRecipientCount: failures.length, skippedRecipientCount: skippedQuiet };
   }
 
   if (workflow === "va_checkin") {
