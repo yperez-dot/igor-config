@@ -25,6 +25,7 @@ import {
   ghlApplyTagChange,
   ghlConfig,
   ghlCreateContract,
+  ghlCreateContact,
   ghlCreateContactNote,
   ghlCreateContactTask,
   ghlCreateAppointment,
@@ -34,6 +35,7 @@ import {
   ghlListPipelines,
   ghlPrepareClinicalUpdate,
   ghlPrepareContract,
+  ghlPrepareCreateContact,
   ghlPrepareContactNote,
   ghlPrepareContactTask,
   ghlPrepareAppointment,
@@ -98,6 +100,7 @@ const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
   "ghl_manage_contact_tags",
   "ghl_add_contact_note",
+  "ghl_create_contact",
   "ghl_create_contact_task",
   "ghl_create_appointment",
   "ghl_create_contract",
@@ -208,6 +211,21 @@ export function grokTools(environment = process.env) {
         properties: {
           query: { type: "string" },
           limit: { type: "integer" }
+        },
+        additionalProperties: false
+      }),
+      functionTool("ghl_create_contact", "Create a new GHL contact. First call previews the exact name, optional phone/email, tags, and owner; write only after Yahoska, Katy, or Carolina confirms. Returns the new contact id.", {
+        type: "object",
+        properties: {
+          firstName: { type: "string", description: "Given name. Required unless name is provided." },
+          lastName: { type: "string", description: "Optional family name." },
+          name: { type: "string", description: "Full name when first/last are not split. A first name like Michelle is enough." },
+          phone: { type: "string", description: "Optional phone number." },
+          email: { type: "string", description: "Optional email address." },
+          tags: { type: "array", items: { type: "string" }, description: "Optional GHL tags to set on create." },
+          assignedTo: { type: "string", description: "Optional GHL user id that should own the contact." },
+          owner: { type: "string", description: "Alias for assignedTo." },
+          confirmed: { type: "boolean" }
         },
         additionalProperties: false
       }),
@@ -793,7 +811,7 @@ export async function executeTool(name, rawArgs, {
 } = {}) {
   const args = parseArgs(rawArgs);
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -828,6 +846,7 @@ export async function executeTool(name, rawArgs, {
                 available: true,
                 contactTags: "approval-gated",
                 contactNotes: "approval-gated",
+                contactCreate: "approval-gated",
                 contactTasks: "approval-gated",
                 appointments: "approval-gated; GHL notifications enabled",
                 contracts: "approval-gated",
@@ -1014,6 +1033,34 @@ export async function executeTool(name, rawArgs, {
           fetchImpl
         })
       };
+    }
+
+    if (name === "ghl_create_contact") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        firstName: args.firstName,
+        lastName: args.lastName,
+        name: args.name,
+        phone: args.phone,
+        email: args.email,
+        tags: args.tags,
+        assignedTo: args.assignedTo,
+        owner: args.owner,
+        fetchImpl
+      };
+      if (blocked) {
+        const plan = await ghlPrepareCreateContact(request);
+        if (plan.error) return plan;
+        return {
+          ...blocked,
+          proposed: plan.preview,
+          hint: "Show this exact new contact in chat. After Yahoska, Katy, or Carolina says yes, call again with confirmed=true."
+        };
+      }
+      return ghlCreateContact(request);
     }
 
     if (name === "ghl_list_pipelines") {

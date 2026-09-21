@@ -11,6 +11,7 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /Full control of Igor/);
   assert.match(SYSTEM_PROMPT, /do not say you can only email Yahoska/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
+  assert.match(SYSTEM_PROMPT, /ghl_create_contact/);
   assert.match(SYSTEM_PROMPT, /CALL THE TOOL/);
   assert.match(SYSTEM_PROMPT, /Google Calendar/);
   assert.match(SYSTEM_PROMPT, /AEP grid/);
