@@ -23,6 +23,9 @@ function ghlFixtureFetch(calls = []) {
     if (target.includes("/contacts/?")) {
       return json({ contacts: [{ id: "contact-1", firstName: "Maria", lastName: "Lopez" }] });
     }
+    if (/\/contacts\/contact-1$/.test(target) && (options.method ?? "GET") === "GET") {
+      return json({ contact: { id: "contact-1", firstName: "Maria", lastName: "Lopez" } });
+    }
     if (target.includes("/objects/?")) {
       return json({ objects: [
         { key: "custom_objects.providers", labels: { singular: "Provider", plural: "Providers" }, primaryDisplayProperty: "custom_objects.providers.name" },
@@ -102,6 +105,7 @@ test("Igor can read inbound GHL SMS and email before proposing an update", async
   const fetchImpl = async (url) => {
     const target = String(url);
     if (target.includes("/contacts/?")) return json({ contacts: [{ id: "contact-1", firstName: "Maria", lastName: "Lopez" }] });
+    if (/\/contacts\/contact-1$/.test(target)) return json({ contact: { id: "contact-1", firstName: "Maria", lastName: "Lopez" } });
     if (target.includes("/conversations/search?")) return json({ conversations: [{ id: "conversation-1" }] });
     if (target.includes("/conversations/conversation-1/messages?")) {
       return json({ messages: { messages: [
