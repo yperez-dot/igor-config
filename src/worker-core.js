@@ -10,6 +10,7 @@ import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 import { listLeadSnapshots } from "./lead-ledger.js";
 import { removedLeadFor } from "./lead-removal.js";
 import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
+import { runVaCheckin } from "./va-checkin.js";
 
 const LEAD_TZ = "America/New_York";
 
@@ -201,7 +202,8 @@ export const WORKER_WORKFLOWS = new Set([
   "igor_heartbeat",
   "site_uptime",
   "telegram_reminder",
-  "lead_followup_checkin"
+  "lead_followup_checkin",
+  "va_checkin"
 ]);
 
 export function runtimeIdentity(environment = process.env) {
@@ -257,7 +259,11 @@ export async function processTask(task, {
   runSiteLookoutFn = runSiteLookout,
   runGhlOps = ghlOpsSnapshot,
   emailOps = sendOpsAlert,
-  store
+  store,
+  now,
+  fetchImpl,
+  readNotion,
+  sleep
 } = {}) {
   const workflow = task.payload?.workflow;
 
@@ -322,6 +328,10 @@ export async function processTask(task, {
     }
     if (!sent && failures.length) throw new Error(`Lead check-in failed for all ${failures.length} recipient(s).`);
     return { status: "sent", channel: "telegram", phase, recipientCount: sent, failedRecipientCount: failures.length };
+  }
+
+  if (workflow === "va_checkin") {
+    return runVaCheckin(task, { environment, sendTelegram, store, now, fetchImpl, readNotion, sleep });
   }
 
   if (workflow === "sales_tracker_sync") {

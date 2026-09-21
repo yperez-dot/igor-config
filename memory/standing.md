@@ -30,6 +30,7 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 - **Gina Berenguer** — ~100 clients 2023–2025, **renewals only**; not an active producer.
 - Upline: **Hector Marmol** (Brokers Society / NHP). Override agencies: **BSI**, **NHP**. Anything from Hector / AgentConnection.Net / BSI upline is **private** — notify leadership (Yahoska and Katy); never post to the Agent Hub.
 - Message Katy and Carolina on **Telegram**, not the old shared WhatsApp number.
+- **Weekly VA check-in (Yahoska 2026-09-21):** Monday 9:00 AM ET Igor DMs Yahoska, Katy, and Carolina with their Notion Open projects + monthly todos (ops-brief layout). They reply in Telegram; Igor writes Notion. One Tuesday 3:00 PM ET nudge if silent. Katy and Carolina do not have Charlie.
 - Yahoska’s husband is allowlisted for **her** Google Calendar only (view/book for her). He is not a substitute on compliance, deploys, or new systems.
 - Telegram reply/quote to a site-health, uptime, 404, or “Heads up” alert is about **that alert** — say what broke and the next move. Never invent a flyer/screenshot or ask her to resend a picture unless this turn actually has an image.
 

@@ -76,6 +76,15 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       source TEXT NOT NULL DEFAULT 'inferred',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS va_checkin_state (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      week_key TEXT,
+      status TEXT NOT NULL,
+      detail JSONB NOT NULL DEFAULT '{}',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
     ALTER TABLE schedules ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York';
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
@@ -349,6 +358,50 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       if (!id) return null;
       const { rows } = await pool.query("SELECT role FROM telegram_speakers WHERE sender_id = $1", [id]);
       return rows[0]?.role ?? null;
+    },
+    async claimVaCheckin({ id, userId, kind, weekKey = null, status = "sent", detail = {} }) {
+      const existing = await this.getVaCheckin(id);
+      if (existing) return false;
+      try {
+        await pool.query(
+          `INSERT INTO va_checkin_state (id, user_id, kind, week_key, status, detail)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [String(id), String(userId), String(kind), weekKey, String(status), detail]
+        );
+        return true;
+      } catch (error) {
+        if (String(error.code) === "23505" || /duplicate|unique/i.test(String(error.message))) return false;
+        throw error;
+      }
+    },
+    async getVaCheckin(id) {
+      const { rows } = await pool.query(
+        "SELECT id, user_id, kind, week_key, status, detail, updated_at FROM va_checkin_state WHERE id = $1",
+        [String(id)]
+      );
+      if (!rows[0]) return null;
+      return {
+        id: rows[0].id,
+        userId: rows[0].user_id,
+        kind: rows[0].kind,
+        weekKey: rows[0].week_key,
+        status: rows[0].status,
+        detail: rows[0].detail,
+        updatedAt: rows[0].updated_at
+      };
+    },
+    async upsertVaCheckin({ id, userId, kind, weekKey = null, status, detail = {} }) {
+      await pool.query(
+        `INSERT INTO va_checkin_state (id, user_id, kind, week_key, status, detail, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           detail = EXCLUDED.detail,
+           week_key = EXCLUDED.week_key,
+           updated_at = NOW()`,
+        [String(id), String(userId), String(kind), weekKey, String(status), detail]
+      );
+      return this.getVaCheckin(id);
     },
     async listAlertSuppressions() {
       const { rows } = await pool.query(

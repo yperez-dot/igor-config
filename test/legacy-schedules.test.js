@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { EMAIL_LIVE_SCHEDULE_IDS, INACTIVE_SCHEDULE_IDS, LEAD_LIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, LOOKOUT_LIVE_SCHEDULE_IDS, legacySchedules } from "../src/legacy-schedules.js";
+import { EMAIL_LIVE_SCHEDULE_IDS, INACTIVE_SCHEDULE_IDS, LEAD_LIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, LOOKOUT_LIVE_SCHEDULE_IDS, VA_CHECKIN_LIVE_SCHEDULE_IDS, legacySchedules } from "../src/legacy-schedules.js";
 
 test("legacy schedules are Florida-time shadow definitions", () => {
   assert.ok(legacySchedules.length >= 6);
@@ -29,11 +29,19 @@ test("legacy schedules are Florida-time shadow definitions", () => {
     "v2-lead-followup-morning-catchup",
     "v2-lead-followup-evening"
   ]);
+  assert.deepEqual(VA_CHECKIN_LIVE_SCHEDULE_IDS, [
+    "v2-va-checkin-weekly",
+    "v2-va-checkin-nudge"
+  ]);
+  assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-va-checkin-weekly").cron, "0 9 * * 1");
+  assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-va-checkin-nudge").cron, "0 15 * * 2");
+  assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-va-checkin-weekly").payload.workflow, "va_checkin");
   assert.deepEqual(INACTIVE_SCHEDULE_IDS, ["v2-industry-pulse"]);
   assert.deepEqual(LIVE_SCHEDULE_IDS, [
     ...LOOKOUT_LIVE_SCHEDULE_IDS,
     ...EMAIL_LIVE_SCHEDULE_IDS,
     ...LEAD_LIVE_SCHEDULE_IDS,
+    ...VA_CHECKIN_LIVE_SCHEDULE_IDS,
     "v2-sales-tracker-sync"
   ]);
   assert.equal(legacySchedules.find((schedule) => schedule.id === "v2-industry-pulse").payload.mode, "shadow");
