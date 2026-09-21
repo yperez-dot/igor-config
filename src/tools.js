@@ -43,6 +43,7 @@ import {
   ghlPrepareTagChange,
   ghlRecentClientMessages,
   ghlSearchContacts,
+  ghlCheckOpenLeads,
   ghlStaleLeads
   ,ghlSendSoaMessage
 } from "./ghl.js";
@@ -206,11 +207,21 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_search_contacts", "Search GHL contacts. Returns masked names and last-4 phone only.", {
+      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, email, or a known contact id. If query looks like a GHL contact id, lookup by id first, then fall back to name/phone search. Returns masked names and last-4 phone only.", {
         type: "object",
         properties: {
-          query: { type: "string" },
+          query: { type: "string", description: "Name, phone, email fragment, or GHL contact id from this chat." },
+          contactId: { type: "string", description: "Exact GHL contact id when already known from create-contact or a prior turn." },
           limit: { type: "integer" }
+        },
+        additionalProperties: false
+      }),
+      functionTool("ghl_check_open_leads", "Confirm whether one GHL contact is on the Open Leads smart list. Open Leads = tag active_prospect (underscore). Reuse a contact id from this chat or the latest ghl_create_contact result; if that id lookup is empty, fall back to name and/or phone. Returns status on_list, not_on_list, or not_found. Never treat an id-only miss as proof the contact does not exist.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string", description: "Exact GHL contact id from this chat when known." },
+          contactQuery: { type: "string", description: "Name, phone, or email if the id is missing or the id lookup is empty." },
+          phone: { type: "string", description: "Optional phone to disambiguate when name search is empty or has multiple matches." }
         },
         additionalProperties: false
       }),
@@ -271,7 +282,7 @@ export function grokTools(environment = process.env) {
         required: ["action", "tags"],
         additionalProperties: false
       }),
-      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes — never Notion. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string" },
@@ -846,6 +857,7 @@ export async function executeTool(name, rawArgs, {
                 available: true,
                 contactTags: "approval-gated",
                 contactNotes: "approval-gated",
+                openLeadsCheck: "active_prospect tag; id then name/phone fallback",
                 contactCreate: "approval-gated",
                 contactTasks: "approval-gated",
                 appointments: "approval-gated; GHL notifications enabled",
@@ -1029,10 +1041,23 @@ export async function executeTool(name, rawArgs, {
           token: config.token,
           locationId: config.locationId,
           query: args.query,
+          contactId: args.contactId,
           limit: Number(args.limit ?? 20),
           fetchImpl
         })
       };
+    }
+
+    if (name === "ghl_check_open_leads") {
+      const config = ghlConfig(environment);
+      return ghlCheckOpenLeads({
+        token: config.token,
+        locationId: config.locationId,
+        contactId: args.contactId,
+        query: args.contactQuery ?? args.query,
+        phone: args.phone,
+        fetchImpl
+      });
     }
 
     if (name === "ghl_create_contact") {

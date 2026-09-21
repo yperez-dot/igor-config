@@ -351,6 +351,7 @@ export async function handleTelegramChat({
     chatId: message.chatId,
     text: inbound.text,
     replyTo: message.replyTo,
+    history,
     speaker
   });
   if (vaUpdate?.handled && vaUpdate.reply) {

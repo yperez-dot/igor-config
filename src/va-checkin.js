@@ -115,6 +115,51 @@ export function isSubstantialVaUpdate(text) {
   return raw.length >= 12 || STATUS_RE.test(raw) || CREATE_TODO_RE.test(raw);
 }
 
+export function looksLikeGhlContactNoteIntent(text) {
+  const raw = String(text ?? "");
+  if (!raw.trim()) return false;
+  if (/\b(?:ghl|crm|go\s*high\s*level|highlevel)\b.{0,40}\bnotes?\b/i.test(raw)) return true;
+  if (/\bnotes?\b.{0,40}\b(?:ghl|crm|go\s*high\s*level|highlevel|contact)\b/i.test(raw)) return true;
+  if (/\b(?:contact|client|lead|prospect)\b.{0,40}\bnotes?\b/i.test(raw)) return true;
+  if (/\b(?:add|save|put|write|append|update)\b.{0,50}\b(?:to\s+)?(?:her|his|their)\s+notes?\b/i.test(raw)) return true;
+  if (/\b(?:in|to|on)\s+(?:the\s+)?notes?\b/i.test(raw) && /\b(?:for|add|that)\b/i.test(raw)) return true;
+  if (/\b\w+(?:'s|’s)\s+notes?\b/i.test(raw)) return true;
+  if (/\bfor\s+[A-Z][\w'.-]+.{0,60}\bnotes?\b/i.test(raw)) return true;
+  return false;
+}
+
+export function looksLikeGhlCrmIntent(text) {
+  const raw = String(text ?? "");
+  if (looksLikeGhlContactNoteIntent(raw)) return true;
+  if (/\b(?:smart\s*list|open\s*leads|active[_\s-]?prospect)\b/i.test(raw)) return true;
+  if (/\b(?:ghl|crm|go\s*high\s*level)\b/i.test(raw) && /\b(?:contact|lead|tag|note|list|search|check|confirm)\b/i.test(raw)) return true;
+  if (/\b(?:create|add|update|search|find)\b.{0,30}\b(?:ghl\s+)?contact\b/i.test(raw)) return true;
+  return false;
+}
+
+export function looksLikeVaProjectUpdate(text) {
+  const raw = String(text ?? "");
+  if (/\bnotion\b/i.test(raw)) return true;
+  if (CREATE_TODO_RE.test(raw)) return true;
+  if (/\b(?:open\s+projects?|monthly\s+todos?|weekly\s+check-?in)\b/i.test(raw)) return true;
+  if (STATUS_RE.test(raw) && /\b(?:project|todo|task)\b/i.test(raw)) return true;
+  return false;
+}
+
+export function looksLikeRecentGhlContactContext(history = []) {
+  return (Array.isArray(history) ? history : []).slice(-8).some((turn) => {
+    const content = String(turn?.content ?? turn?.text ?? "");
+    return /GHL|ghl_|contact id|saved the note|Open Leads|active_prospect|ghl_add_contact_note|ghl_create_contact|GHL record/i.test(content);
+  });
+}
+
+export function shouldRouteVaReplyToNotion(text, { history, replyTo } = {}) {
+  if (looksLikeGhlCrmIntent(text) || looksLikeGhlContactNoteIntent(text)) return false;
+  if (looksLikeRecentGhlContactContext(history) && !looksLikeVaProjectUpdate(text)) return false;
+  if (looksLikeVaCheckinPrompt(replyTo?.text) && looksLikeVaProjectUpdate(text)) return true;
+  return true;
+}
+
 function notionHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
@@ -784,14 +829,23 @@ export async function writeVaCheckinNotion({
 export function formatNotionWriteConfirmation(result) {
   if (!result?.ok && !result?.changes?.length) {
     return [
-      "📋 NOTION UPDATED",
+      "📋 NOTION UPDATE FAILED",
       "",
       "• Couldn't write to Notion from here — I'll keep it in this chat"
     ].join("\n");
   }
+  if (!result.ok) {
+    const lines = ["📋 NOTION UPDATE FAILED", ""];
+    for (const change of result.changes ?? []) {
+      const kind = change.kind === "project" ? "Open Project" : "Monthly Todo";
+      lines.push(`• ${compactField(change.title, 70)} [${kind}] — ${change.changed.join("; ")}`);
+    }
+    if (result.reason) lines.push(`• ${compactField(result.reason, 160)}`);
+    return lines.join("\n");
+  }
   if (!result.changes.length) {
     return [
-      "📋 NOTION UPDATED",
+      "📋 NOTION NOT UPDATED",
       "",
       "• No matching project/todo found — send the task name and the new status"
     ].join("\n");
@@ -1006,12 +1060,16 @@ export async function noteVaCheckinReply({
   text,
   replyTo,
   speaker,
+  history = [],
   now = new Date()
 } = {}) {
   if (!isVaCheckinEnabled(environment)) return { recorded: false, reason: "disabled" };
   const recipient = recipientForSender(environment, senderId, speaker ?? telegramSpeaker(environment, senderId));
   if (!recipient || !store?.upsertVaCheckin) return { recorded: false };
   const weekKey = vaWeekKey(now);
+  if (!shouldRouteVaReplyToNotion(text, { history, replyTo })) {
+    return { recorded: false, recipient, weekKey, reason: "ghl_contact_work" };
+  }
   const weeklyOpen = await hasState(store, weeklyStateId(weekKey, recipient.chatId))
     || await hasState(store, kickoffStateId(recipient.chatId));
   const quoted = looksLikeVaCheckinPrompt(replyTo?.text);
@@ -1037,6 +1095,7 @@ export async function handleVaCheckinReply({
   text,
   replyTo,
   speaker,
+  history = [],
   now = new Date(),
   fetchImpl = fetch,
   readNotion = readVaCheckinNotion,
@@ -1045,6 +1104,9 @@ export async function handleVaCheckinReply({
   if (!isVaCheckinEnabled(environment)) {
     return { handled: false, recorded: false, reason: "disabled" };
   }
+  if (!shouldRouteVaReplyToNotion(text, { history, replyTo })) {
+    return { handled: false, recorded: false, reason: "ghl_contact_work" };
+  }
   const noted = await noteVaCheckinReply({
     store,
     environment,
@@ -1052,6 +1114,7 @@ export async function handleVaCheckinReply({
     text,
     replyTo,
     speaker,
+    history,
     now
   });
   if (!noted.recorded || !noted.substantial) {
