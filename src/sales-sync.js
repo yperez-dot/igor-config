@@ -65,7 +65,20 @@ export function normalizeAgentName(name) {
   if (lower.includes("christian munoz") || lower === "chris") return "Christian Munoz";
   if (lower.includes("yahoska")) return "Yahoska Perez";
   if (lower.includes("katy") || lower.includes("katherine")) return "Katy Robles";
-  return value.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  // Sheet typos / ALL CAPS must collapse to the canonical select option.
+  if (lower.includes("paullete") || lower.includes("paulette")) return "Paulette Rostran";
+  // Title-case from lowercase so ALL CAPS sheet values do not stay ALL CAPS.
+  return lower.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+/** Case/whitespace-insensitive client name for sales identity keys. */
+export function normalizeClientName(name) {
+  return String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Case/whitespace-insensitive carrier for sales identity keys (CAREPLUS vs CarePlus). */
+export function normalizeCarrierName(name) {
+  return String(name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 export function toIsoDate(value) {
@@ -77,8 +90,17 @@ export function toIsoDate(value) {
   return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
-export function salesKey({ agent, effectiveDate, client }) {
-  return `${normalizeAgentName(agent)}|${effectiveDate}|${String(client).trim().toLowerCase()}`;
+/**
+ * Stable sales identity — Agent is NOT part of the key.
+ * Same member+carrier+dates with different agent casing/typos must not duplicate.
+ */
+export function salesKey({ client, carrier, enrollmentDate, effectiveDate }) {
+  return [
+    normalizeClientName(client),
+    normalizeCarrierName(carrier),
+    enrollmentDate || "",
+    effectiveDate || ""
+  ].join("|");
 }
 
 export function parseSalesCsv(csv) {
@@ -103,10 +125,13 @@ export function parseSalesCsv(csv) {
 export function notionSalesKeys(pages) {
   return new Set(pages.flatMap((page) => {
     const properties = page.properties ?? {};
-    const agent = properties.Agent?.select?.name;
-    const effectiveDate = properties["Effective Date"]?.date?.start;
     const client = properties.Name?.title?.[0]?.plain_text;
-    return agent && effectiveDate && client ? [salesKey({ agent, effectiveDate, client })] : [];
+    const carrier = properties.Carrier?.select?.name ?? "";
+    const enrollmentDate = properties["Enrollment Date"]?.date?.start ?? "";
+    const effectiveDate = properties["Effective Date"]?.date?.start;
+    return client && effectiveDate
+      ? [salesKey({ client, carrier, enrollmentDate, effectiveDate })]
+      : [];
   }));
 }
 

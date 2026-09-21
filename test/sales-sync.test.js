@@ -4,8 +4,11 @@ import {
   DEFAULT_SALES_SHEET_CSV_URL,
   missingSales,
   normalizeAgentName,
+  normalizeCarrierName,
+  normalizeClientName,
   normalizeNotionId,
   notionPagePayload,
+  notionSalesKeys,
   parseNotionTargetInput,
   parseSalesCsv,
   resolveNotionSalesTarget,
@@ -26,16 +29,61 @@ test("uses the approved public sheet and apply mode unless overridden", () => {
 
 test("normalizes sales rows and finds missing records", () => {
   const sales = parseSalesCsv([
-    "AGENT NAME,CLIENT FIRST NAME,CLIENT LAST NAME,POLICY EFFECTIVE DATE,CARRIER NAME",
-    "  katy robles ,Ada,Smith,8/1/2026,Acme",
-    "Alan Elchami,Ben,Jones,2026-08-02,Carrier B"
+    "AGENT NAME,CLIENT FIRST NAME,CLIENT LAST NAME,POLICY EFFECTIVE DATE,CARRIER NAME,DATE OF ENROLLMENT",
+    "  katy robles ,Ada,Smith,8/1/2026,Acme,7/15/2026",
+    "Alan Elchami,Ben,Jones,2026-08-02,Carrier B,2026-07-20"
   ].join("\n"));
   assert.equal(sales.length, 2);
   assert.equal(sales[0].agent, "Katy Robles");
   assert.equal(sales[0].effectiveDate, "2026-08-01");
+  assert.equal(sales[0].enrollmentDate, "2026-07-15");
 
   const existing = new Set([salesKey(sales[0])]);
   assert.deepEqual(missingSales(sales, existing).map((sale) => sale.client), ["Ben Jones"]);
+});
+
+test("sales identity excludes Agent and is case-insensitive on Name/Carrier", () => {
+  assert.equal(normalizeClientName("  Luis  Rodriguez "), "luis rodriguez");
+  assert.equal(normalizeCarrierName("CAREPLUS"), "careplus");
+  assert.equal(normalizeAgentName("PAULLETE ROSTRAN"), "Paulette Rostran");
+  assert.equal(normalizeAgentName("PAULETTE ROSTRAN"), "Paulette Rostran");
+  assert.equal(normalizeAgentName("Paulette Rostran"), "Paulette Rostran");
+
+  const sheetKey = salesKey({
+    client: "Luis Rodriguez",
+    carrier: "CAREPLUS",
+    enrollmentDate: "2026-09-15",
+    effectiveDate: "2026-10-01",
+    agent: "PAULLETE ROSTRAN"
+  });
+  const notionKey = salesKey({
+    client: "luis rodriguez",
+    carrier: "CarePlus",
+    enrollmentDate: "2026-09-15",
+    effectiveDate: "2026-10-01",
+    agent: "Paulette Rostran"
+  });
+  assert.equal(sheetKey, notionKey);
+  assert.equal(sheetKey, "luis rodriguez|careplus|2026-09-15|2026-10-01");
+
+  // Existing Notion row with different Agent must still count as present.
+  const existing = notionSalesKeys([{
+    properties: {
+      Name: { title: [{ plain_text: "Luis Rodriguez" }] },
+      Agent: { select: { name: "Paulette Rostran" } },
+      Carrier: { select: { name: "CarePlus" } },
+      "Enrollment Date": { date: { start: "2026-09-15" } },
+      "Effective Date": { date: { start: "2026-10-01" } }
+    }
+  }]);
+  const missing = missingSales([{
+    client: "Luis Rodriguez",
+    carrier: "CAREPLUS",
+    enrollmentDate: "2026-09-15",
+    effectiveDate: "2026-10-01",
+    agent: "PAULLETE ROSTRAN"
+  }], existing);
+  assert.deepEqual(missing, []);
 });
 
 test("builds safe Notion sales payloads", () => {

@@ -10,6 +10,7 @@ Manual: Telegram `@Igor_theibot` — “run the sales tracker” (`run_sales_tra
 
 1. Read the approved Google Sheets CSV source (default public export if `SALES_SHEET_CSV_URL` is unset).
 2. Compare normalized sales records against the approved Notion Sales Tracker database.
+   Identity key is **Name + Carrier + Enrollment Date + Effective Date** (case-insensitive Name/Carrier). **Agent is not part of the key** — ALL CAPS / typo agent names must not create a second row.
 3. If 20 or fewer records are missing, create the missing Notion records.
 4. If more than 20 are missing, do not write any records; send a Telegram abort alert.
 5. Send a Telegram-only completion summary.
