@@ -19,7 +19,7 @@ import {
   queueVaCheckinKickoff,
   replyStateId,
   runVaCheckin,
-  vaCheckinMessage,
+  vaCheckinMessages,
   vaWeekKey,
   weeklyStateId
 } from "../src/va-checkin.js";
@@ -129,42 +129,76 @@ test("uses THEI Open Projects and Open monthly todos collection ids by default",
   );
 });
 
-test("weekly check-in message matches the GHL ops-brief visual layout", () => {
-  const text = vaCheckinMessage({
+test("weekly check-in sends separate GHL-style Telegram texts", () => {
+  const parts = vaCheckinMessages({
     phase: "weekly",
     recipient: KATY,
     snapshot: snapshotForKaty(),
     now: MONDAY,
     maxItems: 4
   });
-  assert.match(text, /^📋 YOUR WEEKLY CHECK-IN\n/);
-  assert.match(text, /\n📁 Open Projects: 5\n/);
-  assert.match(text, /• AEP contracting — In progress/);
-  assert.match(text, / {2}- \+1 more project\(s\)/);
-  assert.match(text, /\n✅ Monthly Todos: 2 \(1 overdue\)\n/);
-  assert.match(text, /🔴 Send Humana recert — OVERDUE /);
-  assert.match(text, /↳ Waiting on login reset/);
-  assert.match(text, /🔹 Call stale Open Leads — /);
-  assert.match(text, /\n❓ How are you doing on these\?\n/);
-  assert.match(text, /Reply with updates and I'll update Notion for you\./);
-  assert.match(text, /\n💡 Admin help I can do anytime\n/);
-  assert.match(text, /• Create GHL contacts \(tag active_prospect → Open Leads\)/);
-  assert.doesNotMatch(text, /\*\*/);
-  assert.doesNotMatch(text, /^## /m);
-  assert.equal(looksLikeVaCheckinPrompt(text), true);
+  assert.equal(parts.length, 4);
+  assert.match(parts[0], /^📋 YOUR WEEKLY CHECK-IN\n\n📁 Open Projects: 5\n/);
+  assert.match(parts[0], /• AEP contracting — In progress/);
+  assert.match(parts[0], / {2}- \+1 more project\(s\)/);
+  assert.doesNotMatch(parts[0], /Monthly Todos/);
+  assert.match(parts[1], /^✅ Monthly Todos: 2 \(1 overdue\)\n/);
+  assert.match(parts[1], /🔴 Send Humana recert — OVERDUE /);
+  assert.match(parts[1], /↳ Waiting on login reset/);
+  assert.match(parts[1], /🔹 Call stale Open Leads — /);
+  assert.doesNotMatch(parts[1], /Open Projects/);
+  assert.equal(parts[2], "❓ How are you doing on these?\nReply with updates and I'll update Notion for you.");
+  assert.match(parts[3], /^💡 Admin help I can do anytime\n/);
+  assert.match(parts[3], /• GHL contacts \(active_prospect → Open Leads\)/);
+  for (const text of parts) {
+    assert.doesNotMatch(text, /\*\*/);
+    assert.doesNotMatch(text, /^## /m);
+    assert.equal(looksLikeVaCheckinPrompt(text), true);
+  }
 });
 
-test("kickoff uses the same visual layout plus a VA intro", () => {
-  const text = vaCheckinMessage({
+test("skips the todos message when the list is empty", () => {
+  const parts = vaCheckinMessages({
+    phase: "weekly",
+    recipient: KATY,
+    snapshot: { ok: true, projects: [], todos: [] },
+    now: MONDAY
+  });
+  assert.equal(parts.length, 3);
+  assert.match(parts[0], /📁 Open Projects: 0/);
+  assert.doesNotMatch(parts.join("\n"), /✅ Monthly Todos/);
+  assert.match(parts[1], /How are you doing on these/);
+  assert.match(parts[2], /Admin help I can do anytime/);
+});
+
+test("kickoff sends a short intro first, then the same sectioned texts", () => {
+  const parts = vaCheckinMessages({
     phase: "kickoff",
     recipient: KATY,
     snapshot: snapshotForKaty(),
     now: MONDAY
   });
-  assert.match(text, /^📋 YOUR WEEKLY CHECK-IN\n/);
-  assert.match(text, /Hey Katy — I'm Igor, your VA on Telegram\./);
-  assert.match(text, /📁 Open Projects: 5/);
-  assert.match(text, /💡 Admin help I can do anytime/);
+  assert.equal(parts[0], "Hey Katy — I'm Igor, your VA on Telegram.");
+  assert.match(parts[1], /^📋 YOUR WEEKLY CHECK-IN\n\n📁 Open Projects: 5/);
+  assert.match(parts[2], /^✅ Monthly Todos:/);
+  assert.match(parts[3], /How are you doing on these/);
+  assert.match(parts[4], /Admin help I can do anytime/);
+  assert.equal(parts.length, 5);
+});
+
+test("Tuesday nudge is two short messages, not the full dump", () => {
+  const parts = vaCheckinMessages({
+    phase: "nudge",
+    recipient: KATY,
+    snapshot: snapshotForKaty(),
+    now: TUESDAY
+  });
+  assert.equal(parts.length, 2);
+  assert.match(parts[0], /^📋 YOUR WEEKLY CHECK-IN\n/);
+  assert.match(parts[0], /Quick nudge on Monday's check-in, Katy/);
+  assert.equal(parts[1], "Reply with updates and I'll update Notion for you.");
+  assert.doesNotMatch(parts.join("\n"), /Open Projects/);
+  assert.doesNotMatch(parts.join("\n"), /Admin help/);
 });
 
 test("kickoff is idempotent per user", async () => {
@@ -173,14 +207,23 @@ test("kickoff is idempotent per user", async () => {
   const readNotion = async () => ({ ok: true, projects: [], todos: [] });
   const first = await runVaCheckin(
     { payload: { workflow: "va_checkin", phase: "kickoff", weekKey: WEEK } },
-    { environment: ENV, store, now: MONDAY, sendTelegram: async ({ chatId }) => sent.push(chatId), readNotion }
+    {
+      environment: ENV,
+      store,
+      now: MONDAY,
+      sendTelegram: async ({ chatId, text }) => sent.push({ chatId, text }),
+      readNotion,
+      sleep: async () => {}
+    }
   );
   const second = await runVaCheckin(
     { payload: { workflow: "va_checkin", phase: "kickoff", weekKey: WEEK } },
-    { environment: ENV, store, now: MONDAY, sendTelegram: async () => assert.fail("duplicate kickoff"), readNotion }
+    { environment: ENV, store, now: MONDAY, sendTelegram: async () => assert.fail("duplicate kickoff"), readNotion, sleep: async () => {} }
   );
   assert.equal(first.recipientCount, 3);
-  assert.deepEqual(sent, ["111", "222", "333"]);
+  assert.deepEqual([...new Set(sent.map((row) => row.chatId))], ["111", "222", "333"]);
+  assert.equal(sent.filter((row) => row.chatId === "222")[0].text, "Hey Katy — I'm Igor, your VA on Telegram.");
+  assert.ok(sent.filter((row) => row.chatId === "222").length >= 4);
   assert.equal(second.recipientCount, 0);
   assert.equal(second.skippedCount, 3);
   assert.ok(await store.getVaCheckin(kickoffStateId("222")));
@@ -200,18 +243,20 @@ test("Tuesday nudge sends once and skips after a reply", async () => {
       environment: ENV,
       store,
       now: TUESDAY,
-      sendTelegram: async ({ chatId, text }) => {
-        sent.push(chatId);
-        assert.match(text, /📋 YOUR WEEKLY CHECK-IN/);
-        assert.match(text, /Quick nudge on Monday's check-in/);
-      }
+      sendTelegram: async ({ chatId, text }) => sent.push({ chatId, text }),
+      sleep: async () => {}
     }
   );
   const second = await runVaCheckin(
     { payload: { workflow: "va_checkin", phase: "nudge", weekKey: WEEK } },
-    { environment: ENV, store, now: TUESDAY, sendTelegram: async () => assert.fail("duplicate nudge") }
+    { environment: ENV, store, now: TUESDAY, sendTelegram: async () => assert.fail("duplicate nudge"), sleep: async () => {} }
   );
-  assert.deepEqual(sent, ["111", "333"]);
+  const yahoska = sent.filter((row) => row.chatId === "111").map((row) => row.text);
+  assert.equal(yahoska.length, 2);
+  assert.match(yahoska[0], /📋 YOUR WEEKLY CHECK-IN/);
+  assert.match(yahoska[0], /Quick nudge on Monday's check-in/);
+  assert.equal(yahoska[1], "Reply with updates and I'll update Notion for you.");
+  assert.deepEqual([...new Set(sent.map((row) => row.chatId))], ["111", "333"]);
   assert.equal(first.recipientCount, 2);
   assert.equal(first.skippedCount, 1);
   assert.equal(second.recipientCount, 0);
@@ -227,16 +272,21 @@ test("worker-core routes va_checkin through the visual check-in runner", async (
       environment: ENV,
       store,
       now: MONDAY,
-      readNotion: async () => ({ ok: true, projects: [], todos: [] }),
-      sendTelegram: async ({ chatId, text }) => {
-        sent.push(chatId);
-        assert.match(text, /📋 YOUR WEEKLY CHECK-IN/);
-      }
+      readNotion: async () => snapshotForKaty(),
+      sendTelegram: async ({ chatId, text }) => sent.push({ chatId, text }),
+      sleep: async () => {}
     }
   );
+  const katy = sent.filter((row) => row.chatId === "222").map((row) => row.text);
   assert.equal(result.status, "sent");
   assert.equal(result.phase, "weekly");
-  assert.equal(sent.length, 3);
+  assert.equal(result.recipientCount, 3);
+  assert.equal(katy.length, 4);
+  assert.match(katy[0], /^📋 YOUR WEEKLY CHECK-IN/);
+  assert.match(katy[0], /📁 Open Projects/);
+  assert.match(katy[1], /^✅ Monthly Todos/);
+  assert.match(katy[2], /How are you doing on these/);
+  assert.match(katy[3], /Admin help I can do anytime/);
 });
 
 test("boot kickoff queues once while any recipient is pending", async () => {

@@ -262,7 +262,8 @@ export async function processTask(task, {
   store,
   now,
   fetchImpl,
-  readNotion
+  readNotion,
+  sleep
 } = {}) {
   const workflow = task.payload?.workflow;
 
@@ -330,7 +331,7 @@ export async function processTask(task, {
   }
 
   if (workflow === "va_checkin") {
-    return runVaCheckin(task, { environment, sendTelegram, store, now, fetchImpl, readNotion });
+    return runVaCheckin(task, { environment, sendTelegram, store, now, fetchImpl, readNotion, sleep });
   }
 
   if (workflow === "sales_tracker_sync") {

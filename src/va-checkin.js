@@ -6,6 +6,7 @@ import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 export const DEFAULT_OPEN_PROJECTS_DS = "collection://28377cd3-be8e-83ab-a0d0-87c70896eb10";
 export const DEFAULT_MONTHLY_TODOS_DS = "collection://36177cd3-be8e-81b1-bf64-000b7fa6f090";
 export const NOTION_VERSION = "2025-09-03";
+export const VA_CHECKIN_SEND_GAP_MS = 400;
 export const VA_CHECKIN_WORKFLOW = "va_checkin";
 export const VA_CHECKIN_ROLES = ["yahoska", "katy", "carolina"];
 
@@ -14,7 +15,7 @@ const DONE_STATUSES = new Set(["completed", "complete", "done", "finished"]);
 const PROGRESS_STATUSES = new Set(["in progress", "in_progress", "doing", "active", "working"]);
 const WAITING_STATUSES = new Set(["waiting", "blocked", "on hold", "hold"]);
 const ACK_RE = /^(ok|okay|thanks|thank you|got it|yes|yep|no|k|cool|sure|thx)[.!?]*$/i;
-const CHECKIN_PROMPT_RE = /YOUR WEEKLY CHECK-IN|How are you doing on these|I'?ll update Notion for you|Admin help I can do anytime|I'?m Igor, your VA on Telegram|Quick nudge on Monday'?s check-in/i;
+const CHECKIN_PROMPT_RE = /YOUR WEEKLY CHECK-IN|How are you doing on these|I'?ll update Notion for you|Admin help I can do anytime|I'?m Igor, your VA on Telegram|Quick nudge on Monday'?s check-in|Open Projects:|Monthly Todos:/i;
 const CREATE_TODO_RE = /\b(?:add|create|new)\s+(?:a\s+)?(?:todo|task|reminder)\s*(?:to\s+|for\s+)?(.+)/i;
 const STATUS_RE = /\b(completed?|done|finished|in progress|working on|waiting|blocked|on hold)\b/i;
 
@@ -521,40 +522,51 @@ export function formatNotionBullets(snapshot) {
   return [...formatProjectSection(snapshot), "", ...formatTodoSection(snapshot)].join("\n");
 }
 
-export function vaCheckinMessage({ phase, recipient, snapshot, now = new Date(), maxItems = 4 } = {}) {
+export function vaCheckinMessages({ phase, recipient, snapshot, now = new Date(), maxItems = 4 } = {}) {
   const name = recipient.firstName;
   if (phase === "nudge") {
     return [
-      "📋 YOUR WEEKLY CHECK-IN",
-      "",
-      `❓ Quick nudge on Monday's check-in, ${name}`,
+      ["📋 YOUR WEEKLY CHECK-IN", "", `❓ Quick nudge on Monday's check-in, ${name}`].join("\n"),
       "Reply with updates and I'll update Notion for you."
-    ].join("\n");
+    ];
   }
 
-  const lines = ["📋 YOUR WEEKLY CHECK-IN", ""];
+  const parts = [];
   if (phase === "kickoff") {
-    lines.push(`Hey ${name} — I'm Igor, your VA on Telegram.`, "");
+    parts.push(`Hey ${name} — I'm Igor, your VA on Telegram.`);
   }
+
+  const projectLines = ["📋 YOUR WEEKLY CHECK-IN", ""];
   if (snapshot?.ok === false) {
-    lines.push("📁 Open Projects: unavailable from Notion");
-    lines.push("", "✅ Monthly Todos: unavailable from Notion");
+    projectLines.push("📁 Open Projects: unavailable from Notion");
   } else {
-    lines.push(...formatProjectSection(snapshot, { maxItems }));
-    lines.push("", ...formatTodoSection(snapshot, now, { maxItems }));
+    projectLines.push(...formatProjectSection(snapshot, { maxItems }));
   }
-  lines.push(
-    "",
+  parts.push(projectLines.join("\n"));
+
+  if (snapshot?.ok === false) {
+    parts.push("✅ Monthly Todos: unavailable from Notion");
+  } else if ((snapshot?.todos ?? []).length) {
+    parts.push(formatTodoSection(snapshot, now, { maxItems }).join("\n"));
+  }
+
+  parts.push([
     "❓ How are you doing on these?",
-    "Reply with updates and I'll update Notion for you.",
-    "",
+    "Reply with updates and I'll update Notion for you."
+  ].join("\n"));
+
+  parts.push([
     "💡 Admin help I can do anytime",
-    "• Create GHL contacts (tag active_prospect → Open Leads)",
-    "• Add notes / tags / owner",
-    "• Reminders & follow-ups",
-    "• Update Notion projects/todos when you tell me"
-  );
-  return lines.join("\n");
+    "• GHL contacts (active_prospect → Open Leads)",
+    "• Notes, tags, reminders, follow-ups",
+    "• Notion updates when you tell me"
+  ].join("\n"));
+
+  return parts;
+}
+
+export function vaCheckinMessage(args) {
+  return vaCheckinMessages(args).join("\n\n");
 }
 
 function propertyWrite(property, value) {
@@ -806,6 +818,25 @@ async function sendDirect({ chatId, text, environment, sendTelegram, store }) {
   }
 }
 
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendCheckinParts({
+  chatId,
+  parts,
+  environment,
+  sendTelegram,
+  store,
+  sleep = defaultSleep,
+  gapMs = VA_CHECKIN_SEND_GAP_MS
+}) {
+  for (const [index, text] of parts.entries()) {
+    await sendDirect({ chatId, text, environment, sendTelegram, store });
+    if (index < parts.length - 1) await sleep(gapMs);
+  }
+}
+
 async function hasState(store, id) {
   if (!store?.getVaCheckin) return false;
   return Boolean(await store.getVaCheckin(id));
@@ -822,7 +853,8 @@ export async function runVaCheckin(task, {
   store,
   now = new Date(),
   fetchImpl = fetch,
-  readNotion = readVaCheckinNotion
+  readNotion = readVaCheckinNotion,
+  sleep = defaultSleep
 } = {}) {
   const phase = task.payload?.phase === "kickoff" || task.payload?.phase === "nudge"
     ? task.payload.phase
@@ -891,8 +923,15 @@ export async function runVaCheckin(task, {
       const snapshot = phase === "nudge"
         ? { ok: true, projects: [], todos: [] }
         : await readNotion({ environment, recipient, fetchImpl });
-      const text = vaCheckinMessage({ phase, recipient, snapshot, now });
-      await sendDirect({ chatId: recipient.chatId, text, environment, sendTelegram, store });
+      const parts = vaCheckinMessages({ phase, recipient, snapshot, now });
+      await sendCheckinParts({
+        chatId: recipient.chatId,
+        parts,
+        environment,
+        sendTelegram,
+        store,
+        sleep
+      });
       sent += 1;
     } catch (error) {
       failures.push({ chatId: recipient.chatId, reason: error.message });

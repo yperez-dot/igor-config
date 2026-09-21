@@ -37,4 +37,48 @@ Write on Telegram reply (Igor, not Charlie):
 
 Plain text, same conventions as `ghlOpsBriefText` (GHL Open Leads / ops brief): emoji + ALL CAPS header, section counts, `•` / `🔹` / `🔴`, `↳` notes, overflow `  - +N more …`. No markdown.
 
-Reply-to that message (or a first substantial reply after Monday’s send) is handled in `handleTelegramChat`: Igor writes Notion and confirms with `📋 NOTION UPDATED`.
+Igor sends **separate short Telegram texts** (with a brief pause between them), not one blob:
+
+1. Header + Open Projects
+2. Monthly Todos (omitted when the list is empty)
+3. How-are-you / reply prompt
+4. Short admin-help footer
+
+Kickoff prepends `Hey {name} — I'm Igor, your VA on Telegram.` Tuesday nudge is two short texts (reminder + ask) — not the full list.
+
+### Sample Monday sequence (Katy)
+
+**1**
+```
+📋 YOUR WEEKLY CHECK-IN
+
+📁 Open Projects: 2
+• AEP contracting — In progress
+• Website refresh — Not started
+```
+
+**2**
+```
+✅ Monthly Todos: 2 (1 overdue)
+
+🔴 Send Humana recert — OVERDUE Sun, Sep 20
+↳ Waiting on login reset
+
+🔹 Call stale Open Leads — Fri, Sep 25
+```
+
+**3**
+```
+❓ How are you doing on these?
+Reply with updates and I'll update Notion for you.
+```
+
+**4**
+```
+💡 Admin help I can do anytime
+• GHL contacts (active_prospect → Open Leads)
+• Notes, tags, reminders, follow-ups
+• Notion updates when you tell me
+```
+
+Reply-to any of those messages (or a first substantial reply after Monday’s send) is handled in `handleTelegramChat`: Igor writes Notion and confirms with `📋 NOTION UPDATED`.
