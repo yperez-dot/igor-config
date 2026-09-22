@@ -33,6 +33,9 @@ function salesTrackerMessage(result, environment) {
 function agentPulseMessage(result) {
   if (result.status === "dry_run") return `✅ Agent Pulse dry-run: Issue #${result.issue} (${result.length} chars, ${result.findingCount} inbox items).`;
   const hub = result.hub?.status === "published" ? " Hub ticker updated." : result.hub?.status === "failed" ? " Hub ticker failed." : "";
+  if (result.enRecipientCount !== undefined && result.esRecipientCount !== undefined) {
+    return `✅ Agent Pulse sent: Issue #${result.issue} — EN ${result.enRecipientCount} / ES ${result.esRecipientCount} recipient(s).${hub}`;
+  }
   return `✅ Agent Pulse sent: Issue #${result.issue} to ${result.recipientCount} recipient(s).${hub}`;
 }
 
@@ -461,9 +464,18 @@ export async function processTask(task, {
   if (workflow === "agent_pulse_weekly") {
     const result = await runAgentPulse({ environment: withAgentPulseEnv(environment, task) });
     if (store?.record && result.status === "sent") {
-      await store.record("agent_pulse.sent", String(result.issue), {
-        mondayIso: result.mondayIso ?? easternMondayIso(), issue: result.issue, recipientCount: result.recipientCount
-      });
+      const detail = {
+        mondayIso: result.mondayIso ?? easternMondayIso(),
+        issue: result.issue
+      };
+      if (result.enRecipientCount !== undefined) {
+        detail.enRecipientCount = result.enRecipientCount;
+        detail.esRecipientCount = result.esRecipientCount;
+        detail.recipientCount = result.enRecipientCount + result.esRecipientCount;
+      } else {
+        detail.recipientCount = result.recipientCount;
+      }
+      await store.record("agent_pulse.sent", String(result.issue), detail);
     }
     await notify(agentPulseMessage(result));
     return result;

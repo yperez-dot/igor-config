@@ -177,6 +177,22 @@ export async function runAgentPulseWeekly({
     }
   })).findings;
 
+  const isDualLocaleSend = mode === "send" && !environment.AGENT_PULSE_LANG;
+  if (isDualLocaleSend) {
+    return await runAgentPulseDualLocale({
+      environment,
+      mode,
+      findings,
+      now,
+      activeModel,
+      apiKey,
+      askModel,
+      deliver,
+      publishHub,
+      fetchImpl
+    });
+  }
+
   const locale = pulseLocale(environment);
   const digest = await askModel({
     apiKey,
@@ -273,4 +289,142 @@ export async function runAgentPulseWeekly({
     }
     throw error;
   }
+}
+
+export async function runAgentPulseDualLocale({
+  environment = process.env,
+  mode,
+  findings,
+  now = new Date(),
+  activeModel,
+  apiKey,
+  askModel = askGrok,
+  deliver = sendEmail,
+  publishHub = publishHubTicker,
+  fetchImpl = fetch
+} = {}) {
+  const issue = agentPulseIssueNumber({ environment, now });
+  const weekLabel = easternMondayLabel(now, "en");
+  const mondayIso = easternMondayIso(now);
+  const logo = await pulseLogoAttachment({ fetchImpl });
+  const config = smtpConfig(environment);
+
+  const enResult = await (async () => {
+    const locale = "en";
+    const localeEnv = { ...environment, AGENT_PULSE_LANG: locale };
+    const digest = await askModel({
+      apiKey,
+      model: activeModel.model,
+      provider: activeModel.provider,
+      systemPrompt: AGENT_PULSE_PROMPT,
+      text: agentPulsePrompt({ findings, now, environment: localeEnv }),
+      timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000),
+      nativeTools: [{ type: "web_search" }]
+    });
+    const edition = buildInsiderEdition({
+      raw: digest,
+      issueNumber: issue,
+      weekLabel,
+      emptyScan: findings.length === 0,
+      logoSrc: logo ? `cid:${PULSE_LOGO_CID}` : PULSE_LOGO_URL,
+      correctionNote: environment.AGENT_PULSE_CORRECTION_NOTE,
+      locale
+    });
+    if (edition.text.length < 150) {
+      throw new Error("Agent Pulse en digest failed validation: output too short.");
+    }
+    const recipients = parseRecipientList(
+      environment.AGENT_PULSE_RECIPIENTS ?? environment.INDUSTRY_PULSE_RECIPIENTS_EN
+    );
+    if (!recipients.length) throw new Error("Agent Pulse en has no configured recipients.");
+    const subject = agentPulseSubject({ now, environment: localeEnv });
+    const sendResult = await deliver({
+      config,
+      to: recipients[0],
+      bcc: recipients.slice(1),
+      subject,
+      text: edition.text,
+      html: edition.html,
+      attachments: logo ? [logo] : []
+    });
+    let hub = { status: "skipped", reason: "not_send_mode" };
+    try {
+      hub = await publishHub({
+        environment,
+        findings,
+        digest: edition.text,
+        editionHtml: edition.hubHtml,
+        headline: edition.headline,
+        weekLabel,
+        mondayIso,
+        now,
+        includeWeekly: true
+      });
+    } catch (error) {
+      hub = { status: "failed", reason: error.message };
+    }
+    return { locale, recipientCount: recipients.length, messageId: sendResult.messageId, subject, hub };
+  })();
+
+  const esResult = await (async () => {
+    const locale = "es";
+    const localeEnv = { ...environment, AGENT_PULSE_LANG: locale };
+    const digest = await askModel({
+      apiKey,
+      model: activeModel.model,
+      provider: activeModel.provider,
+      systemPrompt: AGENT_PULSE_PROMPT_ES,
+      text: agentPulsePrompt({ findings, now, environment: localeEnv }),
+      timeoutMs: Number(environment.AGENT_PULSE_GROK_TIMEOUT_MS ?? 180_000),
+      nativeTools: [{ type: "web_search" }]
+    });
+    const edition = buildInsiderEdition({
+      raw: digest,
+      issueNumber: issue,
+      weekLabel,
+      emptyScan: findings.length === 0,
+      logoSrc: logo ? `cid:${PULSE_LOGO_CID}` : PULSE_LOGO_URL,
+      correctionNote: environment.AGENT_PULSE_CORRECTION_NOTE,
+      locale
+    });
+    if (edition.text.length < 150) {
+      throw new Error("Agent Pulse es digest failed validation: output too short.");
+    }
+    const recipients = parseRecipientList(
+      environment.AGENT_PULSE_RECIPIENTS_ES ?? environment.INDUSTRY_PULSE_RECIPIENTS_ES
+    );
+    if (!recipients.length) throw new Error("Agent Pulse es has no configured recipients.");
+    const subject = agentPulseSubject({ now, environment: localeEnv });
+    const sendResult = await deliver({
+      config,
+      to: recipients[0],
+      bcc: recipients.slice(1),
+      subject,
+      text: edition.text,
+      html: edition.html,
+      attachments: logo ? [logo] : []
+    });
+    return {
+      locale,
+      recipientCount: recipients.length,
+      messageId: sendResult.messageId,
+      subject,
+      hub: { status: "skipped", reason: "spanish_does_not_overwrite_english_hub" }
+    };
+  })();
+
+  return {
+    status: "sent",
+    mode,
+    subject: enResult.subject,
+    issue,
+    mondayIso,
+    findingCount: findings.length,
+    enRecipientCount: enResult.recipientCount,
+    esRecipientCount: esResult.recipientCount,
+    enMessageId: enResult.messageId,
+    esMessageId: esResult.messageId,
+    hub: enResult.hub,
+    lang: "dual"
+  };
 }
