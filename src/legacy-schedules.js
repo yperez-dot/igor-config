@@ -2,8 +2,7 @@ import { isVaCheckinEnabled } from "./va-checkin-flag.js";
 
 export const LOOKOUT_LIVE_SCHEDULE_IDS = ["v2-igor-heartbeat", "v2-site-uptime"];
 export const EMAIL_LIVE_SCHEDULE_IDS = [
-  "v2-agent-pulse",
-  "v2-carrier-inbox-digest"
+  "v2-agent-pulse"
 ];
 export const LEAD_LIVE_SCHEDULE_IDS = [
   "v2-lead-followup-morning",
@@ -25,7 +24,10 @@ export const ALWAYS_LIVE_SCHEDULE_IDS = [
 // Safe default: VA check-in is off unless VA_CHECKIN_ENABLED=true (Igor V2 / live Telegram only).
 export const LIVE_SCHEDULE_IDS = [...ALWAYS_LIVE_SCHEDULE_IDS];
 // Same Monday newsletter as Agent Pulse — old OpenClaw name only. Do not run both.
-export const INACTIVE_SCHEDULE_IDS = ["v2-industry-pulse"];
+export const INACTIVE_SCHEDULE_IDS = [
+  "v2-industry-pulse",
+  "v2-carrier-inbox-digest"
+];
 
 export function liveScheduleIds(environment = process.env) {
   if (!isVaCheckinEnabled(environment)) return [...ALWAYS_LIVE_SCHEDULE_IDS];
