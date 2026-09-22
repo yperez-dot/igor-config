@@ -1073,6 +1073,35 @@ export async function queueVaCheckinKickoff({
   if (!recipients.length || !store?.createTask) {
     return { queued: false, reason: recipients.length ? "no_store" : "no_recipients" };
   }
+  const forceMarker = String(environment.VA_CHECKIN_FORCE_KICKOFF_ONCE ?? "").trim();
+  if (forceMarker) {
+    const markerId = `va-force-kickoff:${forceMarker}`;
+    if (await hasState(store, markerId)) return { queued: false, reason: "force_already_queued" };
+    const task = await store.createTask({
+      id: createId(),
+      type: "daily_operations",
+      payload: {
+        workflow: VA_CHECKIN_WORKFLOW,
+        phase: "kickoff",
+        mode: "live",
+        force: true,
+        source: "boot_force_once",
+        forceMarker,
+        weekKey: vaWeekKey(now)
+      }
+    });
+    if (store?.upsertVaCheckin) {
+      await store.upsertVaCheckin({
+        id: markerId,
+        userId: "system",
+        kind: "kickoff_force_marker",
+        weekKey: vaWeekKey(now),
+        status: "queued",
+        detail: { taskId: task.id }
+      });
+    }
+    return { queued: true, reason: "force_queued", taskId: task.id, pending: recipients.length };
+  }
   let pending = 0;
   for (const recipient of recipients) {
     if (!await hasSentState(store, kickoffStateId(recipient.chatId))) pending += 1;

@@ -391,6 +391,20 @@ test("boot kickoff queues once while any recipient is pending", async () => {
   assert.equal(again.reason, "already_queued");
 });
 
+test("one-time boot force marker queues exactly one forced kickoff", async () => {
+  const store = memoryVaStore();
+  const environment = { ...ENV, VA_CHECKIN_FORCE_KICKOFF_ONCE: "p0-recovery-2026-09-22" };
+  const first = await queueVaCheckinKickoff({ store, environment, now: MONDAY, createId: () => "force-kick-1" });
+  const second = await queueVaCheckinKickoff({ store, environment, now: MONDAY, createId: () => "force-kick-2" });
+  assert.equal(first.queued, true);
+  assert.equal(first.reason, "force_queued");
+  assert.equal(store.tasks[0].payload.force, true);
+  assert.equal(store.tasks[0].payload.forceMarker, "p0-recovery-2026-09-22");
+  assert.equal(second.queued, false);
+  assert.equal(second.reason, "force_already_queued");
+  assert.equal(store.tasks.length, 1);
+});
+
 test("boot kickoff is not queued when VA_CHECKIN_ENABLED is unset or false", async () => {
   const store = memoryVaStore();
   const { VA_CHECKIN_ENABLED: _enabled, ...unsetEnv } = ENV;
