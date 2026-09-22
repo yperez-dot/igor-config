@@ -25,6 +25,8 @@ import {
   recoverVaCheckinKickoffOnce,
   replyStateId,
   runVaCheckin,
+  sendVaHelpOutreachOnce,
+  vaHelpOutreachMessages,
   vaCheckinMessages,
   vaCheckinDeliveryHealth,
   vaWeekKey,
@@ -430,6 +432,43 @@ test("inline recovery force-sends once and records completion", async () => {
   assert.equal((await store.getVaCheckin("va-force-kickoff:p0-recovery-2026-09-22")).status, "sent");
   const second = await recoverVaCheckinKickoffOnce({ store, environment, now: MONDAY });
   assert.equal(second.reason, "already_recovered");
+});
+
+test("team help outreach is personalized, limited to Katy and Carolina, and sent once", async () => {
+  const store = memoryVaStore();
+  const environment = { ...ENV, VA_TEAM_HELP_OUTREACH_ONCE: "team-help-v1" };
+  const sent = [];
+  const readNotion = async ({ recipient }) => ({
+    ok: true,
+    projects: [{ title: `${recipient.firstName} AEP prep` }],
+    todos: [{ title: `${recipient.firstName} follow-ups` }]
+  });
+  const first = await sendVaHelpOutreachOnce({
+    store,
+    environment,
+    now: MONDAY,
+    readNotion,
+    sendTelegram: async ({ chatId, text }) => sent.push({ chatId, text }),
+    sleep: async () => {}
+  });
+  assert.equal(first.recipientCount, 2);
+  assert.deepEqual([...new Set(sent.map((message) => message.chatId))], ["222", "333"]);
+  assert.equal(sent.some((message) => message.chatId === "111"), false);
+  assert.match(sent.find((message) => message.chatId === "222").text, /Katy AEP prep/);
+  assert.match(sent.find((message) => message.chatId === "333").text, /Carolina AEP prep/);
+  assert.ok(sent.some((message) => /What should I work on next/.test(message.text)));
+  const second = await sendVaHelpOutreachOnce({ store, environment, now: MONDAY });
+  assert.equal(second.status, "skipped");
+  assert.equal(second.skippedCount, 2);
+});
+
+test("help outreach copy gives practical examples and ends with a clear question", () => {
+  const parts = vaHelpOutreachMessages({ recipient: KATY, snapshot: snapshotForKaty() });
+  assert.equal(parts.length, 4);
+  assert.match(parts[0], /AEP contracting/);
+  assert.match(parts[1], /Find or create a GHL contact/);
+  assert.match(parts[2], /Mark this task complete/);
+  assert.match(parts[3], /anything you want me to add, update, or help you finish/i);
 });
 
 test("delivery health reports roles without exposing Telegram ids or raw errors", async () => {

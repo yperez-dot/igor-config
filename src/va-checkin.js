@@ -653,6 +653,37 @@ export function vaCheckinMessage(args) {
   return vaCheckinMessages(args).join("\n\n");
 }
 
+export function vaHelpOutreachMessages({ recipient, snapshot } = {}) {
+  const items = [...(snapshot?.projects ?? []), ...(snapshot?.todos ?? [])]
+    .map((item) => compactField(item?.title, 70))
+    .filter(Boolean)
+    .slice(0, 3);
+  const review = items.length
+    ? `I reviewed your current Notion work, including ${items.join(", ")}.`
+    : "I reviewed your current Open Projects and Monthly Todos in Notion.";
+  return [
+    `Hi ${recipient.firstName} — ${review} What would you like help moving forward this week?`,
+    [
+      "Here are a few things I can take off your plate:",
+      "• Update a Notion task or project",
+      "• Add a task, due date, or note",
+      "• Find or create a GHL contact",
+      "• Check Open Leads or add GHL notes, tags, and follow-up tasks",
+      "• Set reminders and appointments",
+      "• Draft client follow-up messages",
+      "• Help identify what needs attention next"
+    ].join("\n"),
+    [
+      "You can say:",
+      "“Mark this task complete,”",
+      "“Add this to my list,”",
+      "“Remind me to call her tomorrow,” or",
+      "“What should I work on next?”"
+    ].join("\n"),
+    "Is there anything you want me to add, update, or help you finish right now?"
+  ];
+}
+
 function propertyWrite(property, value) {
   if (!property) return null;
   if (property.type === "title") return { [property.name]: { title: [{ text: { content: String(value).slice(0, 2000) } }] } };
@@ -1195,6 +1226,47 @@ export async function recoverVaCheckinKickoffOnce({
     });
     throw error;
   }
+}
+
+export async function sendVaHelpOutreachOnce({
+  store,
+  environment = process.env,
+  now = new Date(),
+  sendTelegram = sendTelegramMessage,
+  readNotion = readVaCheckinNotion,
+  fetchImpl = fetch,
+  sleep = defaultSleep
+} = {}) {
+  const marker = String(environment.VA_TEAM_HELP_OUTREACH_ONCE ?? "").trim();
+  if (!marker || !isVaCheckinEnabled(environment) || !store?.getVaCheckin || !store?.upsertVaCheckin) {
+    return { status: "skipped", reason: marker ? "disabled_or_no_store" : "no_marker" };
+  }
+  const recipients = vaCheckinRecipients(environment).filter(({ role }) => role === "katy" || role === "carolina");
+  let sent = 0;
+  let skipped = 0;
+  const failures = [];
+  for (const recipient of recipients) {
+    const id = `va-help-outreach:${marker}:${recipient.chatId}`;
+    const existing = await store.getVaCheckin(id);
+    if (existing?.status === "sent") {
+      skipped += 1;
+      continue;
+    }
+    const row = { id, userId: recipient.chatId, kind: "help_outreach", weekKey: vaWeekKey(now) };
+    await store.upsertVaCheckin({ ...row, status: "sending", detail: { startedAt: now.toISOString() } });
+    try {
+      const snapshot = await readNotion({ environment, recipient, fetchImpl });
+      const parts = vaHelpOutreachMessages({ recipient, snapshot });
+      await sendCheckinParts({ chatId: recipient.chatId, parts, environment, sendTelegram, store, sleep });
+      await store.upsertVaCheckin({ ...row, status: "sent", detail: { deliveredAt: new Date().toISOString(), partCount: parts.length } });
+      sent += 1;
+    } catch (error) {
+      await store.upsertVaCheckin({ ...row, status: "failed", detail: { failedAt: new Date().toISOString(), error: String(error.message ?? error) } });
+      failures.push(recipient.role);
+    }
+  }
+  if (failures.length) throw new Error(`VA help outreach failed for ${failures.length} recipient(s).`);
+  return { status: sent ? "sent" : "skipped", recipientCount: sent, skippedCount: skipped };
 }
 
 export async function noteVaCheckinReply({

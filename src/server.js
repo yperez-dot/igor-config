@@ -12,7 +12,7 @@ import { inactiveScheduleIds, liveScheduleIds, legacySchedules } from "./legacy-
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
-import { queueVaCheckinKickoff, recoverVaCheckinKickoffOnce, vaCheckinDeliveryHealth } from "./va-checkin.js";
+import { queueVaCheckinKickoff, recoverVaCheckinKickoffOnce, sendVaHelpOutreachOnce, vaCheckinDeliveryHealth } from "./va-checkin.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -107,6 +107,9 @@ void (forceKickoffMarker
   : queueVaCheckinKickoff({ store, environment: process.env })
 ).catch(() => {
   // Delivery state captures the failure without exposing message content in logs.
+});
+void sendVaHelpOutreachOnce({ store, environment: process.env }).catch(() => {
+  // Per-recipient delivery state captures failures and allows a safe retry.
 });
 
 app.get("/health", async (_request, response) => {
