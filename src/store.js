@@ -173,6 +173,18 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       const { rows } = await pool.query("SELECT * FROM tasks WHERE id = $1", [id]);
       return rows[0];
     },
+    async listActiveTelegramReminders({ chatId, ownerSenderId } = {}) {
+      const owner = String(ownerSenderId ?? chatId ?? "");
+      const { rows } = await pool.query(
+        `SELECT * FROM tasks
+         WHERE status IN ('queued', 'running')
+           AND payload->>'workflow' = 'telegram_reminder'
+           AND COALESCE(payload->>'ownerSenderId', payload->>'chatId') = $1
+         ORDER BY run_at, created_at`,
+        [owner]
+      );
+      return rows;
+    },
     async updateTaskStatus(id, status) {
       await pool.query("UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2", [status, id]);
       await record("task.status_changed", id, { status });

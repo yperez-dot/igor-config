@@ -22,6 +22,8 @@ import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
 import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput } from "./lead-reminders.js";
 import { handleVaCheckinReply } from "./va-checkin.js";
+import { applyMailToolResult, formatActiveMailTask, maybeContinueMailTask } from "./mail-continuity.js";
+import { applyActionToolResult, formatActiveAction, maybeContinueAction } from "./action-continuity.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 const LEAD_ONBOARDING_ROLES = new Set(["yahoska", "katy", "carolina"]);
@@ -367,6 +369,12 @@ export async function handleTelegramChat({
   let scratch = typeof store.getChatScratch === "function"
     ? await store.getChatScratch(message.chatId, "crm")
     : null;
+  let mailScratch = typeof store.getChatScratch === "function"
+    ? await store.getChatScratch(message.chatId, "mail")
+    : null;
+  let actionScratch = typeof store.getChatScratch === "function"
+    ? await store.getChatScratch(message.chatId, "action")
+    : null;
   const latestAssistantText = [...history].reverse().find((turn) => turn?.role === "assistant")?.content ?? "";
   const nonCrmTopic = switchesAwayFromCrm(inbound.text)
     || (!explicitlyReturnsToCrm(inbound.text) && switchesAwayFromCrm(latestAssistantText));
@@ -378,6 +386,18 @@ export async function handleTelegramChat({
     scratch = next;
     if (next && typeof store.saveChatScratch === "function") {
       await store.saveChatScratch(message.chatId, "crm", next);
+    }
+  };
+  const persistMailScratch = async (next) => {
+    mailScratch = next;
+    if (next && typeof store.saveChatScratch === "function") {
+      await store.saveChatScratch(message.chatId, "mail", next);
+    }
+  };
+  const persistActionScratch = async (next) => {
+    actionScratch = next;
+    if (next && typeof store.saveChatScratch === "function") {
+      await store.saveChatScratch(message.chatId, "action", next);
     }
   };
 
@@ -394,8 +414,32 @@ export async function handleTelegramChat({
     const result = await executeTool(name, args, toolContext);
     const next = applyCrmToolResult(scratch, name, args, result);
     if (next) await persistScratch(next);
+    const nextMail = applyMailToolResult(mailScratch, name, args, result);
+    if (nextMail) await persistMailScratch(nextMail);
+    const nextAction = applyActionToolResult(actionScratch, name, args, result);
+    if (nextAction) await persistActionScratch(nextAction);
     return result;
   };
+
+  const continuedMail = typeof executeTool === "function"
+    ? await maybeContinueMailTask({ text: inbound.text, history, scratch: mailScratch, executeTool: toolRunner })
+    : null;
+  if (continuedMail?.reply) {
+    if (continuedMail.scratch) await persistMailScratch(continuedMail.scratch);
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: continuedMail.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: continuedMail.reply });
+    return continuedMail.reply;
+  }
+
+  const continuedAction = typeof executeTool === "function"
+    ? await maybeContinueAction({ text: inbound.text, history, scratch: actionScratch, executeTool: toolRunner })
+    : null;
+  if (continuedAction?.reply) {
+    if (continuedAction.scratch) await persistActionScratch(continuedAction.scratch);
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: continuedAction.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: continuedAction.reply });
+    return continuedAction.reply;
+  }
 
   const continued = typeof executeTool === "function" && !nonCrmTopic
     ? await maybeContinueCrmTask({
@@ -422,7 +466,9 @@ export async function handleTelegramChat({
     basePrompt,
     nonCrmTopic
       ? "## Current topic\nThis request is not a CRM continuation. Follow the current request and use the matching non-CRM tool. Ignore stale CRM/contact context from earlier turns."
-      : formatActiveCrmTask(scratch)
+      : formatActiveCrmTask(scratch),
+    formatActiveMailTask(mailScratch),
+    formatActiveAction(actionScratch)
   ].filter(Boolean).join("\n");
   const reply = isPlanRecommendationRequest(message.text)
     ? recommendationRefusal(message.text)

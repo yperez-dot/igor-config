@@ -19,6 +19,26 @@ const ATTACHMENT_INSTRUCTION_RE = /(?:User sent a photo\.|The image is attached 
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const NUMBER_WORDS = new Map([["a", 1], ["one", 1], ["two", 2], ["three", 3]]);
 
+function sameMinute(a, b) {
+  const left = a ? new Date(a).getTime() : NaN;
+  const right = b ? new Date(b).getTime() : NaN;
+  return Number.isFinite(left) && Number.isFinite(right) && Math.abs(left - right) < 60_000;
+}
+
+async function activeReminderFor(store, lead, runAt) {
+  if (!lead?.reminderTaskId || typeof store?.getTask !== "function") return null;
+  const task = await store.getTask(lead.reminderTaskId);
+  if (!task || !["queued", "running"].includes(task.status)) return null;
+  return sameMinute(task.run_at ?? task.runAt, runAt) ? task : null;
+}
+
+async function cancelSupersededReminder(store, lead, runAt) {
+  if (!lead?.reminderTaskId || typeof store?.getTask !== "function" || typeof store?.updateTaskStatus !== "function") return;
+  const task = await store.getTask(lead.reminderTaskId);
+  if (!task || task.status !== "queued" || sameMinute(task.run_at ?? task.runAt, runAt)) return;
+  await store.updateTaskStatus(task.id, "cancelled");
+}
+
 function localParts(date = new Date(), timeZone = TZ) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", weekday: "long", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).formatToParts(date);
   return Object.fromEntries(parts.map((part) => [part.type, part.value]));
@@ -191,6 +211,30 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   const raw = sanitizeReminderInput(text);
   if (!raw || !store?.createTask || !chatId) return null;
 
+  if (/\b(?:list|show|what are|which)\b.*\breminders?\b|^\s*(?:my\s+)?reminders?\s*\??$/i.test(raw)) {
+    if (typeof store.listActiveTelegramReminders !== "function") return { task: null, reply: "I can’t list reminders from this connection yet." };
+    const tasks = await store.listActiveTelegramReminders({ chatId, ownerSenderId: senderId });
+    if (!tasks.length) return { task: null, reply: "You have no active reminders." };
+    const lines = tasks.map((task) => {
+      const subject = task.payload?.subject || "Reminder";
+      const when = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(task.run_at ?? task.runAt));
+      return `• ${subject} — ${when}`;
+    });
+    return { task: null, reply: `Active reminders:\n${lines.join("\n")}` };
+  }
+
+  if (/\b(?:cancel|delete)\b.*\breminder\b/i.test(raw)) {
+    const lead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
+    if (!lead) return { task: null, reply: "Which person’s reminder should I cancel?" };
+    const tasks = typeof store.listActiveTelegramReminders === "function"
+      ? await store.listActiveTelegramReminders({ chatId, ownerSenderId: senderId })
+      : [];
+    const matching = tasks.filter((task) => task.payload?.leadId === lead.leadId || String(task.payload?.subject ?? "").toLowerCase() === String(lead.subject).toLowerCase());
+    for (const task of matching) await store.updateTaskStatus?.(task.id, "cancelled");
+    if (matching.length) await updateLeadState({ store, lead, followUpAt: null, reminderTaskId: null });
+    return { task: null, leadId: lead.leadId, reply: matching.length ? `Cancelled ${lead.subject}’s reminder.` : `${lead.subject} has no active reminder.` };
+  }
+
   const removalRequest = /\b(remove|delete|forget)\b/i.test(raw) && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw);
   if (removalRequest) {
     const lead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
@@ -247,12 +291,17 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   const subject = existingLead?.subject || reminderSubject(subjectText || raw);
   const matchedBySubject = existingLead || await findLeadBySubject(store, { ownerSenderId: senderId, subject });
   const leadId = matchedBySubject?.leadId || crypto.randomUUID();
+  const duplicate = await activeReminderFor(store, matchedBySubject, runAt);
+  const when = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(runAt);
+  if (duplicate) {
+    return { task: duplicate, leadId, duplicate: true, reply: `That reminder already exists: call ${subject} ${when}.` };
+  }
+  await cancelSupersededReminder(store, matchedBySubject, runAt);
   const reminderText = `Lead follow-up: ${subject}. Before I close this out: is this person in GHL, and did you update the lead outcome/status?`;
   const task = await store.createTask({ id: crypto.randomUUID(), type: "lead_management", payload: { workflow: "telegram_reminder", chatId: String(chatId), ownerSenderId: String(senderId ?? ""), leadId, text: reminderText, subject, source: "lead_followup" }, runAt });
   const resolvedOwnerRole = ownerRole || (typeof store.getTelegramSpeaker === "function" ? await store.getTelegramSpeaker(senderId) : null);
   await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: matchedBySubject?.nextAction ?? "follow up", followUpAt: runAt, ghlStatus: matchedBySubject?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created" });
-  const when = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(runAt);
   const knowsGhl = matchedBySubject?.ghlStatus && !/unknown/i.test(String(matchedBySubject.ghlStatus));
   const ghlQuestion = knowsGhl ? "" : " Also, is this person already in GHL?";
-  return { task, leadId, reply: `Got it — I’ll remind you ${when} about ${subject}.${ghlQuestion}` };
+  return { task, leadId, reply: `Reminder set: call ${subject} ${when}.${ghlQuestion}` };
 }

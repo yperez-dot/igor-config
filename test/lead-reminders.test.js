@@ -10,9 +10,21 @@ function ledgerStore() {
     memories,
     tasks,
     async createTask(task) {
-      const saved = { id: task.id, ...task };
+      const saved = { id: task.id, status: "queued", run_at: task.runAt, ...task };
       tasks.push(saved);
       return saved;
+    },
+    async getTask(id) {
+      return tasks.find((task) => task.id === id) ?? null;
+    },
+    async updateTaskStatus(id, status) {
+      const task = tasks.find((entry) => entry.id === id);
+      if (task) task.status = status;
+      return task ?? null;
+    },
+    async listActiveTelegramReminders({ ownerSenderId } = {}) {
+      return tasks.filter((task) => ["queued", "running"].includes(task.status)
+        && String(task.payload?.ownerSenderId) === String(ownerSenderId));
     },
     async saveAgentMemory({ id, content, tags, source }) {
       const row = { id: id || `m${memories.length + 1}`, content, tags, source, createdAt: new Date() };
@@ -206,6 +218,38 @@ test("creating a reminder also opens a persistent lead ledger entry", async () =
   assert.equal(leads[0].ownerRole, "yahoska");
   assert.equal(leads[0].state, "open");
   assert.equal(leads[0].reminderTaskId, result.task.id);
+});
+
+test("repeating the same reminder returns the existing task instead of duplicating it", async () => {
+  const store = ledgerStore();
+  const now = new Date("2026-09-09T21:00:00Z");
+  const first = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now });
+  const second = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now });
+  assert.equal(second.duplicate, true);
+  assert.equal(second.task.id, first.task.id);
+  assert.equal(store.tasks.length, 1);
+  assert.match(second.reply, /already exists/i);
+});
+
+test("moving a lead reminder cancels the older queued task", async () => {
+  const store = ledgerStore();
+  const now = new Date("2026-09-09T21:00:00Z");
+  const first = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now });
+  const moved = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 2 pm", history: [], store, chatId: "222", senderId: "222", now });
+  assert.notEqual(moved.task.id, first.task.id);
+  assert.equal(store.tasks[0].status, "cancelled");
+  assert.equal(store.tasks[1].status, "queued");
+});
+
+test("lists and cancels active reminders by lead name", async () => {
+  const store = ledgerStore();
+  const now = new Date("2026-09-09T21:00:00Z");
+  await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now });
+  const listed = await maybeScheduleLeadReminder({ text: "show my reminders", history: [], store, chatId: "222", senderId: "222", now });
+  assert.match(listed.reply, /Maria Lopez/);
+  const cancelled = await maybeScheduleLeadReminder({ text: "cancel Maria Lopez reminder", history: [], store, chatId: "222", senderId: "222", now });
+  assert.match(cancelled.reply, /Cancelled Maria Lopez/);
+  assert.equal(store.tasks[0].status, "cancelled");
 });
 
 test("an enrolled reply closes the lead after a reminder fires", async () => {
