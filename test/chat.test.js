@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { handleTelegramChat, looksLikeOpsAlert, withReplyContext } from "../src/chat.js";
+import { handleTelegramChat, looksLikeOpsAlert, stripInternalHandoff, withReplyContext } from "../src/chat.js";
 import { isPlanRecommendationRequest, recommendationRefusal } from "../src/grok.js";
 import { writeStoredZip } from "../src/zip.js";
 
@@ -21,6 +21,17 @@ function memoryStore() {
     }
   };
 }
+
+test("internal handoff instructions are stripped from Telegram replies", () => {
+  assert.equal(
+    stripInternalHandoff("Closest match found.\n\nFor ChatGPT: clear the database row and requeue it."),
+    "Closest match found."
+  );
+  assert.equal(
+    stripInternalHandoff("I found the page.\n\nChatGPT handoff — use the API key next."),
+    "I found the page."
+  );
+});
 
 test("own-calendar wording books Katy without asking Grok", async () => {
   const store = memoryStore();

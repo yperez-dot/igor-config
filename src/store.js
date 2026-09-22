@@ -405,13 +405,21 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       return rows[0]?.role ?? null;
     },
     async claimVaCheckin({ id, userId, kind, weekKey = null, status = "sent", detail = {} }) {
-      const existing = await this.getVaCheckin(id);
-      if (existing) return false;
+      const values = [String(id), String(userId), String(kind), weekKey, String(status), detail];
+      const retry = await pool.query(
+        `UPDATE va_checkin_state SET
+           user_id = $2, kind = $3, week_key = $4, status = $5, detail = $6, updated_at = NOW()
+         WHERE id = $1 AND status = 'failed'
+         RETURNING id`,
+        values
+      );
+      if (retry.rows.length) return true;
+      if (await this.getVaCheckin(id)) return false;
       try {
         await pool.query(
           `INSERT INTO va_checkin_state (id, user_id, kind, week_key, status, detail)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [String(id), String(userId), String(kind), weekKey, String(status), detail]
+          values
         );
         return true;
       } catch (error) {

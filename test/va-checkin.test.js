@@ -89,7 +89,7 @@ function memoryVaStore() {
     rows,
     tasks,
     async claimVaCheckin(row) {
-      if (rows.has(row.id)) return false;
+      if (rows.has(row.id) && rows.get(row.id).status !== "failed") return false;
       rows.set(row.id, { ...row, detail: row.detail ?? {} });
       return true;
     },
@@ -249,6 +249,46 @@ test("kickoff is idempotent per user", async () => {
   assert.equal(second.recipientCount, 0);
   assert.equal(second.skippedCount, 3);
   assert.ok(await store.getVaCheckin(kickoffStateId("222")));
+});
+
+test("failed kickoff delivery is marked failed and retries successfully", async () => {
+  const store = memoryVaStore();
+  const oneRecipientEnv = {
+    ...ENV,
+    TELEGRAM_ALLOWED_USER_IDS: "111",
+    TELEGRAM_KATY_USER_ID: "",
+    TELEGRAM_CAROLINA_USER_ID: ""
+  };
+  let fail = true;
+  await assert.rejects(() => runVaCheckin(
+    { payload: { workflow: "va_checkin", phase: "kickoff", weekKey: WEEK } },
+    {
+      environment: oneRecipientEnv,
+      store,
+      now: MONDAY,
+      readNotion: async () => ({ ok: true, projects: [], todos: [] }),
+      sendTelegram: async () => {
+        if (fail) throw new Error("Telegram unavailable");
+      },
+      sleep: async () => {}
+    }
+  ));
+  assert.equal((await store.getVaCheckin(kickoffStateId("111"))).status, "failed");
+
+  fail = false;
+  const retried = await runVaCheckin(
+    { payload: { workflow: "va_checkin", phase: "kickoff", weekKey: WEEK } },
+    {
+      environment: oneRecipientEnv,
+      store,
+      now: MONDAY,
+      readNotion: async () => ({ ok: true, projects: [], todos: [] }),
+      sendTelegram: async () => {},
+      sleep: async () => {}
+    }
+  );
+  assert.equal(retried.recipientCount, 1);
+  assert.equal((await store.getVaCheckin(kickoffStateId("111"))).status, "sent");
 });
 
 test("Tuesday nudge sends once and skips after a reply", async () => {

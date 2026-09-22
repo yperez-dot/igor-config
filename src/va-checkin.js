@@ -913,6 +913,11 @@ async function hasState(store, id) {
   return Boolean(await store.getVaCheckin(id));
 }
 
+async function hasSentState(store, id) {
+  if (!store?.getVaCheckin) return false;
+  return (await store.getVaCheckin(id))?.status === "sent";
+}
+
 async function claimState(store, row) {
   if (!store?.claimVaCheckin) return true;
   return store.claimVaCheckin(row);
@@ -950,45 +955,52 @@ export async function runVaCheckin(task, {
   const failures = [];
 
   for (const recipient of recipients) {
+    let state = null;
     try {
       if (phase === "kickoff") {
-        if (!await claimState(store, {
+        state = {
           id: kickoffStateId(recipient.chatId),
           userId: recipient.chatId,
           kind: "kickoff",
           weekKey,
-          status: "sent"
-        })) {
+          status: "sending",
+          detail: { startedAt: now.toISOString() }
+        };
+        if (!await claimState(store, state)) {
           skipped.push({ chatId: recipient.chatId, reason: "already_sent" });
           continue;
         }
       }
       if (phase === "weekly") {
-        if (!await claimState(store, {
+        state = {
           id: weeklyStateId(weekKey, recipient.chatId),
           userId: recipient.chatId,
           kind: "weekly",
           weekKey,
-          status: "sent"
-        })) {
+          status: "sending",
+          detail: { startedAt: now.toISOString() }
+        };
+        if (!await claimState(store, state)) {
           skipped.push({ chatId: recipient.chatId, reason: "already_sent" });
           continue;
         }
       }
       if (phase === "nudge") {
-        const weeklySent = await hasState(store, weeklyStateId(weekKey, recipient.chatId));
+        const weeklySent = await hasSentState(store, weeklyStateId(weekKey, recipient.chatId));
         const replied = await hasState(store, replyStateId(weekKey, recipient.chatId));
         if (!weeklySent || replied) {
           skipped.push({ chatId: recipient.chatId, reason: replied ? "already_replied" : "no_weekly" });
           continue;
         }
-        if (!await claimState(store, {
+        state = {
           id: nudgeStateId(weekKey, recipient.chatId),
           userId: recipient.chatId,
           kind: "nudge",
           weekKey,
-          status: "sent"
-        })) {
+          status: "sending",
+          detail: { startedAt: now.toISOString() }
+        };
+        if (!await claimState(store, state)) {
           skipped.push({ chatId: recipient.chatId, reason: "already_sent" });
           continue;
         }
@@ -1006,8 +1018,22 @@ export async function runVaCheckin(task, {
         store,
         sleep
       });
+      if (state && store?.upsertVaCheckin) {
+        await store.upsertVaCheckin({
+          ...state,
+          status: "sent",
+          detail: { deliveredAt: new Date().toISOString(), partCount: parts.length }
+        });
+      }
       sent += 1;
     } catch (error) {
+      if (state && store?.upsertVaCheckin) {
+        await store.upsertVaCheckin({
+          ...state,
+          status: "failed",
+          detail: { failedAt: new Date().toISOString(), error: String(error.message ?? error) }
+        });
+      }
       failures.push({ chatId: recipient.chatId, reason: error.message });
     }
   }
@@ -1041,7 +1067,7 @@ export async function queueVaCheckinKickoff({
   }
   let pending = 0;
   for (const recipient of recipients) {
-    if (!await hasState(store, kickoffStateId(recipient.chatId))) pending += 1;
+    if (!await hasSentState(store, kickoffStateId(recipient.chatId))) pending += 1;
   }
   if (!pending) return { queued: false, reason: "already_sent" };
   const open = store.openWorkflowTask ? await store.openWorkflowTask(VA_CHECKIN_WORKFLOW) : null;

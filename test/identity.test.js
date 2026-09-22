@@ -38,6 +38,8 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /Ask useful questions, not process questions/);
   assert.match(SYSTEM_PROMPT, /Do not confuse initiative with permission/);
   assert.match(SYSTEM_PROMPT, /Close the loop/);
+  assert.match(SYSTEM_PROMPT, /Do not claim you pinged, asked, contacted, messaged/);
+  assert.match(SYSTEM_PROMPT, /Never expose internal orchestration text/);
   assert.match(SYSTEM_PROMPT, /I’m not adding them|I'm not adding them/);
   assert.match(SYSTEM_PROMPT, /mark events free/);
   assert.match(SYSTEM_PROMPT, /then follow her/);

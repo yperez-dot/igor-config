@@ -49,6 +49,13 @@ export function teammateIdentityIntroduction(text) {
   return raw.match(IDENTITY_INTRO_RE)?.[1]?.toLowerCase() ?? null;
 }
 
+export function stripInternalHandoff(text) {
+  return String(text ?? "")
+    .replace(/\n*For ChatGPT\s*:[\s\S]*$/i, "")
+    .replace(/\n*(?:ChatGPT\s+handoff|What to do next\s*\(ChatGPT\s*\/\s*Igor\))[\s\S]*$/i, "")
+    .trim();
+}
+
 function onboardingEventType(senderId) {
   return `lead_onboarding.completed.${String(senderId ?? "").trim()}`;
 }
@@ -485,7 +492,7 @@ export async function handleTelegramChat({
         conversationId: message.chatId
       })
       : unavailableMessage(userText);
-  const safeReply = blockYahoskaOnlyRefusal(reply, speaker);
+  const safeReply = stripInternalHandoff(blockYahoskaOnlyRefusal(reply, speaker));
 
   await sendTelegramMessage({ botToken, chatId: message.chatId, text: safeReply });
   await store.appendChatTurn({
