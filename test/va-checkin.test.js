@@ -451,6 +451,14 @@ test("ambiguous notes prefer GHL when a contact was just discussed", () => {
   assert.equal(shouldRouteVaReplyToNotion("Finished the AEP contracting project", { history }), true);
 });
 
+test("email follow-up confirmation never becomes a weekly Notion todo", () => {
+  const history = [
+    { role: "assistant", content: "I found your September 16 email to David Grossman. What should the follow-up email say?" }
+  ];
+  const text = "Yes let’s ask if he was able to review it and if he has any questions";
+  assert.equal(shouldRouteVaReplyToNotion(text, { history }), false);
+});
+
 test("GHL contact-note replies skip the Notion write card", async () => {
   const store = memoryVaStore();
   await store.claimVaCheckin({ id: weeklyStateId(WEEK, "111"), userId: "111", kind: "weekly", weekKey: WEEK, status: "sent" });

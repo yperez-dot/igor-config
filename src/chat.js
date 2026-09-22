@@ -1,5 +1,6 @@
 import {
   applyCrmToolResult,
+  explicitlyReturnsToCrm,
   formatActiveCrmTask,
   maybeContinueCrmTask,
   mergeThreadIdentifiers,
@@ -366,7 +367,9 @@ export async function handleTelegramChat({
   let scratch = typeof store.getChatScratch === "function"
     ? await store.getChatScratch(message.chatId, "crm")
     : null;
-  const nonCrmTopic = switchesAwayFromCrm(inbound.text);
+  const latestAssistantText = [...history].reverse().find((turn) => turn?.role === "assistant")?.content ?? "";
+  const nonCrmTopic = switchesAwayFromCrm(inbound.text)
+    || (!explicitlyReturnsToCrm(inbound.text) && switchesAwayFromCrm(latestAssistantText));
   if (!nonCrmTopic) {
     scratch = mergeThreadIdentifiers(scratch, history, inbound.text);
   }

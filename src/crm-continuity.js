@@ -18,6 +18,7 @@ const CRM_TOOLS = new Set([
 const AFFIRM_RE = /^(?:yes|yep|yeah|yup|si|sí|ok|okay|do it|go ahead|save(?: it)?|hazlo|dale|correcto|confirmo)(?:\s*(?:please|pls|igor|do it|save it|thanks|thank you))?[.!\s]*$/i;
 const LOOK_UP_RE = /\blook(?:\s+it)?\s+up\b|\blook(?:\s+her|\s+him|\s+them)?\s+up\b|\bb[uú]sca(?:lo|la|le)?\b|\bfind (?:her|him|them|it)\b/i;
 const NON_CRM_TOPIC_RE = /\b(?:e-?mails?|gmail|inbox|outbox|sent\s+(?:mail|message)|google\s+drive|drive\s+file|calendar|website|github|railway)\b/i;
+const EXPLICIT_CRM_TOPIC_RE = /\b(?:ghl|crm|go\s*high\s*level|contact|client|lead|prospect|open\s+leads|active[_\s-]?prospect|last[- ]?4)\b/i;
 const YEAR_RE = /^20\d{2}$/;
 
 export function isAffirmative(text) {
@@ -31,6 +32,10 @@ export function isLookItUp(text) {
 
 export function switchesAwayFromCrm(text) {
   return NON_CRM_TOPIC_RE.test(String(text ?? ""));
+}
+
+export function explicitlyReturnsToCrm(text) {
+  return EXPLICIT_CRM_TOPIC_RE.test(String(text ?? ""));
 }
 
 export function parseNameCorrection(text) {

@@ -371,3 +371,34 @@ test("sent-email search does not reuse the prior CRM contact", async () => {
   assert.doesNotMatch(reply, /Sandra|0534/);
   assert.match(reply, /David Grossman/);
 });
+
+test("email follow-up confirmation stays on email instead of stale CRM", async () => {
+  const store = memoryStore({
+    contactId: "contact-sandra-1",
+    storedName: "Sandra C.",
+    phoneLast4: "0534",
+    goal: "crm"
+  });
+  store.turns.push({
+    role: "assistant",
+    content: "I found your September 16 email to David Grossman. What should the follow-up email say?"
+  });
+  let prompt = "";
+  const { grokCalled, toolCalls, reply } = await chatTurn({
+    store,
+    text: "Yes let’s ask if he was able to review it and if he has any questions",
+    askGrok: (request) => {
+      prompt = request.systemPrompt;
+      return "I’ll draft that follow-up in the David Grossman email thread.";
+    },
+    executeTool: async () => {
+      throw new Error("email confirmation must not call a stale CRM tool");
+    }
+  });
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalls.length, 0);
+  assert.doesNotMatch(prompt, /## Active CRM task \(this Telegram chat\)/);
+  assert.match(prompt, /not a CRM continuation/i);
+  assert.doesNotMatch(reply, /Sandra|0534/);
+  assert.match(reply, /David Grossman/);
+});

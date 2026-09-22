@@ -145,6 +145,8 @@ export function looksLikeVaProjectUpdate(text) {
   if (/\bnotion\b/i.test(raw)) return true;
   if (CREATE_TODO_RE.test(raw)) return true;
   if (/\b(?:open\s+projects?|monthly\s+todos?|weekly\s+check-?in)\b/i.test(raw)) return true;
+  if (/\bthis\s+week\s+i['’]?m\s+focused\s+on\b/i.test(raw)) return true;
+  if (/\bupdate\s+the\s+notes\s+on\b/i.test(raw)) return true;
   if (STATUS_RE.test(raw) && /\b(?:project|todo|task)\b/i.test(raw)) return true;
   return false;
 }
@@ -159,8 +161,12 @@ export function looksLikeRecentGhlContactContext(history = []) {
 export function shouldRouteVaReplyToNotion(text, { history, replyTo } = {}) {
   if (looksLikeGhlCrmIntent(text) || looksLikeGhlContactNoteIntent(text)) return false;
   if (looksLikeRecentGhlContactContext(history) && !looksLikeVaProjectUpdate(text)) return false;
-  if (looksLikeVaCheckinPrompt(replyTo?.text) && looksLikeVaProjectUpdate(text)) return true;
-  return true;
+  if (looksLikeVaProjectUpdate(text)) return true;
+  if (looksLikeVaCheckinPrompt(replyTo?.text)) return true;
+  const latestAssistant = [...(Array.isArray(history) ? history : [])]
+    .reverse()
+    .find((turn) => turn?.role === "assistant");
+  return looksLikeVaCheckinPrompt(latestAssistant?.content ?? latestAssistant?.text);
 }
 
 function notionHeaders(token) {
