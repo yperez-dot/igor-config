@@ -381,7 +381,11 @@ export async function ghlSearchContacts({ token, locationId, query, contactId, p
   }
 
   if (searches.length) {
-    const contacts = await ghlRawContacts({ token, locationId, query: searches[0], limit, fetchImpl });
+    let contacts = await ghlRawContacts({ token, locationId, query: searches[0], limit, fetchImpl });
+    const firstName = nameTokens(nameHint)[0];
+    if (!contacts.length && firstName && firstName !== nameHint.toLowerCase()) {
+      contacts = await ghlRawContacts({ token, locationId, query: firstName, limit, fetchImpl });
+    }
     return contacts.map((contact) => maskSearchedContact(contact));
   }
 
@@ -679,11 +683,18 @@ export async function ghlResolveContact({
     || (!phoneHint && queryText && !looksLikeGhlContactId(queryText) ? queryText : "");
   if (nameQuery) {
     tried.push("query");
-    const contacts = await ghlRawContacts({ token, locationId, query: nameQuery, limit: 10, fetchImpl });
+    let contacts = await ghlRawContacts({ token, locationId, query: nameQuery, limit: 10, fetchImpl });
+    const firstName = nameTokens(nameQuery)[0];
+    let resolvedVia = "query";
+    if (!contacts.length && firstName && firstName !== nameQuery.toLowerCase()) {
+      tried.push("firstName");
+      contacts = await ghlRawContacts({ token, locationId, query: firstName, limit: 10, fetchImpl });
+      resolvedVia = "firstName";
+    }
     const hydrated = await hydrateContactsWithPhone({ token, contacts, fetchImpl });
     const picked = pickUniqueContact(hydrated, { query: nameQuery, phone: phoneHint });
     if (!picked.error && (!phoneHint || contactMatchesPhone(picked, phoneHint))) {
-      return toResolvedContact(picked, picked.id, "query");
+      return toResolvedContact(picked, picked.id, resolvedVia);
     }
     if (picked.candidates) lastMulti = picked;
   }

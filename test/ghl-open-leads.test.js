@@ -288,6 +288,30 @@ test("Open Leads check uses last-4 when the stored first name differs", async ()
   assert.equal(result.contact.id, MICHELLE_ID);
 });
 
+test("Open Leads check falls back to a unique first-name hit when the surname is misspelled", async () => {
+  const stored = {
+    id: MICHELLE_ID,
+    firstName: "Miriam",
+    lastName: "Wang",
+    phone: "+13055552363",
+    tags: ["active_prospect"]
+  };
+  const result = await ghlCheckOpenLeads({
+    token: "test",
+    locationId: "loc",
+    query: "Miriam Wong",
+    fetchImpl: async (url) => {
+      const query = new URL(String(url)).searchParams.get("query");
+      if (query === "Miriam Wong") return json({ contacts: [] });
+      if (query === "miriam") return json({ contacts: [stored] });
+      throw new Error(`Unexpected request: ${url}`);
+    }
+  });
+  assert.equal(result.status, "on_list");
+  assert.equal(result.contact.id, MICHELLE_ID);
+  assert.equal(result.resolvedVia, "firstName");
+});
+
 test("ghl_search_contacts tool finds a last-4 match with a corrected first name", async () => {
   const result = await executeTool("ghl_search_contacts", {
     query: "Miriam",
