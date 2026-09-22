@@ -155,13 +155,13 @@ function statusCorrectionNextAction(raw, fallback) {
 
 async function resolveExistingLead(store, { ownerSenderId, text, history = [] } = {}) {
   const direct = await findMentionedLead(store, { ownerSenderId, text });
-  if (direct) return direct;
+  const usableLead = (lead) => lead && !/\b(?:him|her|them|this person|that person)\b/i.test(String(lead.subject ?? ""));
+  if (usableLead(direct)) return direct;
   if (!/\b(him|her|them)\b/i.test(String(text ?? ""))) return null;
-  for (const turn of history.slice(-4).reverse()) {
-    const fromContext = await findMentionedLead(store, { ownerSenderId, text: turn?.content });
-    if (fromContext) return fromContext;
-  }
-  for (const turn of history.slice(-6).reverse()) {
+  // A confirmed CRM identity is stronger than a prior reminder reply. This must
+  // run before ledger matching because older buggy replies may have persisted a
+  // phrase such as "me to call her" as though it were a lead name.
+  for (const turn of [...history].reverse()) {
     if (turn?.role !== "assistant") continue;
     const content = String(turn.content ?? "");
     if (!/\bGHL\b/i.test(content)) continue;
@@ -179,6 +179,10 @@ async function resolveExistingLead(store, { ownerSenderId, text, history = [] } 
       state: "open",
       reminderTaskId: null
     };
+  }
+  for (const turn of history.slice(-8).reverse()) {
+    const fromContext = await findMentionedLead(store, { ownerSenderId, text: turn?.content });
+    if (usableLead(fromContext)) return fromContext;
   }
   return null;
 }
@@ -237,6 +241,9 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
   const existingLead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
+  if (!existingLead && /\b(him|her|them)\b/i.test(raw)) {
+    return { task: null, reply: "Who should I remind you to call? Please send the person’s name." };
+  }
   const subject = existingLead?.subject || reminderSubject(subjectText || raw);
   const matchedBySubject = existingLead || await findLeadBySubject(store, { ownerSenderId: senderId, subject });
   const leadId = matchedBySubject?.leadId || crypto.randomUUID();

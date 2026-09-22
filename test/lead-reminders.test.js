@@ -153,6 +153,50 @@ test("pronoun reminder inherits the confirmed GHL Open Leads conversation", asyn
   assert.equal(leads[0].ghlStatus, "in GHL under Open Leads");
 });
 
+test("confirmed GHL identity wins over a previously corrupted pronoun reminder", async () => {
+  const store = ledgerStore();
+  await saveLeadSnapshot({
+    store,
+    leadId: "bad-pronoun-lead",
+    ownerSenderId: "222",
+    subject: "me to call her to complete her enrollment",
+    nextAction: "follow up",
+    ghlStatus: "unknown",
+    state: "open"
+  });
+  const history = [
+    { role: "assistant", content: "Got it — confirmed: Miriam W., phone ending in 2363, is the Miriam Wang record in GHL and she is on Open Leads." },
+    { role: "user", content: "set a reminder for me to call her today at 4:30 to complete her enrollment" },
+    { role: "assistant", content: "Got it — I’ll remind you Tue, Sep 22, 4:30 PM about me to call her to complete her enrollment. Also, is this person already in GHL?" }
+  ];
+  const result = await maybeScheduleLeadReminder({
+    text: "set a reminder for me to call her today at 4:30 to complete her enrollment",
+    history,
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T18:12:00Z")
+  });
+  assert.ok(result.task);
+  assert.equal(result.task.payload.subject, "Miriam Wang");
+  assert.doesNotMatch(result.reply, /already in GHL|me to call her/i);
+});
+
+test("unresolved pronoun asks for a name instead of scheduling a corrupt lead", async () => {
+  const store = ledgerStore();
+  const result = await maybeScheduleLeadReminder({
+    text: "set a reminder for me to call her today at 4:30",
+    history: [],
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T18:12:00Z")
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /who should i remind you to call/i);
+  assert.equal(store.tasks.length, 0);
+});
+
 test("creating a reminder also opens a persistent lead ledger entry", async () => {
   const store = ledgerStore();
   const result = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now: new Date("2026-09-09T21:00:00Z") });
