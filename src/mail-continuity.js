@@ -72,13 +72,13 @@ export async function maybeContinueMailTask({ text, history = [], scratch, execu
     if (!/send/i.test(userText)) return { scratch: afterDraft, reply: `Draft created — ${args.subject} to ${args.to}.` };
     const sent = await executeTool("gmail_send_message", { ...args, confirmed: true });
     const afterSend = applyMailToolResult(afterDraft, "gmail_send_message", args, sent);
-    if (sent?.sent) return { scratch: afterSend, reply: `Sent — ${args.subject} to ${args.to}.` };
+    if (sent?.sent) return { scratch: afterSend, reply: `Sent — ${args.subject} to ${args.to}. I kept the Gmail thread attached; if this needs a follow-up date, tell me when and I’ll set it.` };
     const detail = String(sent?.detail ?? sent?.error ?? sent?.message ?? "Gmail did not confirm the send").slice(0, 240);
     return { scratch: afterSend, reply: `The draft was created, but I couldn’t send it yet: ${detail}.` };
   }
   const result = await executeTool("gmail_send_message", args);
   const next = applyMailToolResult(scratch, "gmail_send_message", args, result);
-  if (result?.sent) return { scratch: next, reply: `Sent — ${args.subject} to ${args.to}.` };
+  if (result?.sent) return { scratch: next, reply: `Sent — ${args.subject} to ${args.to}. I kept the Gmail thread attached; if this needs a follow-up date, tell me when and I’ll set it.` };
   const detail = String(result?.detail ?? result?.error ?? result?.message ?? "Gmail did not confirm the send").slice(0, 240);
   return { scratch: next, reply: `I couldn’t send it yet: ${detail}. The reviewed email is still attached to this conversation.` };
 }
