@@ -297,11 +297,16 @@ function namesOverlap(left, right) {
   return aLast === bLast || aLast[0] === bLast[0];
 }
 
+const NON_NAME_FOLLOW_WORD_RE = /^(?:due|tomorrow|today|tonight|at|on|for|with|please|pls)$/i;
+
 export function extractNamedContact(text) {
   const raw = String(text ?? "");
-  const named = raw.match(/\b(?:on|for)\s+([A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)(?:\s|$|,|\.|due)/)?.[1];
-  if (!named || THREAD_CONTACT_NAME_RE.test(named)) return "";
-  return compactTaskText(named);
+  const match = raw.match(/\b(?:on|for)\s+([A-Za-z][A-Za-z'’-]+)(?:\s+([A-Za-z][A-Za-z'’-]+))?/i);
+  if (!match) return "";
+  const first = match[1];
+  const second = match[2] && !NON_NAME_FOLLOW_WORD_RE.test(match[2]) ? match[2] : "";
+  if (THREAD_CONTACT_NAME_RE.test(first) && (!second || /^contact$/i.test(second))) return "";
+  return compactTaskText([first, second].filter(Boolean).join(" "));
 }
 
 export function isThreadContactReference(text) {
