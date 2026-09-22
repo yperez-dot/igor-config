@@ -1,4 +1,6 @@
 import { looksLikeGhlContactId, nameQueryWithoutPhone, phoneDigitsFromQuery } from "./ghl.js";
+import { parseReminderRunAt } from "./lead-reminders.js";
+import { isGhlContactTaskRequest } from "./task-calendar-route.js";
 
 const CRM_TOOLS = new Set([
   "ghl_search_contacts",
@@ -18,7 +20,7 @@ const CRM_TOOLS = new Set([
 const AFFIRM_RE = /^(?:yes|yep|yeah|yup|si|sí|ok|okay|do it|go ahead|save(?: it)?|hazlo|dale|correcto|confirmo)(?:\s*(?:please|pls|igor|do it|save it|thanks|thank you))?[.!\s]*$/i;
 const LOOK_UP_RE = /\blook(?:\s+it)?\s+up\b|\blook(?:\s+her|\s+him|\s+them)?\s+up\b|\bb[uú]sca(?:lo|la|le)?\b|\bfind (?:her|him|them|it)\b/i;
 const NON_CRM_TOPIC_RE = /\b(?:e-?mails?|gmail|inbox|outbox|sent\s+(?:mail|message)|google\s+drive|drive\s+file|calendar|website|github|railway)\b/i;
-const EXPLICIT_CRM_TOPIC_RE = /\b(?:ghl|crm|go\s*high\s*level|contact|client|lead|prospect|open\s+leads|active[_\s-]?prospect|last[- ]?4)\b/i;
+const EXPLICIT_CRM_TOPIC_RE = /\b(?:ghl|crm|go\s*high\s*level|contact|client|lead|prospect|open\s+leads|active[_\s-]?prospect|last[- ]?4|follow[- ]?up\s+task|(?:ghl|crm|contact)\s+task|create\s+(?:a|an|the)\s+task|task\s+due)\b/i;
 const YEAR_RE = /^20\d{2}$/;
 
 export function isAffirmative(text) {
@@ -147,6 +149,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_add_contact_note") next.goal = "add_note";
   if (name === "ghl_update_contact") next.goal = next.goal || "rename";
   if (name === "ghl_create_contact") next.goal = next.goal || "create_contact";
+  if (name === "ghl_create_contact_task") next.goal = "create_task";
 
   if (name === "ghl_add_contact_note") {
     if (result.needsConfirmation && result.proposed?.body) {
@@ -169,6 +172,26 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_update_contact" && result.updated) {
     next.spokenName = result.firstName || next.spokenName;
     next.storedName = result.contact || next.storedName;
+  }
+
+  if (name === "ghl_create_contact_task") {
+    if (result.needsConfirmation && (result.proposed?.title || args.title)) {
+      next.pending = {
+        tool: "ghl_create_contact_task",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          contactId: next.contactId || result.proposed?.contactId || args.contactId,
+          contactQuery: args.contactQuery,
+          phone: next.phoneLast4,
+          title: result.proposed?.title || args.title,
+          body: result.proposed?.body ?? args.body,
+          dueDate: result.proposed?.dueDate || args.dueDate,
+          assignedTo: result.proposed?.assignedTo || args.assignedTo
+        }
+      };
+    } else if (result.created) {
+      next.pending = null;
+    }
   }
 
   return next;
@@ -219,6 +242,12 @@ export function formatActiveCrmTask(scratch) {
     lines.push(String(scratch.pending.args?.body ?? "").slice(0, 1_500));
     lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft and contact id. Do not drop the draft. Do not re-preview unless the write failed.");
   }
+  if (scratch.pending?.tool === "ghl_create_contact_task") {
+    lines.push(`- Pending GHL task (${scratch.pending.approved ? "already approved — save it" : "draft, waiting for yes"}):`);
+    lines.push(`  title: ${String(scratch.pending.args?.title ?? "").slice(0, 200)}`);
+    lines.push(`  due: ${scratch.pending.args?.dueDate || "(needed)"}`);
+    lines.push("If they say yes/sí/ok/do it, CALL ghl_create_contact_task with confirmed=true on this same draft and contact id. This is a CRM task, not a Google Calendar event.");
+  }
   lines.push("Look it up = use this contact id, then last-4, then name. Never ask them to paste a GHL contact id when any of those exist.");
   lines.push("A name correction updates this contact (ghl_update_contact), then finishes the pending note or Open Leads check.");
   lines.push("CRM notes stay in GHL. Never say NOTION UPDATED for a contact note.");
@@ -233,6 +262,40 @@ function pendingNoteApproved(scratch, history = [], currentText = "") {
   if (scratch?.pending?.tool !== "ghl_add_contact_note") return false;
   if (scratch.pending.approved || isAffirmative(currentText)) return true;
   return history.slice(-8).some((turn) => turn?.role === "user" && isAffirmative(turn.content));
+}
+
+function compactTaskText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+export function parseGhlTaskDraft(text, scratch = {}, { now = new Date() } = {}) {
+  const raw = String(text ?? "");
+  const quoted = raw.match(/\btask\b[^.\n]{0,60}?["“]([^"”]+)["”]/i)?.[1]
+    ?? raw.match(/\b(?:titled|called|named)\s+["“]?([^"”\n,]+)["”]?/i)?.[1];
+  const toDo = raw.match(/\btask\s+to\s+(.+?)(?:\s+due\b|\s+tomorrow\b|\s+today\b|\s+tonight\b|,|$)/i)?.[1];
+  let title = compactTaskText(quoted || toDo);
+  if (!title || title.length > 80 || /^(?:on|for|due|the contact|that contact|this contact)\b/i.test(title)) {
+    title = "Follow up";
+  }
+  const named = raw.match(/\b(?:on|for)\s+([A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)(?:\s|$|,|\.|due)/)?.[1];
+  const usableName = named && !/^(that|this|the)(?:\s+contact)?$|^contact$/i.test(named) ? named : "";
+  const due = parseReminderRunAt(raw, { now }) || parseReminderRunAt("tomorrow", { now });
+  return {
+    title,
+    dueDate: due.toISOString(),
+    contactQuery: compactTaskText(usableName) || scratch.spokenName || scratch.storedName || ""
+  };
+}
+
+function taskWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_create_contact_task") return null;
+  return {
+    ...pending.args,
+    contactId: scratch.contactId || pending.args?.contactId,
+    phone: scratch.phoneLast4 || pending.args?.phone,
+    confirmed: true
+  };
 }
 
 function noteWriteArgs(scratch) {
@@ -260,6 +323,27 @@ async function savePendingNote(scratch, executeTool) {
   const result = await executeTool("ghl_add_contact_note", args);
   const next = applyCrmToolResult({ ...scratch, pending: { ...scratch.pending, approved: true } }, "ghl_add_contact_note", args, result);
   return { scratch: next, result };
+}
+
+async function savePendingTask(scratch, executeTool) {
+  const args = taskWriteArgs(scratch);
+  if (!args?.title || !args?.dueDate) return { scratch, result: null };
+  const result = await executeTool("ghl_create_contact_task", args);
+  const next = applyCrmToolResult({ ...scratch, pending: { ...scratch.pending, approved: true } }, "ghl_create_contact_task", args, result);
+  return { scratch: next, result };
+}
+
+function formatTaskDue(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return "the due date we previewed";
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(date);
 }
 
 export async function maybeContinueCrmTask({
@@ -377,6 +461,51 @@ export async function maybeContinueCrmTask({
       scratch: saved.scratch,
       reply: `Couldn’t save that note — ${toolError(saved.result)}. I’ll keep the draft and retry with the contact id / last-4 we already have. I don’t need you to paste a GHL id.`
     };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_create_contact_task") {
+    const nextApproved = {
+      ...merged,
+      pending: { ...merged.pending, approved: true }
+    };
+    const saved = await savePendingTask(nextApproved, executeTool);
+    if (saved.result?.created) {
+      return {
+        scratch: saved.scratch,
+        reply: `Saved the GHL task “${saved.result.title || nextApproved.pending.args?.title}” on ${displayName(saved.scratch)}. That’s a CRM task, not a calendar event.`
+      };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: `Couldn’t save that GHL task — ${toolError(saved.result)}. I’ll keep the draft and retry with the contact id / last-4 we already have.`
+    };
+  }
+
+  if (isGhlContactTaskRequest(text)) {
+    const draft = parseGhlTaskDraft(text, merged);
+    if (merged.contactId || merged.phoneLast4 || draft.contactQuery) {
+      const args = {
+        ...(merged.contactId ? { contactId: merged.contactId } : {}),
+        ...(draft.contactQuery ? { contactQuery: draft.contactQuery } : {}),
+        ...(merged.phoneLast4 ? { phone: merged.phoneLast4 } : {}),
+        title: draft.title,
+        dueDate: draft.dueDate
+      };
+      const preview = await executeTool("ghl_create_contact_task", args);
+      const next = applyCrmToolResult(merged, "ghl_create_contact_task", args, preview);
+      if (preview?.needsConfirmation && preview.proposed?.title) {
+        return {
+          scratch: next,
+          reply: `GHL task on ${preview.proposed.contact || displayName(next)}: “${preview.proposed.title}” due ${formatTaskDue(preview.proposed.dueDate)}. Say yes and I’ll save it in the CRM — this is not a calendar event.`
+        };
+      }
+      if (preview?.error) {
+        return {
+          scratch: next,
+          reply: `Couldn’t preview that GHL task — ${toolError(preview)}. I still have the contact from this chat and I will not put this on Google Calendar.`
+        };
+      }
+    }
   }
 
   return null;

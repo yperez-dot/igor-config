@@ -163,6 +163,46 @@ test("Olivia Tue/Thu/Fri 2:30–3:30 wording books Yahoska’s calendar", async 
   assert.deepEqual(sent, [reply]);
 });
 
+test("create GHL task strips calendar writes and forces the CRM task tool", async () => {
+  const store = memoryStore();
+  let grokRequest;
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "Create a GHL task on Michelle due tomorrow"
+    },
+    askGrok: async (request) => {
+      grokRequest = request;
+      return "Previewing the GHL task on Michelle.";
+    },
+    tools: [
+      { type: "function", function: { name: "ghl_create_contact_task" } },
+      { type: "function", function: { name: "calendar_create_event" } },
+      { type: "function", function: { name: "calendar_list_events" } }
+    ],
+    executeTool: async () => {
+      throw new Error("calendar must not run on a GHL task turn");
+    },
+    sendTelegramMessage: async () => {},
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.deepEqual(grokRequest.tools.map((tool) => tool.function.name), [
+    "ghl_create_contact_task",
+    "calendar_list_events"
+  ]);
+  assert.equal(grokRequest.toolChoice.function.name, "ghl_create_contact_task");
+  assert.match(grokRequest.systemPrompt, /Hard routing/);
+  assert.match(reply, /Previewing the GHL task/);
+});
+
 test("slow the ticker goes through the reviewed assistant workflow", async () => {
   const store = memoryStore();
   const toolCalls = [];

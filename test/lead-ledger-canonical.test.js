@@ -17,6 +17,9 @@ test("canonicalLeadSubject cleans known legacy reminder pollution", () => {
   assert.equal(canonicalLeadSubject("to follow up with Tomas next"), "Tomas");
   assert.equal(canonicalLeadSubject("No Tomás hasn’t enrolled. I helped him enrolling in Medicare but he hasn’t selected a plan"), "Tomás");
   assert.equal(canonicalLeadSubject("Let’s check in. Around 2 pm"), null);
+  assert.equal(canonicalLeadSubject("create a task on that contact"), null);
+  assert.equal(canonicalLeadSubject("create a GHL task on Test Contact due tomorrow"), null);
+  assert.equal(canonicalLeadSubject("Smoke test"), null);
 });
 
 test("listLeadSnapshots dedupes Tomas variants and drops instruction-only entries", async () => {

@@ -18,6 +18,19 @@ test("calendar preview is persisted and exact approval books it", async () => {
   assert.match(result.reply, /Booked/);
 });
 
+test("create GHL task does not confirm a leftover calendar preview", async () => {
+  const scratch = applyActionToolResult(null, "calendar_create_event", { summary: "Reminder", start: "2026-09-23T17:00:00" }, { needsConfirmation: true });
+  const result = await maybeContinueAction({
+    text: "Create a GHL task on that contact due tomorrow",
+    history: [{ role: "assistant", content: "Ready to book Reminder on your calendar." }],
+    scratch,
+    executeTool: async () => {
+      throw new Error("calendar approval must not run for a GHL task");
+    }
+  });
+  assert.equal(result, null);
+});
+
 test("calendar approval is ignored after a topic switch", async () => {
   const scratch = applyActionToolResult(null, "calendar_create_event", { summary: "Miriam call", start: "2026-09-23T10:00:00" }, { needsConfirmation: true });
   const result = await maybeContinueAction({

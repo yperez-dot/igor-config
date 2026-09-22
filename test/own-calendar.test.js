@@ -2,6 +2,23 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { blockYahoskaOnlyRefusal, handleOwnCalendarTurn, ownCalendarBookingArgs, ownCalendarBookedReply, sanitizeOwnCalendarHistory } from "../src/own-calendar.js";
 
+test("create GHL task language does not book a calendar reminder", async () => {
+  const args = ownCalendarBookingArgs({
+    text: "Create a GHL task on that contact due at 5:00",
+    speaker: { role: "katy" },
+    now: new Date("2026-09-22T18:00:00.000Z")
+  });
+  assert.equal(args, null);
+  const result = await handleOwnCalendarTurn({
+    text: "Create a GHL task on that contact due at 5:00",
+    speaker: { role: "katy" },
+    executeTool: async () => {
+      throw new Error("calendar shortcut must not run");
+    }
+  });
+  assert.equal(result, null);
+});
+
 test("Put it on mine today 6:40 books Katy at 18:40 Florida time", () => {
   const args = ownCalendarBookingArgs({
     text: "Put it on mine — today 6:40, not Yahoska’s calendar",

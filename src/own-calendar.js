@@ -1,4 +1,5 @@
 import { claimsToBeYahoska, floridaClock, wantsOwnTeamCalendar } from "./identity.js";
+import { isGhlContactTaskRequest } from "./task-calendar-route.js";
 
 const REFUSAL_RE = /only yahoska|don.t have your calendar|can.t put it on yours|i only have yahoska|i don.t have your calendar/i;
 const CANNED_OWN_RE = /on it — it.?s on your calendar.*not yahoska/i;
@@ -78,6 +79,7 @@ function resolveWhose(speaker, blob) {
 }
 
 export function ownCalendarBookingArgs({ text, history = [], speaker, now = new Date(), timeZone = "America/New_York" } = {}) {
+  if (isGhlContactTaskRequest(text)) return null;
   if (speaker?.role === "yahoska" || isIdentityCorrection(text)) return null;
   const blob = userAuthoredText(text, history);
   const whose = resolveWhose(speaker, blob);
@@ -126,6 +128,7 @@ export async function handleOwnCalendarTurn({
   timeZone
 }) {
   if (typeof executeTool !== "function") return null;
+  if (isGhlContactTaskRequest(text)) return null;
   if (speaker?.role === "yahoska") return null;
   if (isIdentityCorrection(text)) return null;
   if (lastAssistantIsCanned(history) && !wantsOwnTeamCalendar(text)) return null;

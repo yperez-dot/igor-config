@@ -64,6 +64,46 @@ test("askGrok sends identity system prompt plus prior chat turns", async () => {
   ]);
 });
 
+test("askGrok forces tool_choice only on the first round", async () => {
+  const payloads = [];
+  await askGrok({
+    apiKey: "test-key",
+    model: "grok-4.6",
+    text: "Create a GHL task on Michelle due tomorrow",
+    systemPrompt: "You are Igor.",
+    tools: [{ type: "function", function: { name: "ghl_create_contact_task", description: "GHL task", parameters: { type: "object", properties: {} } } }],
+    toolChoice: { type: "function", function: { name: "ghl_create_contact_task" } },
+    executeTool: async () => ({ needsConfirmation: true, proposed: { title: "Follow up" } }),
+    fetchImpl: async (_url, options) => {
+      const payload = JSON.parse(options.body);
+      payloads.push(payload);
+      if (payloads.length === 1) {
+        return {
+          ok: true,
+          json: async () => ({
+            choices: [{
+              message: {
+                content: "",
+                tool_calls: [{
+                  id: "call-1",
+                  type: "function",
+                  function: { name: "ghl_create_contact_task", arguments: "{}" }
+                }]
+              }
+            }]
+          })
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: "Previewing the GHL task." } }] })
+      };
+    }
+  });
+  assert.deepEqual(payloads[0].tool_choice, { type: "function", function: { name: "ghl_create_contact_task" } });
+  assert.equal(payloads[1].tool_choice, "auto");
+});
+
 test("askGrok runs a tool round-trip before answering", async () => {
   const payloads = [];
   const toolCalls = [];

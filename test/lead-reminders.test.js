@@ -80,6 +80,43 @@ test("uses lead check-in context for terse timing replies", async () => {
   assert.equal(created.payload.chatId, "333");
 });
 
+test("create GHL task language does not become a Telegram reminder", async () => {
+  const history = [{ role: "assistant", content: "Any open leads? Tell me who and when do you want me to remind you. Follow up?" }];
+  const text = "Create a GHL task on that contact due tomorrow at 5:00";
+  assert.equal(isLeadReminderRequest(text, history), false);
+  const store = {
+    tasks: [],
+    async createTask(task) { this.tasks.push(task); return task; }
+  };
+  const result = await maybeScheduleLeadReminder({
+    text,
+    history,
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T13:59:00Z")
+  });
+  assert.equal(result, null);
+  assert.equal(store.tasks.length, 0);
+});
+
+test("cancel reminder with no active Telegram reminder does not loop", async () => {
+  const store = {
+    async createTask() { throw new Error("should not create"); },
+    async listActiveTelegramReminders() { return []; }
+  };
+  const result = await maybeScheduleLeadReminder({
+    text: "cancel that reminder",
+    history: [{ role: "assistant", content: "On it — it’s on your calendar at 17:00." }],
+    store,
+    chatId: "222",
+    senderId: "222"
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /no Telegram reminder/i);
+  assert.doesNotMatch(result.reply, /Which person/);
+});
+
 test("multi-person contacted-today status plus appointment time creates no reminder", async () => {
   const text = "Igor David Grossman, Tomas, Mariangela have all been contacted today. Miriam Wong's appt is now at 10 am with me.";
   const history = [{ role: "assistant", content: "Any open leads? Tell me who and when do you want me to remind you." }];

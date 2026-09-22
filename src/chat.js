@@ -24,6 +24,12 @@ import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput
 import { handleVaCheckinReply } from "./va-checkin.js";
 import { applyMailToolResult, formatActiveMailTask, maybeContinueMailTask } from "./mail-continuity.js";
 import { applyActionToolResult, formatActiveAction, maybeContinueAction } from "./action-continuity.js";
+import {
+  isGhlContactTaskRequest,
+  taskCalendarRoutingPrompt,
+  toolChoiceForUserRequest,
+  toolsForUserRequest
+} from "./task-calendar-route.js";
 
 const OPS_ALERT_RE = /heads up|site-health|site health|looks down|healthexps|agentmedicarehub|HTTP\s*[45]\d\d|\b404\b|found issues|website is answering|ads token|I'm watching it/i;
 const LEAD_ONBOARDING_ROLES = new Set(["yahoska", "katy", "carolina"]);
@@ -283,7 +289,8 @@ export async function handleTelegramChat({
     botToken,
     senderId: message.senderId,
     senderProfile,
-    store
+    store,
+    userText: inbound.text
   };
   const schoolPickup = await bookSchoolPickupIfRequested({
     text: message.text,
@@ -415,7 +422,8 @@ export async function handleTelegramChat({
     senderId: message.senderId,
     senderProfile,
     store,
-    pendingAttachment: inbound.attachment
+    pendingAttachment: inbound.attachment,
+    userText: inbound.text
   };
   const toolRunner = async (name, args) => {
     const result = await executeTool(name, args, toolContext);
@@ -469,13 +477,15 @@ export async function handleTelegramChat({
       senderProfile,
       activeCrmTask: null
     });
+  const routedTools = toolsForUserRequest(tools, inbound.text);
   const prompt = [
     basePrompt,
-    nonCrmTopic
+    nonCrmTopic && !isGhlContactTaskRequest(inbound.text)
       ? "## Current topic\nThis request is not a CRM continuation. Follow the current request and use the matching non-CRM tool. Ignore stale CRM/contact context from earlier turns."
       : formatActiveCrmTask(scratch),
     formatActiveMailTask(mailScratch),
-    formatActiveAction(actionScratch)
+    formatActiveAction(actionScratch),
+    taskCalendarRoutingPrompt(inbound.text)
   ].filter(Boolean).join("\n");
   const reply = isPlanRecommendationRequest(message.text)
     ? recommendationRefusal(message.text)
@@ -487,7 +497,8 @@ export async function handleTelegramChat({
         media: inbound.media,
         history: sanitizeOwnCalendarHistory(history, speaker),
         systemPrompt: prompt,
-        tools,
+        tools: routedTools,
+        toolChoice: toolChoiceForUserRequest(inbound.text, routedTools),
         executeTool: toolRunner,
         conversationId: message.chatId
       })
