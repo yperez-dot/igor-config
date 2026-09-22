@@ -24,6 +24,7 @@ import {
   replyStateId,
   runVaCheckin,
   vaCheckinMessages,
+  vaCheckinDeliveryHealth,
   vaWeekKey,
   weeklyStateId
 } from "../src/va-checkin.js";
@@ -403,6 +404,23 @@ test("one-time boot force marker queues exactly one forced kickoff", async () =>
   assert.equal(second.queued, false);
   assert.equal(second.reason, "force_already_queued");
   assert.equal(store.tasks.length, 1);
+});
+
+test("delivery health reports roles without exposing Telegram ids or raw errors", async () => {
+  const store = memoryVaStore();
+  await store.upsertVaCheckin({
+    id: kickoffStateId("111"),
+    userId: "111",
+    kind: "kickoff",
+    status: "failed",
+    detail: { error: "Telegram request failed with HTTP 400" }
+  });
+  const health = await vaCheckinDeliveryHealth({ store, environment: ENV });
+  assert.deepEqual(health.map((row) => row.role), ["yahoska", "katy", "carolina"]);
+  assert.equal(health[0].status, "failed");
+  assert.equal(health[0].failureCategory, "telegram");
+  assert.equal(health[1].status, "missing");
+  assert.doesNotMatch(JSON.stringify(health), /111|HTTP 400/);
 });
 
 test("boot kickoff is not queued when VA_CHECKIN_ENABLED is unset or false", async () => {

@@ -55,6 +55,28 @@ export function vaCheckinRecipients(environment = process.env) {
   });
 }
 
+function kickoffFailureCategory(detail = {}) {
+  const error = String(detail?.error ?? "");
+  if (!error) return null;
+  if (/telegram/i.test(error)) return "telegram";
+  if (/notion/i.test(error)) return "notion";
+  if (/timeout|abort/i.test(error)) return "timeout";
+  return "workflow";
+}
+
+export async function vaCheckinDeliveryHealth({ store, environment = process.env } = {}) {
+  if (!store?.getVaCheckin) return [];
+  return Promise.all(vaCheckinRecipients(environment).map(async (recipient) => {
+    const row = await store.getVaCheckin(kickoffStateId(recipient.chatId));
+    return {
+      role: recipient.role,
+      status: row?.status ?? "missing",
+      updatedAt: row?.updatedAt ?? null,
+      failureCategory: row?.status === "failed" ? kickoffFailureCategory(row.detail) : null
+    };
+  }));
+}
+
 export function recipientForSender(environment, senderId, speaker) {
   const id = String(senderId ?? "").trim();
   const byId = vaCheckinRecipients(environment).find((row) => row.chatId === id);

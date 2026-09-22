@@ -12,7 +12,7 @@ import { inactiveScheduleIds, liveScheduleIds, legacySchedules } from "./legacy-
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
-import { queueVaCheckinKickoff } from "./va-checkin.js";
+import { queueVaCheckinKickoff, vaCheckinDeliveryHealth } from "./va-checkin.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -107,6 +107,7 @@ void queueVaCheckinKickoff({ store, environment: process.env }).catch(() => {
 
 app.get("/health", async (_request, response) => {
   let teamCalendars = [];
+  let vaCheckinDelivery = [];
   try {
     teamCalendars = await Promise.race([
       probeTeamCalendarAccess(),
@@ -115,6 +116,11 @@ app.get("/health", async (_request, response) => {
   } catch {
     teamCalendars = [];
   }
+  try {
+    vaCheckinDelivery = await vaCheckinDeliveryHealth({ store, environment: process.env });
+  } catch {
+    vaCheckinDelivery = [];
+  }
   response.json({
     status: "ok",
     service: "igor-v2",
@@ -122,6 +128,7 @@ app.get("/health", async (_request, response) => {
     telegramConfigured: Boolean(TELEGRAM.botToken && TELEGRAM.webhookSecret && TELEGRAM.allowedUserIds.size),
     ...runtimeIdentity(),
     teamCalendars,
+    vaCheckinDelivery,
     systems: connectedSystems().map((system) => ({
       id: system.id,
       connected: system.connected,
