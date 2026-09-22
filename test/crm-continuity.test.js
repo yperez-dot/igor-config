@@ -10,8 +10,14 @@ import {
   lookupArgsFromScratch,
   maybeContinueCrmTask,
   mergeThreadIdentifiers,
+  switchesAwayFromCrm,
   parseNameCorrection
 } from "../src/crm-continuity.js";
+
+test("email requests switch away from stale CRM continuity", () => {
+  assert.equal(switchesAwayFromCrm("Look through the emails that I sent last week to David Grossman."), true);
+  assert.equal(switchesAwayFromCrm("Look it up in GHL"), false);
+});
 import { isPlanRecommendationRequest, recommendationRefusal } from "../src/grok.js";
 
 const yahoska = { role: "yahoska", name: "Yahoska Perez" };
@@ -336,4 +342,32 @@ test("active CRM scratch is packed into Grok’s system prompt on a follow-up", 
   assert.match(prompt, /contact-michelle-1/);
   assert.match(prompt, /2363/);
   assert.match(prompt, /Follow the thread/);
+});
+
+test("sent-email search does not reuse the prior CRM contact", async () => {
+  const store = memoryStore({
+    contactId: "contact-sandra-1",
+    spokenName: "Sandra",
+    storedName: "Sandra C.",
+    phoneLast4: "0534",
+    goal: "crm"
+  });
+  let prompt = "";
+  const { grokCalled, toolCalls, reply } = await chatTurn({
+    store,
+    text: "Look through the emails that I sent. There’s one that I sent last week to David Grossman. Let me know if you can find it.",
+    askGrok: (request) => {
+      prompt = request.systemPrompt;
+      return "I’ll search your sent email from last week for David Grossman.";
+    },
+    executeTool: async () => {
+      throw new Error("stale CRM continuation must not call a GHL tool");
+    }
+  });
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalls.length, 0);
+  assert.doesNotMatch(prompt, /## Active CRM task \(this Telegram chat\)/);
+  assert.match(prompt, /not a CRM continuation/i);
+  assert.doesNotMatch(reply, /Sandra|0534/);
+  assert.match(reply, /David Grossman/);
 });

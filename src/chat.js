@@ -1,4 +1,10 @@
-import { applyCrmToolResult, formatActiveCrmTask, maybeContinueCrmTask, mergeThreadIdentifiers } from "./crm-continuity.js";
+import {
+  applyCrmToolResult,
+  formatActiveCrmTask,
+  maybeContinueCrmTask,
+  mergeThreadIdentifiers,
+  switchesAwayFromCrm
+} from "./crm-continuity.js";
 import { resolveInboundUserText } from "./inbound-file.js";
 import { claimsToBeYahoska, systemPromptFor, telegramSpeaker, wantsOwnTeamCalendar } from "./identity.js";
 import {
@@ -360,7 +366,10 @@ export async function handleTelegramChat({
   let scratch = typeof store.getChatScratch === "function"
     ? await store.getChatScratch(message.chatId, "crm")
     : null;
-  scratch = mergeThreadIdentifiers(scratch, history, inbound.text);
+  const nonCrmTopic = switchesAwayFromCrm(inbound.text);
+  if (!nonCrmTopic) {
+    scratch = mergeThreadIdentifiers(scratch, history, inbound.text);
+  }
 
   const persistScratch = async (next) => {
     scratch = next;
@@ -385,7 +394,7 @@ export async function handleTelegramChat({
     return result;
   };
 
-  const continued = typeof executeTool === "function"
+  const continued = typeof executeTool === "function" && !nonCrmTopic
     ? await maybeContinueCrmTask({
       text: inbound.text,
       history,
@@ -401,13 +410,17 @@ export async function handleTelegramChat({
     return continued.reply;
   }
 
-  const prompt = systemPrompt
-    ? [systemPrompt, formatActiveCrmTask(scratch)].filter(Boolean).join("\n")
-    : systemPromptFor(environment, {
+  const basePrompt = systemPrompt || systemPromptFor(environment, {
       senderId: message.senderId,
       senderProfile,
-      activeCrmTask: scratch
+      activeCrmTask: null
     });
+  const prompt = [
+    basePrompt,
+    nonCrmTopic
+      ? "## Current topic\nThis request is not a CRM continuation. Follow the current request and use the matching non-CRM tool. Ignore stale CRM/contact context from earlier turns."
+      : formatActiveCrmTask(scratch)
+  ].filter(Boolean).join("\n");
   const reply = isPlanRecommendationRequest(message.text)
     ? recommendationRefusal(message.text)
     : apiKey
