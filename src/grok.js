@@ -190,7 +190,7 @@ export async function askGrok({
     { role: "user", content: userMessageContent(text, media) }
   ];
 
-  const deadline = Date.now() + (totalTimeoutMs ?? (tools?.length ? 75_000 : 60_000));
+  const deadline = Date.now() + (totalTimeoutMs ?? timeoutMs ?? (tools?.length ? 75_000 : 60_000));
 
   for (let round = 0; round <= maxToolRounds; round += 1) {
     const remainingMs = deadline - Date.now();
@@ -226,7 +226,16 @@ export async function askGrok({
 
     for (const call of calls) {
       const name = call.function?.name ?? call.name;
-      const result = await executeTool(name, call.function?.arguments ?? call.arguments ?? "{}");
+      let result;
+      try {
+        result = await executeTool(name, call.function?.arguments ?? call.arguments ?? "{}");
+      } catch (error) {
+        result = {
+          error: "Tool request failed.",
+          detail: String(error?.message ?? error).replace(/[\r\n]+/g, " ").slice(0, 500),
+          retryable: true
+        };
+      }
       messages.push({
         role: "tool",
         tool_call_id: call.id,

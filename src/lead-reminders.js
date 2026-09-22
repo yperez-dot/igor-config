@@ -161,6 +161,25 @@ async function resolveExistingLead(store, { ownerSenderId, text, history = [] } 
     const fromContext = await findMentionedLead(store, { ownerSenderId, text: turn?.content });
     if (fromContext) return fromContext;
   }
+  for (const turn of history.slice(-6).reverse()) {
+    if (turn?.role !== "assistant") continue;
+    const content = String(turn.content ?? "");
+    if (!/\bGHL\b/i.test(content)) continue;
+    const fullName = content.match(/\bis the\s+([A-Z][A-Za-z'’-]+\s+[A-Z][A-Za-z'’-]+)\s+record\b/)?.[1]
+      ?? content.match(/\bconfirmed:\s*([A-Z][A-Za-z'’-]+\s+[A-Z][A-Za-z'’-]+)/i)?.[1];
+    if (!fullName) continue;
+    return {
+      leadId: null,
+      ownerSenderId: String(ownerSenderId ?? ""),
+      ownerRole: null,
+      subject: fullName.replace(/\s+W\.?$/i, " W."),
+      nextAction: "follow up",
+      followUpAt: null,
+      ghlStatus: /\bOpen Leads\b|active_prospect/i.test(content) ? "in GHL under Open Leads" : "in GHL",
+      state: "open",
+      reminderTaskId: null
+    };
+  }
   return null;
 }
 

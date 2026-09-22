@@ -214,7 +214,7 @@ test("lookout can include Pulse send-path blockers without treating them as site
     includePulse: true,
     fetchImpl: async () => jsonResponse(200, {})
   });
-  assert.match(result.fingerprint, /pulse:XAI_API_KEY\+PULSE_IMAP_PASS\+SMTP\+AGENT_PULSE_RECIPIENTS/);
+  assert.match(result.fingerprint, /pulse:AI_API_KEY\+PULSE_IMAP_PASS\+SMTP\+AGENT_PULSE_RECIPIENTS/);
   assert.equal(result.urgent, false);
   assert.match(result.alert, /not send-ready/);
 });

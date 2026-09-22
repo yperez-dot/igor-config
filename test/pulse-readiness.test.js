@@ -13,7 +13,7 @@ test("lists every Pulse send-path blocker at once", () => {
   const readiness = pulseReadiness({});
   assert.equal(readiness.ready, false);
   assert.deepEqual(readiness.blockerIds, [
-    "XAI_API_KEY",
+    "AI_API_KEY",
     "PULSE_IMAP_PASS",
     "SMTP",
     "AGENT_PULSE_RECIPIENTS"

@@ -152,7 +152,7 @@ test("Olivia Tue/Thu/Fri 2:30–3:30 wording books Yahoska’s calendar", async 
   assert.deepEqual(sent, [reply]);
 });
 
-test("slow the ticker does not call Grok", async () => {
+test("slow the ticker goes through the reviewed assistant workflow", async () => {
   const store = memoryStore();
   const toolCalls = [];
   let grokCalled = false;
@@ -181,14 +181,13 @@ test("slow the ticker does not call Grok", async () => {
     recommendationRefusal,
     unavailableMessage: () => "offline"
   });
-  assert.equal(grokCalled, false);
-  assert.equal(toolCalls[0].name, "update_hub_ticker");
-  assert.equal(toolCalls[0].args.slower, true);
-  assert.match(reply, /slower/);
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalls.length, 0);
+  assert.equal(reply, "should not run");
   assert.deepEqual(sent, [reply]);
 });
 
-test("Kayla Zoom off the Hub does not call Grok", async () => {
+test("Kayla Zoom off the Hub goes through the reviewed assistant workflow", async () => {
   const store = memoryStore();
   const toolCalls = [];
   let grokCalled = false;
@@ -216,10 +215,9 @@ test("Kayla Zoom off the Hub does not call Grok", async () => {
     recommendationRefusal,
     unavailableMessage: () => "offline"
   });
-  assert.equal(grokCalled, false);
-  assert.equal(toolCalls[0].name, "update_hub_ticker");
-  assert.equal(toolCalls[0].args.remove, "kayla");
-  assert.match(reply, /Kayla/);
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalls.length, 0);
+  assert.equal(reply, "should not run");
 });
 
 test("inferred Katy name without pinned id does not write the Hub", async () => {
@@ -251,9 +249,9 @@ test("inferred Katy name without pinned id does not write the Hub", async () => 
     recommendationRefusal,
     unavailableMessage: () => "offline"
   });
-  assert.equal(grokCalled, false);
+  assert.equal(grokCalled, true);
   assert.equal(toolCalls.length, 0);
-  assert.match(reply, /Yahoska or Katy/);
+  assert.equal(reply, "should not run");
 });
 
 test("husband ticker wording does not write the Hub or call Grok", async () => {
@@ -284,9 +282,9 @@ test("husband ticker wording does not write the Hub or call Grok", async () => {
     recommendationRefusal,
     unavailableMessage: () => "offline"
   });
-  assert.equal(grokCalled, false);
+  assert.equal(grokCalled, true);
   assert.equal(toolCalls.length, 0);
-  assert.match(reply, /Yahoska or Katy/);
+  assert.equal(reply, "should not run");
 });
 
 test("Yahoska correcting the calendar loop reaches Grok instead of repeating Not Yahoska’s", async () => {

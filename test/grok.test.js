@@ -110,6 +110,29 @@ test("askGrok runs a tool round-trip before answering", async () => {
   assert.equal(payloads[1].messages.at(-1).role, "tool");
 });
 
+test("askGrok returns tool failures to the model instead of aborting the chat", async () => {
+  let calls = 0;
+  const reply = await askGrok({
+    apiKey: "test-key",
+    model: "grok-4.6",
+    text: "send it",
+    tools: [{ type: "function", function: { name: "gmail_send_message", parameters: { type: "object" } } }],
+    executeTool: async () => { throw new Error("Google Workspace request failed with HTTP 400"); },
+    fetchImpl: async (_url, options) => {
+      calls += 1;
+      const payload = JSON.parse(options.body);
+      if (calls === 1) {
+        return { ok: true, json: async () => ({ choices: [{ message: { content: "", tool_calls: [{ id: "c1", type: "function", function: { name: "gmail_send_message", arguments: "{}" } }] } }] }) };
+      }
+      const toolResult = JSON.parse(payload.messages.at(-1).content);
+      assert.equal(toolResult.retryable, true);
+      assert.match(toolResult.detail, /HTTP 400/);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: "I couldn't send that yet." } }] }) };
+    }
+  });
+  assert.equal(reply, "I couldn't send that yet.");
+});
+
 test("askGrok ignores malformed history entries", async () => {
   let payload;
   await askGrok({

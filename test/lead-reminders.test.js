@@ -127,6 +127,32 @@ test("pronoun reminder resolves to the most recent lead context", async () => {
   assert.doesNotMatch(result.reply, /is this person already in GHL/i);
 });
 
+test("pronoun reminder inherits the confirmed GHL Open Leads conversation", async () => {
+  const store = ledgerStore();
+  const history = [
+    { role: "assistant", content: "The closest match is Miriam W., phone ending in 2363. Is that her?" },
+    { role: "user", content: "wang?" },
+    { role: "assistant", content: "Yes — Miriam W. is in GHL under Open Leads. Her record has the active_prospect tag, phone ending in 2363." },
+    { role: "user", content: "yes thats her" },
+    { role: "assistant", content: "Got it — confirmed: Miriam W., phone ending in 2363, is the Miriam Wang record in GHL and she is on Open Leads." }
+  ];
+  const result = await maybeScheduleLeadReminder({
+    text: "set a reminder for me to call her today at 4:30 to complete her enrollment",
+    history,
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T18:12:00Z")
+  });
+  assert.ok(result.task);
+  assert.equal(result.task.payload.subject, "Miriam Wang");
+  assert.doesNotMatch(result.reply, /already in GHL/i);
+  assert.doesNotMatch(result.reply, /\bme to call\b/i);
+  assert.match(result.reply, /Miriam Wang/);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "222" });
+  assert.equal(leads[0].ghlStatus, "in GHL under Open Leads");
+});
+
 test("creating a reminder also opens a persistent lead ledger entry", async () => {
   const store = ledgerStore();
   const result = await maybeScheduleLeadReminder({ text: "Maria Lopez remind me tomorrow at 11 am", history: [], store, chatId: "222", senderId: "222", now: new Date("2026-09-09T21:00:00Z") });

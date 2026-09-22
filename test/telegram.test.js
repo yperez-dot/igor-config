@@ -158,7 +158,7 @@ test("allowlisted videos are accepted", () => {
 
 test("unavailable message preserves Spanish behavior", () => {
   assert.equal(isSpanish("¿Puedes revisar esto?"), true);
-  assert.match(unavailableMessage("¿Puedes revisar esto?"), /Grok/);
+  assert.match(unavailableMessage("¿Puedes revisar esto?"), /modelo de IA/);
 });
 
 test("plan recommendation requests are deterministically refused", () => {

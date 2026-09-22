@@ -42,14 +42,18 @@ test("processes sales sync tasks with a Telegram-ready result", async () => {
 });
 
 test("processes Telegram reminder tasks with exact text", async () => {
-  const notifications = [];
+  const sent = [];
   const text = "End-of-day check: Did you add today’s leads to GHL and leave a follow-up note or date?";
   const result = await processTask(
-    { payload: { workflow: "telegram_reminder", text } },
-    { notify: async (message) => notifications.push(message) }
+    { payload: { workflow: "telegram_reminder", chatId: "111", text } },
+    {
+      environment: { TELEGRAM_BOT_TOKEN: "bot", TELEGRAM_ALLOWED_USER_IDS: "111" },
+      sendTelegram: async (message) => sent.push(message)
+    }
   );
-  assert.deepEqual(result, { status: "sent", channel: "telegram" });
-  assert.deepEqual(notifications, [text]);
+  assert.deepEqual(result, { status: "sent", channel: "telegram", chatId: "111" });
+  assert.equal(sent[0].chatId, "111");
+  assert.equal(sent[0].text, text);
 });
 
 test("rejects Telegram reminders without text", async () => {
@@ -229,7 +233,7 @@ test("processes carrier inbox digest tasks", async () => {
     }
   );
   assert.equal(result.status, "clear");
-  assert.match(notifications[0], /clear/);
+  assert.deepEqual(notifications, []);
 });
 
 test("emails Yahoska when a site-uptime alert fires", async () => {
