@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { maybeScheduleLeadReminder, parseReminderRunAt } from "../src/lead-reminders.js";
+import { isLeadReminderRequest, maybeScheduleLeadReminder, parseReminderRunAt } from "../src/lead-reminders.js";
 import { listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
 
 function ledgerStore() {
@@ -66,6 +66,26 @@ test("uses lead check-in context for terse timing replies", async () => {
   const result = await maybeScheduleLeadReminder({ text: "Maria tomorrow at 11 am", history: [{ role: "assistant", content: "Any open leads? Tell me who and when do you want me to remind you." }], store, chatId: "333", senderId: "333", now: new Date("2026-09-09T21:00:00Z") });
   assert.ok(result);
   assert.equal(created.payload.chatId, "333");
+});
+
+test("multi-person contacted-today status plus appointment time creates no reminder", async () => {
+  const text = "Igor David Grossman, Tomas, Mariangela have all been contacted today. Miriam Wong's appt is now at 10 am with me.";
+  const history = [{ role: "assistant", content: "Any open leads? Tell me who and when do you want me to remind you." }];
+  assert.equal(isLeadReminderRequest(text, history), false);
+  const store = {
+    tasks: [],
+    async createTask(task) { this.tasks.push(task); return task; }
+  };
+  const result = await maybeScheduleLeadReminder({
+    text,
+    history,
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T13:59:00Z")
+  });
+  assert.equal(result, null);
+  assert.equal(store.tasks.length, 0);
 });
 
 test("status correction with today does not create a reminder and preserves known GHL state", async () => {

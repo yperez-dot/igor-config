@@ -92,7 +92,11 @@ export async function runClaimedTask({
   } catch (error) {
     await store.failTask(task.id, { workflow: task.payload?.workflow, reason: error.message });
     try {
-      await notify(`🚨 Igor v2 workflow failed: ${task.payload?.workflow ?? "unknown"}. ${error.message}`);
+      const workflow = task.payload?.workflow ?? "unknown";
+      const alert = workflow === "telegram_reminder"
+        ? "Igor couldn’t deliver a scheduled reminder after two attempts. The reminder was not sent; please ask me to reschedule it."
+        : `🚨 Igor v2 workflow failed: ${workflow}. ${error.message}`;
+      await notify(alert);
     } catch {
       // Task failure is persisted even if delivery is unavailable.
     }

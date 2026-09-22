@@ -252,7 +252,18 @@ async function sendDirectTelegram({ chatId, text, environment, sendTelegram, sto
   const telegram = telegramConfig(environment);
   if (!telegram.botToken) throw new Error("Telegram bot token is not configured.");
   if (!telegram.allowedUserIds.has(String(chatId))) throw new Error("Telegram reminder recipient is not an allowed user.");
-  await sendTelegram({ botToken: telegram.botToken, chatId: String(chatId), text });
+  let lastError;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      await sendTelegram({ botToken: telegram.botToken, chatId: String(chatId), text });
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  if (lastError) throw lastError;
   if (store?.appendChatTurn) {
     try {
       await store.appendChatTurn({ chatId: String(chatId), senderId: "igor", role: "assistant", content: text, maxChars: 4000 });

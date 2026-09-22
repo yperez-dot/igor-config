@@ -13,6 +13,7 @@ const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
 const EXPLICIT_RE = /remind me|set (?:a )?reminder|follow up with|follow-up with|follow up w\b|call\s+/i;
 const STATUS_CORRECTION_RE = /\b(hasn['’]?t enrolled|has not enrolled|not enrolled|hasn['’]?t selected|has not selected|no plan selected|helped (?:him|her|them) (?:today )?enroll|enrolling in medicare|enrolled in medicare but|still needs? (?:to )?(?:choose|select) (?:a )?plan)\b/i;
+const STATUS_UPDATE_RE = /\b(?:have|has|were|was|been|all been)?\s*(?:contacted|called|reached|spoken to|followed up with)\s+(?:today|already|this (?:morning|afternoon|evening))\b|\b(?:appointment|appt)\s+(?:is|was|moved|changed|rescheduled)\b/i;
 const TIMING_HINT_RE = /\b(tomorrow|tonight|next\s+week|in\s+(?:a|one|two|three|\d+)\s+(?:day|days|week|weeks)|sunday|monday|tuesday|wednesday|thursday|friday|saturday|\d{1,2}\/\d{1,2}|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 const ATTACHMENT_INSTRUCTION_RE = /(?:User sent a photo\.|The image is attached for THIS turn only\.|Do not say the photo never arrived\.|Later turns without an attached image are not looking at this photo\.|User sent a video:|Grok cannot watch raw video|User sent a Telegram file:|The image is attached for you to see\.|Do not say the file never arrived\.)/gi;
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -128,6 +129,7 @@ function recentReminderContext(history = []) {
 export function isLeadReminderRequest(text, history = []) {
   const raw = sanitizeReminderInput(text);
   if (!raw) return false;
+  if (STATUS_UPDATE_RE.test(raw) && !/\bremind me\b|\bset (?:a )?reminder\b/i.test(raw)) return false;
   if (EXPLICIT_RE.test(raw)) return true;
   if (STATUS_CORRECTION_RE.test(raw)) return false;
   return Boolean(TIMING_HINT_RE.test(raw) && recentReminderContext(history));

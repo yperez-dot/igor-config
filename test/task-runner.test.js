@@ -36,6 +36,23 @@ test("notifier fans out worker alerts to both cofounders", async () => {
   ]);
 });
 
+test("Telegram reminder failures do not expose raw fetch errors", async () => {
+  const alerts = [];
+  const store = {
+    async failTask() {},
+    async completeTask() { throw new Error("must not complete"); }
+  };
+  await assert.rejects(() => runClaimedTask({
+    store,
+    task: { id: "reminder-1", payload: { workflow: "telegram_reminder" } },
+    notify: async (text) => alerts.push(text),
+    processFn: async () => { throw new Error("fetch failed"); }
+  }), /fetch failed/);
+  assert.equal(alerts.length, 1);
+  assert.doesNotMatch(alerts[0], /fetch failed|workflow failed/i);
+  assert.match(alerts[0], /reminder was not sent/i);
+});
+
 test("drops stale heartbeat and pulse tasks instead of replaying them", () => {
   const oldHeartbeat = {
     created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
