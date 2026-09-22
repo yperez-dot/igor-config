@@ -80,9 +80,7 @@ export async function vaCheckinDeliveryHealth({ store, environment = process.env
 export async function vaHelpOutreachDeliveryHealth({ store, environment = process.env } = {}) {
   const marker = String(environment.VA_TEAM_HELP_OUTREACH_ONCE ?? "").trim();
   if (!marker || !store?.getVaCheckin) return [];
-  return Promise.all(vaCheckinRecipients(environment)
-    .filter(({ role }) => role === "katy" || role === "carolina")
-    .map(async (recipient) => {
+  return Promise.all(vaCheckinRecipients(environment).map(async (recipient) => {
       const row = await store.getVaCheckin(`va-help-outreach:${marker}:${recipient.chatId}`);
       return {
         role: recipient.role,
@@ -1257,7 +1255,7 @@ export async function sendVaHelpOutreachOnce({
   if (!marker || !isVaCheckinEnabled(environment) || !store?.getVaCheckin || !store?.upsertVaCheckin) {
     return { status: "skipped", reason: marker ? "disabled_or_no_store" : "no_marker" };
   }
-  const recipients = vaCheckinRecipients(environment).filter(({ role }) => role === "katy" || role === "carolina");
+  const recipients = vaCheckinRecipients(environment);
   let sent = 0;
   let skipped = 0;
   const failures = [];

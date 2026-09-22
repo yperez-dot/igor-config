@@ -435,7 +435,7 @@ test("inline recovery force-sends once and records completion", async () => {
   assert.equal(second.reason, "already_recovered");
 });
 
-test("team help outreach is personalized, limited to Katy and Carolina, and sent once", async () => {
+test("team help outreach is personalized for the full VA team and sent once", async () => {
   const store = memoryVaStore();
   const environment = { ...ENV, VA_TEAM_HELP_OUTREACH_ONCE: "team-help-v1" };
   const sent = [];
@@ -452,15 +452,15 @@ test("team help outreach is personalized, limited to Katy and Carolina, and sent
     sendTelegram: async ({ chatId, text }) => sent.push({ chatId, text }),
     sleep: async () => {}
   });
-  assert.equal(first.recipientCount, 2);
-  assert.deepEqual([...new Set(sent.map((message) => message.chatId))], ["222", "333"]);
-  assert.equal(sent.some((message) => message.chatId === "111"), false);
+  assert.equal(first.recipientCount, 3);
+  assert.deepEqual([...new Set(sent.map((message) => message.chatId))], ["111", "222", "333"]);
+  assert.match(sent.find((message) => message.chatId === "111").text, /Yahoska AEP prep/);
   assert.match(sent.find((message) => message.chatId === "222").text, /Katy AEP prep/);
   assert.match(sent.find((message) => message.chatId === "333").text, /Carolina AEP prep/);
   assert.ok(sent.some((message) => /What should I work on next/.test(message.text)));
   const second = await sendVaHelpOutreachOnce({ store, environment, now: MONDAY });
   assert.equal(second.status, "skipped");
-  assert.equal(second.skippedCount, 2);
+  assert.equal(second.skippedCount, 3);
 });
 
 test("help outreach copy gives practical examples and ends with a clear question", () => {
@@ -478,6 +478,7 @@ test("help outreach health reports roles without Telegram ids", async () => {
   await store.upsertVaCheckin({ id: "va-help-outreach:team-help-v1:222", userId: "222", kind: "help_outreach", status: "sent", detail: { partCount: 4 } });
   const health = await vaHelpOutreachDeliveryHealth({ store, environment });
   assert.deepEqual(health.map(({ role, status, partCount }) => ({ role, status, partCount })), [
+    { role: "yahoska", status: "missing", partCount: 0 },
     { role: "katy", status: "sent", partCount: 4 },
     { role: "carolina", status: "missing", partCount: 0 }
   ]);
