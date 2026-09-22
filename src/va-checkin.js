@@ -77,6 +77,22 @@ export async function vaCheckinDeliveryHealth({ store, environment = process.env
   }));
 }
 
+export async function vaHelpOutreachDeliveryHealth({ store, environment = process.env } = {}) {
+  const marker = String(environment.VA_TEAM_HELP_OUTREACH_ONCE ?? "").trim();
+  if (!marker || !store?.getVaCheckin) return [];
+  return Promise.all(vaCheckinRecipients(environment)
+    .filter(({ role }) => role === "katy" || role === "carolina")
+    .map(async (recipient) => {
+      const row = await store.getVaCheckin(`va-help-outreach:${marker}:${recipient.chatId}`);
+      return {
+        role: recipient.role,
+        status: row?.status ?? "missing",
+        updatedAt: row?.updatedAt ?? null,
+        partCount: Number(row?.detail?.partCount ?? 0)
+      };
+    }));
+}
+
 export function recipientForSender(environment, senderId, speaker) {
   const id = String(senderId ?? "").trim();
   const byId = vaCheckinRecipients(environment).find((row) => row.chatId === id);

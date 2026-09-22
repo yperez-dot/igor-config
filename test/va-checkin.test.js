@@ -27,6 +27,7 @@ import {
   runVaCheckin,
   sendVaHelpOutreachOnce,
   vaHelpOutreachMessages,
+  vaHelpOutreachDeliveryHealth,
   vaCheckinMessages,
   vaCheckinDeliveryHealth,
   vaWeekKey,
@@ -469,6 +470,18 @@ test("help outreach copy gives practical examples and ends with a clear question
   assert.match(parts[1], /Find or create a GHL contact/);
   assert.match(parts[2], /Mark this task complete/);
   assert.match(parts[3], /anything you want me to add, update, or help you finish/i);
+});
+
+test("help outreach health reports roles without Telegram ids", async () => {
+  const store = memoryVaStore();
+  const environment = { ...ENV, VA_TEAM_HELP_OUTREACH_ONCE: "team-help-v1" };
+  await store.upsertVaCheckin({ id: "va-help-outreach:team-help-v1:222", userId: "222", kind: "help_outreach", status: "sent", detail: { partCount: 4 } });
+  const health = await vaHelpOutreachDeliveryHealth({ store, environment });
+  assert.deepEqual(health.map(({ role, status, partCount }) => ({ role, status, partCount })), [
+    { role: "katy", status: "sent", partCount: 4 },
+    { role: "carolina", status: "missing", partCount: 0 }
+  ]);
+  assert.doesNotMatch(JSON.stringify(health), /222|333/);
 });
 
 test("delivery health reports roles without exposing Telegram ids or raw errors", async () => {

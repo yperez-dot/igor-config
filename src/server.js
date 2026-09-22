@@ -12,7 +12,7 @@ import { inactiveScheduleIds, liveScheduleIds, legacySchedules } from "./legacy-
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
-import { queueVaCheckinKickoff, recoverVaCheckinKickoffOnce, sendVaHelpOutreachOnce, vaCheckinDeliveryHealth } from "./va-checkin.js";
+import { queueVaCheckinKickoff, recoverVaCheckinKickoffOnce, sendVaHelpOutreachOnce, vaCheckinDeliveryHealth, vaHelpOutreachDeliveryHealth } from "./va-checkin.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -115,6 +115,7 @@ void sendVaHelpOutreachOnce({ store, environment: process.env }).catch(() => {
 app.get("/health", async (_request, response) => {
   let teamCalendars = [];
   let vaCheckinDelivery = [];
+  let vaHelpOutreachDelivery = [];
   try {
     teamCalendars = await Promise.race([
       probeTeamCalendarAccess(),
@@ -122,6 +123,11 @@ app.get("/health", async (_request, response) => {
     ]);
   } catch {
     teamCalendars = [];
+  }
+  try {
+    vaHelpOutreachDelivery = await vaHelpOutreachDeliveryHealth({ store, environment: process.env });
+  } catch {
+    vaHelpOutreachDelivery = [];
   }
   try {
     vaCheckinDelivery = await vaCheckinDeliveryHealth({ store, environment: process.env });
@@ -136,6 +142,7 @@ app.get("/health", async (_request, response) => {
     ...runtimeIdentity(),
     teamCalendars,
     vaCheckinDelivery,
+    vaHelpOutreachDelivery,
     systems: connectedSystems().map((system) => ({
       id: system.id,
       connected: system.connected,
