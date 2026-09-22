@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { removedLeadFor } from "./lead-removal.js";
+import { isSmokeOrMetaLeadSubject } from "./task-calendar-route.js";
 
 const LEAD_TAG = "lead-ledger";
 const CLOSED_STATES = new Set(["completed", "enrolled", "not_interested", "closed"]);
@@ -24,6 +25,7 @@ export function canonicalLeadSubject(value) {
 
   if (/^(?:let['’]?s\s+)?check\s+in(?:\s*[.,-]?\s*(?:around|at)?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?[.!]?$/i.test(raw)) return null;
   if (/^(?:around|at)\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?[.!]?$/i.test(raw)) return null;
+  if (isSmokeOrMetaLeadSubject(raw)) return null;
 
   let match = raw.match(/^(.+?)\s+is\s+(?:a\s+)?new\s+lead\b/i);
   if (match?.[1]) return compactWhitespace(match[1]);

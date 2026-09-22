@@ -12,6 +12,9 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /do not say you can only email Yahoska/);
   assert.match(SYSTEM_PROMPT, /GoHighLevel/);
   assert.match(SYSTEM_PROMPT, /ghl_create_contact/);
+  assert.match(SYSTEM_PROMPT, /ghl_create_contact_task/);
+  assert.match(SYSTEM_PROMPT, /Never create a Google Calendar event or reminder for those phrases/);
+  assert.match(SYSTEM_PROMPT, /prefer ghl_create_contact_task/);
   assert.match(SYSTEM_PROMPT, /ghl_check_open_leads/);
   assert.match(SYSTEM_PROMPT, /ghl_add_contact_note/);
   assert.match(SYSTEM_PROMPT, /ghl_update_contact/);

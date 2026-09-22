@@ -72,11 +72,11 @@ export function toolCallsFrom(message) {
   return [];
 }
 
-async function completeChat({ apiKey, model, provider, messages, tools, conversationId, fetchImpl, timeoutMs = 60_000 }) {
+async function completeChat({ apiKey, model, provider, messages, tools, conversationId, fetchImpl, timeoutMs = 60_000, toolChoice = "auto" }) {
   const payload = { model, messages };
   if (tools?.length) {
     payload.tools = tools;
-    payload.tool_choice = "auto";
+    payload.tool_choice = toolChoice || "auto";
     if (provider === "openai" && model === "gpt-5.6-luna") payload.reasoning_effort = "none";
   }
   const headers = {
@@ -162,6 +162,7 @@ export async function askGrok({
   tools,
   nativeTools,
   executeTool,
+  toolChoice = "auto",
   conversationId,
   maxToolRounds = 4,
   timeoutMs,
@@ -201,6 +202,7 @@ export async function askGrok({
       provider,
       messages,
       tools,
+      toolChoice: round === 0 ? toolChoice : "auto",
       conversationId,
       fetchImpl,
       timeoutMs: Math.min(

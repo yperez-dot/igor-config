@@ -19,6 +19,7 @@ import {
   stillQuietBriefSection
 } from "./lead-silence.js";
 import { ghlConfig, ghlOpsSnapshot, taskDueAt } from "./ghl.js";
+import { isSmokeOrMetaGhlTask } from "./task-calendar-route.js";
 import { isVaCheckinEnabled } from "./va-checkin-flag.js";
 import { runVaCheckin } from "./va-checkin.js";
 
@@ -161,8 +162,12 @@ export function ghlOpsBriefText(snapshot, now = new Date(), { maxItems = 4 } = {
   if (snapshot.taskError) {
     lines.push("• Pending tasks: unavailable from GHL");
   } else {
-    const tasks = snapshot.tasks ?? [];
-    lines.push("", `✅ Pending tasks: ${tasks.length}${snapshot.overdueTaskCount ? ` (${snapshot.overdueTaskCount} overdue)` : ""}`);
+    const tasks = (snapshot.tasks ?? []).filter((task) => !isSmokeOrMetaGhlTask(task));
+    const overdueCount = tasks.filter((task) => {
+      const due = taskDueAt(task);
+      return due && due.getTime() < now.getTime();
+    }).length;
+    lines.push("", `✅ Pending tasks: ${tasks.length}${overdueCount ? ` (${overdueCount} overdue)` : ""}`);
     const sorted = [...tasks].sort((a, b) => (taskDueAt(a)?.getTime() ?? Infinity) - (taskDueAt(b)?.getTime() ?? Infinity));
     for (const task of sorted.slice(0, maxItems)) {
       const due = taskDueAt(task);

@@ -402,3 +402,67 @@ test("email follow-up confirmation stays on email instead of stale CRM", async (
   assert.doesNotMatch(reply, /Sandra|0534/);
   assert.match(reply, /David Grossman/);
 });
+
+test("create GHL task on the known contact previews ghl_create_contact_task, not calendar", async () => {
+  const store = memoryStore({
+    contactId: "contact-michelle-1",
+    spokenName: "Michelle",
+    storedName: "Michelle W.",
+    phoneLast4: "2363",
+    goal: "add_note"
+  });
+  const { grokCalled, toolCalls, reply } = await chatTurn({
+    store,
+    text: "Create a GHL task on that contact due tomorrow",
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_create_contact_task");
+      assert.equal(args.contactId, "contact-michelle-1");
+      assert.equal(args.confirmed, undefined);
+      return {
+        needsConfirmation: true,
+        proposed: {
+          contact: "Michelle W.",
+          contactId: "contact-michelle-1",
+          title: args.title,
+          dueDate: args.dueDate
+        }
+      };
+    }
+  });
+  assert.equal(grokCalled, false);
+  assert.deepEqual(toolCalls.map((call) => call.name), ["ghl_create_contact_task"]);
+  assert.match(reply, /GHL task/);
+  assert.match(reply, /not a calendar event/i);
+});
+
+test("yes after a GHL task preview saves the CRM task", async () => {
+  const result = await maybeContinueCrmTask({
+    text: "Yes",
+    history: [{ role: "assistant", content: "GHL task on Michelle W.: “Follow up” due Thu. Say yes and I’ll save it." }],
+    scratch: {
+      contactId: "contact-michelle-1",
+      storedName: "Michelle W.",
+      phoneLast4: "2363",
+      goal: "create_task",
+      pending: {
+        tool: "ghl_create_contact_task",
+        approved: false,
+        args: {
+          contactId: "contact-michelle-1",
+          title: "Follow up",
+          dueDate: "2026-09-23T13:00:00.000Z"
+        }
+      }
+    },
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_create_contact_task");
+      assert.equal(args.confirmed, true);
+      assert.equal(args.contactId, "contact-michelle-1");
+      return { created: true, contact: "Michelle W.", title: "Follow up" };
+    }
+  });
+  assert.match(result.reply, /Saved the GHL task/);
+  assert.match(result.reply, /not a calendar/);
+  assert.equal(result.scratch.pending, null);
+});

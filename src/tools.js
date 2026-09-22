@@ -99,6 +99,7 @@ import {
   openGithubPullRequest,
   putGithubFile
 } from "./github-workflow.js";
+import { blocksCalendarWrite, calendarWriteBlockedResult, CALENDAR_WRITE_TOOLS } from "./task-calendar-route.js";
 
 const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
@@ -316,7 +317,7 @@ export function grokTools(environment = process.env) {
         required: ["body"],
         additionalProperties: false
       }),
-      functionTool("ghl_create_contact_task", "Create a pending task on one exact GHL contact. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_create_contact_task", "Create a pending GoHighLevel/Xclusive CRM task on one exact contact. Use this for 'create a task', 'GHL task', 'CRM task', 'follow-up task on [contact]', or 'task due …'. Never use calendar_create_event for those phrases. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string" }, contactQuery: { type: "string" }, title: { type: "string" }, body: { type: "string" },
@@ -609,7 +610,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Add an event on a team Google Calendar. Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and reminders: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). Do not claim it is on the calendar unless booked is true.", {
+      functionTool("calendar_create_event", "Add an event on a team Google Calendar only when the user explicitly asks for an appointment, meeting, calendar hold, or a reminder on the calendar (for example 'book 15 min', 'put on my calendar', 'appointment tomorrow'). Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and personal calendar reminders: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). Never use this for a GHL/CRM contact task, 'create a task', or 'task due …' — those must use ghl_create_contact_task. Do not claim it is on the calendar unless booked is true.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title." },
@@ -855,9 +856,13 @@ export async function executeTool(name, rawArgs, {
   senderProfile,
   store,
   pendingAttachment,
-  transporter
+  transporter,
+  userText
 } = {}) {
   const args = parseArgs(rawArgs);
+  if (CALENDAR_WRITE_TOOLS.has(name) && blocksCalendarWrite(userText ?? senderProfile?.currentText)) {
+    return calendarWriteBlockedResult(name);
+  }
   const blocked = needsConfirmation(name, args, environment);
   if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_update_contact", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
 
@@ -1284,7 +1289,15 @@ export async function executeTool(name, rawArgs, {
       if (blocked) {
         const plan = await ghlPrepareContactTask(request);
         if (plan.error) return plan;
-        return { ...blocked, proposed: { contact: plan.contact.name, ...plan.task } };
+        return {
+          ...blocked,
+          proposed: {
+            contact: plan.contact.name,
+            contactId: plan.contact.id,
+            phoneLast4: plan.contact.phoneLast4,
+            ...plan.task
+          }
+        };
       }
       return ghlCreateContactTask(request);
     }

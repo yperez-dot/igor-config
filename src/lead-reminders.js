@@ -8,6 +8,7 @@ import {
   saveLeadSnapshot,
   updateLeadState
 } from "./lead-ledger.js";
+import { isGhlContactTaskRequest } from "./task-calendar-route.js";
 
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
@@ -149,6 +150,7 @@ function recentReminderContext(history = []) {
 export function isLeadReminderRequest(text, history = []) {
   const raw = sanitizeReminderInput(text);
   if (!raw) return false;
+  if (isGhlContactTaskRequest(raw)) return false;
   if (STATUS_UPDATE_RE.test(raw) && !/\bremind me\b|\bset (?:a )?reminder\b/i.test(raw)) return false;
   if (EXPLICIT_RE.test(raw)) return true;
   if (STATUS_CORRECTION_RE.test(raw)) return false;
@@ -225,10 +227,15 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
 
   if (/\b(?:cancel|delete)\b.*\breminder\b/i.test(raw)) {
     const lead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
-    if (!lead) return { task: null, reply: "Which person’s reminder should I cancel?" };
     const tasks = typeof store.listActiveTelegramReminders === "function"
       ? await store.listActiveTelegramReminders({ chatId, ownerSenderId: senderId })
       : [];
+    if (!lead) {
+      if (!tasks.length) {
+        return { task: null, reply: "There’s no Telegram reminder to cancel. If you meant a Google Calendar event or a GHL task, say which." };
+      }
+      return { task: null, reply: "Which person’s reminder should I cancel?" };
+    }
     const matching = tasks.filter((task) => task.payload?.leadId === lead.leadId || String(task.payload?.subject ?? "").toLowerCase() === String(lead.subject).toLowerCase());
     for (const task of matching) await store.updateTaskStatus?.(task.id, "cancelled");
     if (matching.length) await updateLeadState({ store, lead, followUpAt: null, reminderTaskId: null });

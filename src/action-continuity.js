@@ -1,3 +1,5 @@
+import { isGhlContactTaskRequest } from "./task-calendar-route.js";
+
 const CALENDAR_WRITES = new Set(["calendar_create_event", "calendar_update_event", "calendar_delete_event"]);
 const APPROVAL_RE = /^(?:yes|yep|yeah|ok|okay|confirm|confirmed|do it|go ahead|book it|move it|cancel it)(?:\s+(?:please|pls))?[.!\s]*$/i;
 
@@ -32,6 +34,7 @@ export function formatActiveAction(scratch) {
 }
 
 export async function maybeContinueAction({ text, history = [], scratch, executeTool }) {
+  if (isGhlContactTaskRequest(text)) return null;
   const pending = scratch?.pending;
   if (!pending || scratch.kind !== "calendar" || !APPROVAL_RE.test(String(text ?? "").trim()) || typeof executeTool !== "function") return null;
   const latestAssistant = [...history].reverse().find((turn) => turn?.role === "assistant")?.content ?? "";

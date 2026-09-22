@@ -502,6 +502,31 @@ test("list_schedules returns the legacy catalog without waiting on IMAP", async 
   assert.ok(result.catalog.some((job) => /cron/i.test(job.cron) || job.cron.includes("*")));
 });
 
+test("calendar_create_event is blocked when the user asked for a GHL task", async () => {
+  const result = await executeTool("calendar_create_event", {
+    summary: "Reminder",
+    start: "2026-09-23T17:00:00",
+    confirmed: true
+  }, {
+    userText: "Create a GHL task on that contact due tomorrow"
+  });
+  assert.equal(result.error, "ghl_task_not_calendar");
+  assert.match(result.hint, /ghl_create_contact_task/);
+});
+
+test("GHL task and calendar tool descriptions encode the hard routing rule", () => {
+  const tools = grokTools({
+    GHL_API_TOKEN: "token",
+    GOOGLE_CALENDAR_CLIENT_ID: "client",
+    GOOGLE_CALENDAR_CLIENT_SECRET: "secret",
+    GOOGLE_CALENDAR_REFRESH_TOKEN: "refresh"
+  });
+  const task = tools.find((tool) => tool.function.name === "ghl_create_contact_task");
+  const calendar = tools.find((tool) => tool.function.name === "calendar_create_event");
+  assert.match(task.function.description, /Never use calendar_create_event/);
+  assert.match(calendar.function.description, /Never use this for a GHL\/CRM contact task/);
+});
+
 test("run_lookout uses the Facebook probe", async () => {
   const result = await executeTool("run_lookout", {}, {
     environment: { ...PULSE_READY_ENV, FACEBOOK_ACCESS_TOKEN: "stale" },
