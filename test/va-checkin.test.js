@@ -8,6 +8,7 @@ import {
   DEFAULT_MONTHLY_TODOS_DS,
   DEFAULT_OPEN_PROJECTS_DS,
   formatNotionWriteConfirmation,
+  existingTodoFor,
   handleVaCheckinReply,
   isVaCheckinEnabled,
   kickoffStateId,
@@ -27,7 +28,8 @@ import {
   vaCheckinMessages,
   vaCheckinDeliveryHealth,
   vaWeekKey,
-  weeklyStateId
+  weeklyStateId,
+  writeVaCheckinNotion
 } from "../src/va-checkin.js";
 
 const MONDAY = new Date("2026-09-21T13:05:00Z"); // 9:05 AM ET
@@ -530,6 +532,29 @@ test("creates a weekly-focus monthly todo when no project name matches", () => {
   assert.equal(plan.created[0].weeklyFocus, true);
   assert.match(plan.created[0].title, /Weekly focus/);
   assert.equal(plan.ownerName, "Katy");
+});
+
+test("weekly-focus writes reuse an existing identical todo", async () => {
+  const title = "Weekly focus — week of Sep 21, 2026";
+  assert.equal(existingTodoFor([{ id: "existing-1", title }], `  ${title.toUpperCase()}  `)?.id, "existing-1");
+  const result = await writeVaCheckinNotion({
+    environment: ENV,
+    recipient: KATY,
+    text: "Yes let’s ask if he was able to review it and if he has any questions",
+    weekKey: WEEK,
+    snapshot: {
+      ok: true,
+      projects: [],
+      todos: [{ id: "existing-1", kind: "todo", title }],
+      projectsTarget: { mode: "data_source", id: "projects", schema: { properties: {} } },
+      todosTarget: { mode: "data_source", id: "todos", schema: { properties: {} } }
+    },
+    fetchImpl: async () => assert.fail("must not create a duplicate Notion page")
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.changes.length, 1);
+  assert.equal(result.changes[0].id, "existing-1");
+  assert.deepEqual(result.changes[0].changed, ["already exists; no duplicate created"]);
 });
 
 test("confirmation stays plain text with the ops-brief header", () => {

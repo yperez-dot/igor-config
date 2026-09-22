@@ -756,6 +756,16 @@ function mergeProperties(...chunks) {
   return Object.assign({}, ...chunks.filter(Boolean));
 }
 
+function normalizedTodoTitle(value) {
+  return String(value ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function existingTodoFor(todos = [], title) {
+  const wanted = normalizedTodoTitle(title);
+  if (!wanted) return null;
+  return (Array.isArray(todos) ? todos : []).find((todo) => normalizedTodoTitle(todo?.title) === wanted) ?? null;
+}
+
 async function applyItemUpdate(fetchImpl, {
   token,
   target,
@@ -828,6 +838,16 @@ export async function writeVaCheckinNotion({
       if (result.changed.length) changes.push(result);
     }
     for (const item of plan.created) {
+      const existing = existingTodoFor(loaded.todos, item.title);
+      if (existing) {
+        changes.push({
+          title: item.title,
+          kind: "todo",
+          changed: ["already exists; no duplicate created"],
+          id: existing.id ?? null
+        });
+        continue;
+      }
       const target = loaded.todosTarget;
       const schema = target.schema;
       const titleProp = titleProperty(schema);
