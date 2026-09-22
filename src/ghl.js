@@ -659,6 +659,12 @@ export async function ghlResolveContact({
     tried.push("contactId");
     const byId = await ghlFetchContactById({ token, contactId: idCandidate, fetchImpl });
     if (byId) return byId;
+    if (explicitId && !phoneHint && !nameHint) {
+      return {
+        error: "Couldn't load that GHL contact by id. I did not search other contacts by name.",
+        tried
+      };
+    }
   }
 
   // Phone/last-4 wins over a first-name mismatch. Use POST /contacts/search
@@ -1128,8 +1134,16 @@ function validDateTime(value) {
   return text && Number.isFinite(Date.parse(text)) ? text : null;
 }
 
-export async function ghlPrepareContactTask({ token, locationId, contactId, contactQuery, title, body, dueDate, assignedTo, fetchImpl = fetch }) {
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+export async function ghlPrepareContactTask({ token, locationId, contactId, contactQuery, phone, title, body, dueDate, assignedTo, fetchImpl = fetch }) {
+  const pinnedId = String(contactId ?? "").trim();
+  const contact = await ghlResolveContact({
+    token,
+    locationId,
+    contactId: pinnedId || undefined,
+    query: pinnedId ? "" : contactQuery,
+    phone: pinnedId ? undefined : phone,
+    fetchImpl
+  });
   if (contact.error) return contact;
   const cleanTitle = String(title ?? "").trim();
   if (!cleanTitle) return { error: "The GHL task needs a title." };

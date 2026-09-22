@@ -524,6 +524,8 @@ test("GHL task and calendar tool descriptions encode the hard routing rule", () 
   const task = tools.find((tool) => tool.function.name === "ghl_create_contact_task");
   const calendar = tools.find((tool) => tool.function.name === "calendar_create_event");
   assert.match(task.function.description, /Never use calendar_create_event/);
+  assert.match(task.function.description, /that contact/);
+  assert.match(task.function.description, /contactId only/);
   assert.match(calendar.function.description, /Never use this for a GHL\/CRM contact task/);
 });
 

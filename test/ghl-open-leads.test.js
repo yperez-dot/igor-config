@@ -106,6 +106,24 @@ test("contact search looks up a known GHL contact id instead of treating it as a
   assert.equal(calls.some((url) => url.includes(`/contacts/${MICHELLE_ID}`)), true);
 });
 
+test("id-only resolve does not invent a name multi-match after a missed fetch", async () => {
+  const calls = [];
+  const contact = await ghlResolveContact({
+    token: "test",
+    locationId: "loc",
+    contactId: MICHELLE_ID,
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      if (String(url).includes(`/contacts/${MICHELLE_ID}`)) return json({ message: "not found" }, 404);
+      throw new Error(`Name search must not run after an id-only miss: ${url}`);
+    }
+  });
+  assert.match(contact.error, /Couldn['’]t load that GHL contact by id/);
+  assert.doesNotMatch(contact.error, /More than one GHL contact matched/);
+  assert.deepEqual(contact.tried, ["contactId"]);
+  assert.equal(calls.length, 1);
+});
+
 test("resolve contact falls back from a missed id to name and phone", async () => {
   const calls = [];
   const contact = await ghlResolveContact({
