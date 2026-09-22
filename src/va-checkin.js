@@ -1097,32 +1097,7 @@ export async function queueVaCheckinKickoff({
   }
   const forceMarker = String(environment.VA_CHECKIN_FORCE_KICKOFF_ONCE ?? "").trim();
   if (forceMarker) {
-    const markerId = `va-force-kickoff:${forceMarker}`;
-    if (await hasState(store, markerId)) return { queued: false, reason: "force_already_queued" };
-    const task = await store.createTask({
-      id: createId(),
-      type: "daily_operations",
-      payload: {
-        workflow: VA_CHECKIN_WORKFLOW,
-        phase: "kickoff",
-        mode: "live",
-        force: true,
-        source: "boot_force_once",
-        forceMarker,
-        weekKey: vaWeekKey(now)
-      }
-    });
-    if (store?.upsertVaCheckin) {
-      await store.upsertVaCheckin({
-        id: markerId,
-        userId: "system",
-        kind: "kickoff_force_marker",
-        weekKey: vaWeekKey(now),
-        status: "queued",
-        detail: { taskId: task.id }
-      });
-    }
-    return { queued: true, reason: "force_queued", taskId: task.id, pending: recipients.length };
+    return { queued: false, reason: "force_runs_inline" };
   }
   let pending = 0;
   for (const recipient of recipients) {
@@ -1145,6 +1120,61 @@ export async function queueVaCheckinKickoff({
     }
   });
   return { queued: true, reason: "queued", taskId: task.id, pending };
+}
+
+export async function recoverVaCheckinKickoffOnce({
+  store,
+  environment = process.env,
+  now = new Date(),
+  ...dependencies
+} = {}) {
+  const marker = String(environment.VA_CHECKIN_FORCE_KICKOFF_ONCE ?? "").trim();
+  if (!marker || !store?.getVaCheckin || !store?.upsertVaCheckin) {
+    return { status: "skipped", reason: marker ? "no_store" : "no_marker" };
+  }
+  const markerId = `va-force-kickoff:${marker}`;
+  const existing = await store.getVaCheckin(markerId);
+  if (existing?.status === "sent") return { status: "skipped", reason: "already_recovered" };
+  const markerRow = {
+    id: markerId,
+    userId: "system",
+    kind: "kickoff_force_marker",
+    weekKey: vaWeekKey(now)
+  };
+  await store.upsertVaCheckin({ ...markerRow, status: "running", detail: { startedAt: now.toISOString() } });
+  try {
+    const result = await runVaCheckin({
+      payload: {
+        workflow: VA_CHECKIN_WORKFLOW,
+        phase: "kickoff",
+        mode: "live",
+        force: true,
+        source: "boot_force_once",
+        forceMarker: marker,
+        weekKey: vaWeekKey(now)
+      }
+    }, { store, environment, now, ...dependencies });
+    const complete = result.recipientCount === vaCheckinRecipients(environment).length
+      && result.failedRecipientCount === 0;
+    await store.upsertVaCheckin({
+      ...markerRow,
+      status: complete ? "sent" : "failed",
+      detail: {
+        completedAt: new Date().toISOString(),
+        recipientCount: result.recipientCount,
+        failedRecipientCount: result.failedRecipientCount
+      }
+    });
+    if (!complete) throw new Error("Forced VA kickoff did not reach every recipient.");
+    return result;
+  } catch (error) {
+    await store.upsertVaCheckin({
+      ...markerRow,
+      status: "failed",
+      detail: { failedAt: new Date().toISOString(), error: String(error.message ?? error) }
+    });
+    throw error;
+  }
 }
 
 export async function noteVaCheckinReply({

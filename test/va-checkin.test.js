@@ -21,6 +21,7 @@ import {
   openProjectsDataSourceId,
   parseVaCheckinUpdates,
   queueVaCheckinKickoff,
+  recoverVaCheckinKickoffOnce,
   replyStateId,
   runVaCheckin,
   vaCheckinMessages,
@@ -392,18 +393,32 @@ test("boot kickoff queues once while any recipient is pending", async () => {
   assert.equal(again.reason, "already_queued");
 });
 
-test("one-time boot force marker queues exactly one forced kickoff", async () => {
+test("queue defers a one-time forced kickoff to inline recovery", async () => {
   const store = memoryVaStore();
   const environment = { ...ENV, VA_CHECKIN_FORCE_KICKOFF_ONCE: "p0-recovery-2026-09-22" };
-  const first = await queueVaCheckinKickoff({ store, environment, now: MONDAY, createId: () => "force-kick-1" });
-  const second = await queueVaCheckinKickoff({ store, environment, now: MONDAY, createId: () => "force-kick-2" });
-  assert.equal(first.queued, true);
-  assert.equal(first.reason, "force_queued");
-  assert.equal(store.tasks[0].payload.force, true);
-  assert.equal(store.tasks[0].payload.forceMarker, "p0-recovery-2026-09-22");
-  assert.equal(second.queued, false);
-  assert.equal(second.reason, "force_already_queued");
-  assert.equal(store.tasks.length, 1);
+  const result = await queueVaCheckinKickoff({ store, environment, now: MONDAY });
+  assert.equal(result.queued, false);
+  assert.equal(result.reason, "force_runs_inline");
+  assert.equal(store.tasks.length, 0);
+});
+
+test("inline recovery force-sends once and records completion", async () => {
+  const store = memoryVaStore();
+  const environment = { ...ENV, VA_CHECKIN_FORCE_KICKOFF_ONCE: "p0-recovery-2026-09-22" };
+  const sent = [];
+  const first = await recoverVaCheckinKickoffOnce({
+    store,
+    environment,
+    now: MONDAY,
+    sendTelegram: async ({ chatId }) => sent.push(chatId),
+    readNotion: async () => ({ ok: true, projects: [], todos: [] }),
+    sleep: async () => {}
+  });
+  assert.equal(first.recipientCount, 3);
+  assert.deepEqual([...new Set(sent)], ["111", "222", "333"]);
+  assert.equal((await store.getVaCheckin("va-force-kickoff:p0-recovery-2026-09-22")).status, "sent");
+  const second = await recoverVaCheckinKickoffOnce({ store, environment, now: MONDAY });
+  assert.equal(second.reason, "already_recovered");
 });
 
 test("delivery health reports roles without exposing Telegram ids or raw errors", async () => {

@@ -12,7 +12,7 @@ import { inactiveScheduleIds, liveScheduleIds, legacySchedules } from "./legacy-
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
 import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
-import { queueVaCheckinKickoff, vaCheckinDeliveryHealth } from "./va-checkin.js";
+import { queueVaCheckinKickoff, recoverVaCheckinKickoffOnce, vaCheckinDeliveryHealth } from "./va-checkin.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -101,8 +101,12 @@ const inlineWorker = String(process.env.IGOR_INLINE_WORKER ?? "true").toLowerCas
     notify: createTaskNotifier({ store, environment: process.env })
   })
   : null;
-void queueVaCheckinKickoff({ store, environment: process.env }).catch(() => {
-  // Kickoff is idempotent; listen even if the queue write fails.
+const forceKickoffMarker = String(process.env.VA_CHECKIN_FORCE_KICKOFF_ONCE ?? "").trim();
+void (forceKickoffMarker
+  ? recoverVaCheckinKickoffOnce({ store, environment: process.env })
+  : queueVaCheckinKickoff({ store, environment: process.env })
+).catch(() => {
+  // Delivery state captures the failure without exposing message content in logs.
 });
 
 app.get("/health", async (_request, response) => {
