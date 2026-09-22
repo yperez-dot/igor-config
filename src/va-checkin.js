@@ -166,7 +166,7 @@ export function looksLikeVaProjectUpdate(text) {
   const raw = String(text ?? "");
   if (/\bnotion\b/i.test(raw)) return true;
   if (CREATE_TODO_RE.test(raw)) return true;
-  if (/\b(?:open\s+projects?|monthly\s+todos?|weekly\s+check-?in)\b/i.test(raw)) return true;
+  if (/\b(?:open\s+projects?|monthly\s+todos?|weekly\s+(?:check-?in|focus))\b/i.test(raw)) return true;
   if (/\bthis\s+week\s+i['’]?m\s+focused\s+on\b/i.test(raw)) return true;
   if (/\bupdate\s+the\s+notes\s+on\b/i.test(raw)) return true;
   if (STATUS_RE.test(raw) && /\b(?:project|todo|task)\b/i.test(raw)) return true;

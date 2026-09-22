@@ -212,6 +212,15 @@ test("kickoff sends a short intro first, then the same sectioned texts", () => {
   assert.equal(parts.length, 5);
 });
 
+test("weekly focus update wins over GHL wording in Igor's own kickoff history", () => {
+  const history = [
+    { role: "assistant", content: "💡 Admin help I can do anytime\n• GHL contacts (active_prospect → Open Leads)\n• Notion updates when you tell me" }
+  ];
+  const text = "Weekly focus — week of Sep 21, 2026: Yes, let’s ask if he reviewed it and has questions.";
+
+  assert.equal(shouldRouteVaReplyToNotion(text, { history }), true);
+});
+
 test("Tuesday nudge is two short messages, not the full dump", () => {
   const parts = vaCheckinMessages({
     phase: "nudge",
