@@ -317,10 +317,10 @@ export function grokTools(environment = process.env) {
         required: ["body"],
         additionalProperties: false
       }),
-      functionTool("ghl_create_contact_task", "Create a pending GoHighLevel/Xclusive CRM task on one exact contact. Use this for 'create a task', 'GHL task', 'CRM task', 'follow-up task on [contact]', or 'task due …'. Never use calendar_create_event for those phrases. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_create_contact_task", "Create a pending GoHighLevel/Xclusive CRM task on one exact contact. Use this for 'create a task', 'GHL task', 'CRM task', 'follow-up task on [contact]', or 'task due …'. If this chat already has a contact id, 'that contact' / 'this contact' / 'them' / 'him' / 'her' means pass that contactId only — do not re-search by name. Only pass contactQuery or phone when they name a different person, phone, or email. Never use calendar_create_event for those phrases. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
-          contactId: { type: "string" }, contactQuery: { type: "string" }, title: { type: "string" }, body: { type: "string" },
+          contactId: { type: "string" }, contactQuery: { type: "string" }, phone: { type: "string", description: "Full phone or last-4 when there is no pinned contact id." }, title: { type: "string" }, body: { type: "string" },
           dueDate: { type: "string", description: "ISO date/time for the task deadline." }, assignedTo: { type: "string" }, confirmed: { type: "boolean" }
         },
         required: ["title", "dueDate"],
@@ -1285,7 +1285,7 @@ export async function executeTool(name, rawArgs, {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
       const config = ghlConfig(environment);
-      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, title: args.title, body: args.body, dueDate: args.dueDate, assignedTo: args.assignedTo, fetchImpl };
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, phone: args.phone, title: args.title, body: args.body, dueDate: args.dueDate, assignedTo: args.assignedTo, fetchImpl };
       if (blocked) {
         const plan = await ghlPrepareContactTask(request);
         if (plan.error) return plan;

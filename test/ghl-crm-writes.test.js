@@ -221,6 +221,58 @@ test("confirmed SOA email sends through GHL conversations", async () => {
   assert.match(write.body.html, /6882a11e37c06601fe0c299b/);
 });
 
+test("GHL task with a pinned contact id ignores name search even when query is passed", async () => {
+  const calls = [];
+  const preview = await executeTool("ghl_create_contact_task", {
+    contactId: "contact-1",
+    contactQuery: "Michelle",
+    title: "Follow up",
+    dueDate: "2026-09-23T13:00:00-04:00"
+  }, {
+    environment,
+    senderProfile: speaker,
+    fetchImpl: async (url, options = {}) => {
+      const target = String(url);
+      calls.push(target);
+      if (target.includes("/contacts/?") || target.includes("/contacts/search")) {
+        throw new Error("pinned contact id must not re-search by name");
+      }
+      return fixture(calls)(url, options);
+    }
+  });
+  assert.equal(preview.needsConfirmation, true);
+  assert.equal(preview.proposed.contactId, "contact-1");
+  assert.equal(preview.proposed.contact, "Jane D.");
+  assert.equal(calls.some((url) => String(url).includes("/contacts/contact-1")), true);
+});
+
+test("GHL task id miss does not become a name multi-match", async () => {
+  const result = await executeTool("ghl_create_contact_task", {
+    contactId: "contact-1",
+    contactQuery: "Michelle",
+    title: "Follow up",
+    dueDate: "2026-09-23T13:00:00-04:00"
+  }, {
+    environment,
+    senderProfile: speaker,
+    fetchImpl: async (url) => {
+      const target = String(url);
+      if (target.includes("/contacts/contact-1")) return json({ message: "not found" }, 404);
+      if (target.includes("/contacts/?") || target.includes("/contacts/search")) {
+        return json({
+          contacts: [
+            { id: "a", firstName: "Michelle", lastName: "A" },
+            { id: "b", firstName: "Michelle", lastName: "B" }
+          ]
+        });
+      }
+      throw new Error(`Unexpected request: ${target}`);
+    }
+  });
+  assert.match(result.error, /Couldn['’]t load that GHL contact by id/);
+  assert.doesNotMatch(result.error, /More than one GHL contact matched/);
+});
+
 test("GHL task previews and writes only after confirmation", async () => {
   const previewCalls = [];
   const input = { contactQuery: "Jane Doe", title: "Call client", body: "Review plan options", dueDate: "2026-09-21T14:00:00-04:00" };

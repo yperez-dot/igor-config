@@ -249,6 +249,7 @@ export function formatActiveCrmTask(scratch) {
     lines.push("If they say yes/sí/ok/do it, CALL ghl_create_contact_task with confirmed=true on this same draft and contact id. This is a CRM task, not a Google Calendar event.");
   }
   lines.push("Look it up = use this contact id, then last-4, then name. Never ask them to paste a GHL contact id when any of those exist.");
+  lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
   lines.push("A name correction updates this contact (ghl_update_contact), then finishes the pending note or Open Leads check.");
   lines.push("CRM notes stay in GHL. Never say NOTION UPDATED for a contact note.");
   return lines.join("\n");
@@ -268,23 +269,136 @@ function compactTaskText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
 }
 
+const THREAD_CONTACT_NAME_RE = /^(?:that|this|the)(?:\s+contact)?$|^contact$|^(?:them|him|her|it)$/i;
+const THREAD_CONTACT_PHRASE_RE = /\b(?:(?:on|for|with)\s+)?(?:that|this|the)\s+contact\b|\b(?:on|for)\s+(?:them|him|her|it)\b/i;
+const EMAIL_IN_TEXT_RE = /[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/;
+
+function normalizePersonName(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z\s'-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function namesOverlap(left, right) {
+  const a = normalizePersonName(left);
+  const b = normalizePersonName(right);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const aParts = a.split(" ");
+  const bParts = b.split(" ");
+  if (aParts[0] !== bParts[0]) return false;
+  if (aParts.length === 1 || bParts.length === 1) return true;
+  const aLast = aParts.slice(1).join(" ");
+  const bLast = bParts.slice(1).join(" ");
+  return aLast === bLast || aLast[0] === bLast[0];
+}
+
+export function extractNamedContact(text) {
+  const raw = String(text ?? "");
+  const named = raw.match(/\b(?:on|for)\s+([A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)(?:\s|$|,|\.|due)/)?.[1];
+  if (!named || THREAD_CONTACT_NAME_RE.test(named)) return "";
+  return compactTaskText(named);
+}
+
+export function isThreadContactReference(text) {
+  return THREAD_CONTACT_PHRASE_RE.test(String(text ?? ""));
+}
+
+export function explicitCrmContactOverride(text, scratch = {}) {
+  const raw = String(text ?? "");
+  const named = extractNamedContact(raw);
+  const email = raw.match(EMAIL_IN_TEXT_RE)?.[0] || "";
+  const phone = phoneDigitsFromQuery(raw);
+  const last4 = extractLast4FromText(raw);
+  const sameName = named && (
+    namesOverlap(named, scratch.spokenName) || namesOverlap(named, scratch.storedName)
+  );
+  const threadLast4 = String(scratch.phoneLast4 ?? "").replace(/\D/g, "").slice(-4);
+  const incomingLast4 = (phone.length >= 4 ? phone.slice(-4) : "") || last4;
+  const differentName = Boolean(named && !sameName);
+  const differentPhone = Boolean(
+    incomingLast4
+    && threadLast4
+    && incomingLast4 !== threadLast4
+    && (phone.length >= 7 || Boolean(last4))
+  );
+  if (email || differentName || differentPhone) {
+    return {
+      contactQuery: named || email,
+      phone: phone || last4 || "",
+      email
+    };
+  }
+  return null;
+}
+
 export function parseGhlTaskDraft(text, scratch = {}, { now = new Date() } = {}) {
   const raw = String(text ?? "");
   const quoted = raw.match(/\btask\b[^.\n]{0,60}?["“]([^"”]+)["”]/i)?.[1]
     ?? raw.match(/\b(?:titled|called|named)\s+["“]?([^"”\n,]+)["”]?/i)?.[1];
   const toDo = raw.match(/\btask\s+to\s+(.+?)(?:\s+due\b|\s+tomorrow\b|\s+today\b|\s+tonight\b|,|$)/i)?.[1];
   let title = compactTaskText(quoted || toDo);
-  if (!title || title.length > 80 || /^(?:on|for|due|the contact|that contact|this contact)\b/i.test(title)) {
+  if (!title || title.length > 80 || /^(?:on|for|due|the contact|that contact|this contact|them|him|her)\b/i.test(title)) {
     title = "Follow up";
   }
-  const named = raw.match(/\b(?:on|for)\s+([A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)(?:\s|$|,|\.|due)/)?.[1];
-  const usableName = named && !/^(that|this|the)(?:\s+contact)?$|^contact$/i.test(named) ? named : "";
+  const usableName = extractNamedContact(raw);
   const due = parseReminderRunAt(raw, { now }) || parseReminderRunAt("tomorrow", { now });
   return {
     title,
     dueDate: due.toISOString(),
-    contactQuery: compactTaskText(usableName) || scratch.spokenName || scratch.storedName || ""
+    contactQuery: compactTaskText(usableName)
   };
+}
+
+export function ghlTaskPreviewArgs(text, scratch = {}) {
+  const draft = parseGhlTaskDraft(text, scratch);
+  const override = explicitCrmContactOverride(text, scratch);
+  if (override) {
+    return {
+      mode: "search",
+      args: {
+        ...(override.contactQuery ? { contactQuery: override.contactQuery } : {}),
+        ...(override.phone ? { phone: override.phone } : {}),
+        title: draft.title,
+        dueDate: draft.dueDate
+      }
+    };
+  }
+  if (scratch.contactId) {
+    return {
+      mode: "thread-id",
+      args: {
+        contactId: scratch.contactId,
+        title: draft.title,
+        dueDate: draft.dueDate
+      }
+    };
+  }
+  if (scratch.phoneLast4) {
+    return {
+      mode: "thread-phone",
+      args: {
+        phone: scratch.phoneLast4,
+        title: draft.title,
+        dueDate: draft.dueDate
+      }
+    };
+  }
+  if (draft.contactQuery) {
+    return {
+      mode: "search",
+      args: {
+        contactQuery: draft.contactQuery,
+        title: draft.title,
+        dueDate: draft.dueDate
+      }
+    };
+  }
+  return { mode: "none", args: null, draft };
 }
 
 function taskWriteArgs(scratch) {
@@ -482,15 +596,15 @@ export async function maybeContinueCrmTask({
   }
 
   if (isGhlContactTaskRequest(text)) {
-    const draft = parseGhlTaskDraft(text, merged);
-    if (merged.contactId || merged.phoneLast4 || draft.contactQuery) {
-      const args = {
-        ...(merged.contactId ? { contactId: merged.contactId } : {}),
-        ...(draft.contactQuery ? { contactQuery: draft.contactQuery } : {}),
-        ...(merged.phoneLast4 ? { phone: merged.phoneLast4 } : {}),
-        title: draft.title,
-        dueDate: draft.dueDate
+    const previewPlan = ghlTaskPreviewArgs(text, merged);
+    if (previewPlan.mode === "none" && isThreadContactReference(text) && (merged.spokenName || merged.storedName)) {
+      return {
+        scratch: merged,
+        reply: `I still have ${displayName(merged)} from this chat, but I don’t have their GHL contact id pinned, so I won’t search lookalikes by name. Send a phone/email fragment or select the exact contact. I will not put this on Google Calendar.`
       };
+    }
+    if (previewPlan.args) {
+      const args = previewPlan.args;
       const preview = await executeTool("ghl_create_contact_task", args);
       const next = applyCrmToolResult(merged, "ghl_create_contact_task", args, preview);
       if (preview?.needsConfirmation && preview.proposed?.title) {
@@ -500,9 +614,12 @@ export async function maybeContinueCrmTask({
         };
       }
       if (preview?.error) {
+        const idFail = previewPlan.mode === "thread-id"
+          ? ` I used the pinned contact id from this chat (${merged.contactId}) and did not search other contacts by name.`
+          : " I still have the contact from this chat.";
         return {
           scratch: next,
-          reply: `Couldn’t preview that GHL task — ${toolError(preview)}. I still have the contact from this chat and I will not put this on Google Calendar.`
+          reply: `Couldn’t preview that GHL task — ${toolError(preview)}.${idFail} I will not put this on Google Calendar.`
         };
       }
     }

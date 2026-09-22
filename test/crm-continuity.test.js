@@ -3,13 +3,18 @@ import test from "node:test";
 import { handleTelegramChat } from "../src/chat.js";
 import {
   applyCrmToolResult,
+  explicitCrmContactOverride,
   extractLast4FromText,
+  extractNamedContact,
   formatActiveCrmTask,
+  ghlTaskPreviewArgs,
   isAffirmative,
   isLookItUp,
+  isThreadContactReference,
   lookupArgsFromScratch,
   maybeContinueCrmTask,
   mergeThreadIdentifiers,
+  parseGhlTaskDraft,
   switchesAwayFromCrm,
   parseNameCorrection
 } from "../src/crm-continuity.js";
@@ -129,6 +134,8 @@ test("thread identifiers and lookup args reuse last-4 and contact id", () => {
   assert.match(packed, /contact-michelle-1/);
   assert.match(packed, /2363/);
   assert.match(packed, /Alexa’s grandma referred her/);
+  assert.match(packed, /that contact/);
+  assert.match(packed, /Do not re-search by name/);
 });
 
 test("note preview result sticks the contact id and draft on the scratchpad", () => {
@@ -403,6 +410,38 @@ test("email follow-up confirmation stays on email instead of stale CRM", async (
   assert.match(reply, /David Grossman/);
 });
 
+test("that-contact phrasing reuses the pinned GHL id and does not name-search", () => {
+  const scratch = {
+    contactId: "contact-michelle-1",
+    spokenName: "Michelle",
+    storedName: "Michelle W.",
+    phoneLast4: "2363"
+  };
+  assert.equal(isThreadContactReference("Create a GHL task on that contact due tomorrow"), true);
+  assert.equal(isThreadContactReference("create a task on them due tomorrow"), true);
+  assert.equal(isThreadContactReference("follow-up task for her tomorrow"), true);
+  assert.equal(extractNamedContact("Create a GHL task on that contact due tomorrow"), "");
+  assert.equal(extractNamedContact("create a task on them due tomorrow"), "");
+  assert.equal(extractNamedContact("create a GHL task on David Grossman due Friday"), "David Grossman");
+  assert.equal(explicitCrmContactOverride("Create a GHL task on that contact due tomorrow", scratch), null);
+  assert.equal(explicitCrmContactOverride("create a task on Michelle due tomorrow", scratch), null);
+  assert.equal(explicitCrmContactOverride("create a GHL task on David Grossman due Friday", scratch).contactQuery, "David Grossman");
+  assert.equal(explicitCrmContactOverride("create a task on 305-555-0199", scratch).phone.includes("5550199"), true);
+  assert.equal(parseGhlTaskDraft("Create a GHL task on that contact due tomorrow", scratch).contactQuery, "");
+  const pinned = ghlTaskPreviewArgs("Create a GHL task on that contact due tomorrow", scratch);
+  assert.equal(pinned.mode, "thread-id");
+  assert.deepEqual(pinned.args, {
+    contactId: "contact-michelle-1",
+    title: "Follow up",
+    dueDate: pinned.args.dueDate
+  });
+  assert.equal(Object.hasOwn(pinned.args, "contactQuery"), false);
+  const switched = ghlTaskPreviewArgs("create a GHL task on David Grossman due Friday", scratch);
+  assert.equal(switched.mode, "search");
+  assert.equal(switched.args.contactQuery, "David Grossman");
+  assert.equal(Object.hasOwn(switched.args, "contactId"), false);
+});
+
 test("create GHL task on the known contact previews ghl_create_contact_task, not calendar", async () => {
   const store = memoryStore({
     contactId: "contact-michelle-1",
@@ -417,6 +456,8 @@ test("create GHL task on the known contact previews ghl_create_contact_task, not
     executeTool: async (name, args) => {
       assert.equal(name, "ghl_create_contact_task");
       assert.equal(args.contactId, "contact-michelle-1");
+      assert.equal(args.contactQuery, undefined);
+      assert.equal(args.phone, undefined);
       assert.equal(args.confirmed, undefined);
       return {
         needsConfirmation: true,
@@ -432,7 +473,88 @@ test("create GHL task on the known contact previews ghl_create_contact_task, not
   assert.equal(grokCalled, false);
   assert.deepEqual(toolCalls.map((call) => call.name), ["ghl_create_contact_task"]);
   assert.match(reply, /GHL task/);
+  assert.match(reply, /Michelle W/);
   assert.match(reply, /not a calendar event/i);
+});
+
+test("them/him/her on a pinned contact still previews that same GHL id", async () => {
+  const result = await maybeContinueCrmTask({
+    text: "create a GHL task on them due tomorrow",
+    history: [{ role: "assistant", content: "Saved the note on Michelle W. in GHL." }],
+    scratch: {
+      contactId: "contact-michelle-1",
+      spokenName: "Michelle",
+      storedName: "Michelle W.",
+      phoneLast4: "2363",
+      goal: "add_note"
+    },
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_create_contact_task");
+      assert.equal(args.contactId, "contact-michelle-1");
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      return {
+        needsConfirmation: true,
+        proposed: { contact: "Michelle W.", contactId: args.contactId, title: args.title, dueDate: args.dueDate }
+      };
+    }
+  });
+  assert.match(result.reply, /GHL task on Michelle W/);
+  assert.match(result.reply, /not a calendar event/i);
+});
+
+test("a different person or phone switches off the pinned GHL contact", async () => {
+  const toolCalls = [];
+  const result = await maybeContinueCrmTask({
+    text: "create a GHL task on David Grossman due Friday",
+    history: [],
+    scratch: {
+      contactId: "contact-michelle-1",
+      spokenName: "Michelle",
+      storedName: "Michelle W.",
+      phoneLast4: "2363"
+    },
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      assert.equal(name, "ghl_create_contact_task");
+      assert.equal(args.contactQuery, "David Grossman");
+      assert.equal(Object.hasOwn(args, "contactId"), false);
+      return {
+        needsConfirmation: true,
+        proposed: { contact: "David G.", contactId: "contact-david-1", title: args.title, dueDate: args.dueDate }
+      };
+    }
+  });
+  assert.equal(toolCalls.length, 1);
+  assert.match(result.reply, /David G/);
+});
+
+test("pinned-contact id miss does not fall back to a name multi-match", async () => {
+  const result = await maybeContinueCrmTask({
+    text: "Create a GHL task on that contact due tomorrow",
+    history: [],
+    scratch: {
+      contactId: "contact-michelle-1",
+      spokenName: "Michelle",
+      storedName: "Michelle W.",
+      phoneLast4: "2363"
+    },
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_create_contact_task");
+      assert.equal(args.contactId, "contact-michelle-1");
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      return {
+        error: "Couldn't load that GHL contact by id. I did not search other contacts by name."
+      };
+    }
+  });
+  assert.match(result.reply, /Couldn’t preview that GHL task/);
+  assert.match(result.reply, /contact-michelle-1/);
+  assert.match(result.reply, /did not search other contacts by name/);
+  assert.doesNotMatch(result.reply, /More than one GHL contact matched/);
+  assert.match(result.reply, /will not put this on Google Calendar/);
 });
 
 test("yes after a GHL task preview saves the CRM task", async () => {
