@@ -291,6 +291,36 @@ test("failed kickoff delivery is marked failed and retries successfully", async 
   assert.equal((await store.getVaCheckin(kickoffStateId("111"))).status, "sent");
 });
 
+test("force kickoff resets prior sent state and resends every recipient", async () => {
+  const store = memoryVaStore();
+  for (const chatId of ["111", "222", "333"]) {
+    await store.upsertVaCheckin({
+      id: kickoffStateId(chatId),
+      userId: chatId,
+      kind: "kickoff",
+      weekKey: WEEK,
+      status: "sent"
+    });
+  }
+  const recipients = [];
+  const result = await runVaCheckin(
+    { payload: { workflow: "va_checkin", phase: "kickoff", force: true, source: "admin_force", weekKey: WEEK } },
+    {
+      environment: ENV,
+      store,
+      now: MONDAY,
+      readNotion: async () => ({ ok: true, projects: [], todos: [] }),
+      sendTelegram: async ({ chatId }) => recipients.push(chatId),
+      sleep: async () => {}
+    }
+  );
+  assert.equal(result.recipientCount, 3);
+  assert.deepEqual([...new Set(recipients)], ["111", "222", "333"]);
+  for (const chatId of ["111", "222", "333"]) {
+    assert.equal((await store.getVaCheckin(kickoffStateId(chatId))).status, "sent");
+  }
+});
+
 test("Tuesday nudge sends once and skips after a reply", async () => {
   const store = memoryVaStore();
   await store.claimVaCheckin({ id: weeklyStateId(WEEK, "111"), userId: "111", kind: "weekly", weekKey: WEEK, status: "sent" });

@@ -938,6 +938,7 @@ export async function runVaCheckin(task, {
   const phase = task.payload?.phase === "kickoff" || task.payload?.phase === "nudge"
     ? task.payload.phase
     : "weekly";
+  const forceKickoff = phase === "kickoff" && task.payload?.force === true;
   const weekKey = String(task.payload?.weekKey ?? vaWeekKey(now));
   const weekday = easternWeekday(now);
   if (phase === "weekly" && weekday !== "Mon") {
@@ -966,6 +967,13 @@ export async function runVaCheckin(task, {
           status: "sending",
           detail: { startedAt: now.toISOString() }
         };
+        if (forceKickoff && store?.upsertVaCheckin) {
+          await store.upsertVaCheckin({
+            ...state,
+            status: "failed",
+            detail: { resetAt: now.toISOString(), source: String(task.payload?.source ?? "manual_force") }
+          });
+        }
         if (!await claimState(store, state)) {
           skipped.push({ chatId: recipient.chatId, reason: "already_sent" });
           continue;
