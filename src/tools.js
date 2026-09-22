@@ -81,7 +81,8 @@ import {
   readDriveFile,
   readGmailMessage,
   searchDrive,
-  searchGmail
+  searchGmail,
+  sendGmailMessage
 } from "./google-workspace.js";
 import {
   getRailwayLogs,
@@ -122,6 +123,7 @@ const WRITE_TOOLS = new Set([
   "calendar_update_event",
   "calendar_delete_event",
   "gmail_create_draft",
+  "gmail_send_message",
   "olicomm_upload"
 ]);
 const DEFAULT_GITHUB_OWNERS = ["yperez-dot"];
@@ -706,12 +708,29 @@ export function grokTools(environment = process.env) {
         required: ["messageId"],
         additionalProperties: false
       }),
-      functionTool("gmail_create_draft", "Create—but never send—a Gmail draft. Requires confirmed=true after the user reviews the recipient, subject, and body.", {
+      functionTool("gmail_create_draft", "Create a Gmail draft. For a reply, reuse the recipient email, subject, threadId, Message-ID as inReplyTo, and References from the message already read. Requires confirmed=true after the user reviews the recipient, subject, and body.", {
         type: "object",
         properties: {
           to: { type: "string" },
           subject: { type: "string" },
           text: { type: "string" },
+          threadId: { type: "string" },
+          inReplyTo: { type: "string" },
+          references: { type: "string" },
+          confirmed: { type: "boolean" }
+        },
+        required: ["to", "subject", "text"],
+        additionalProperties: false
+      }),
+      functionTool("gmail_send_message", "Send a Gmail message only after the user explicitly approves the exact recipient, subject, and body. 'Send it' or 'create it and send it' after reviewing the exact email is confirmation. For a reply, reuse the recipient email, subject, threadId, Message-ID as inReplyTo, and References from the message already read. Never claim it sent unless sent=true is returned.", {
+        type: "object",
+        properties: {
+          to: { type: "string", description: "Complete recipient email address, optionally with display name." },
+          subject: { type: "string" },
+          text: { type: "string" },
+          threadId: { type: "string" },
+          inReplyTo: { type: "string" },
+          references: { type: "string" },
           confirmed: { type: "boolean" }
         },
         required: ["to", "subject", "text"],
@@ -983,6 +1002,22 @@ export async function executeTool(name, rawArgs, {
         to: args.to,
         subject: args.subject,
         text: args.text,
+        threadId: args.threadId,
+        inReplyTo: args.inReplyTo,
+        references: args.references,
+        fetchImpl
+      });
+    }
+
+    if (name === "gmail_send_message") {
+      return sendGmailMessage({
+        config: googleWorkspaceConfig(environment),
+        to: args.to,
+        subject: args.subject,
+        text: args.text,
+        threadId: args.threadId,
+        inReplyTo: args.inReplyTo,
+        references: args.references,
         fetchImpl
       });
     }

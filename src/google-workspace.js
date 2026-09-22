@@ -41,7 +41,17 @@ async function googleFetch(url, { config, fetchImpl = fetch, method = "GET", bod
     body,
     signal: AbortSignal.timeout(30_000)
   });
-  if (!response.ok) throw new Error(`Google Workspace request failed with HTTP ${response.status}.`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.clone().json();
+      detail = String(payload?.error?.message ?? payload?.message ?? "").trim();
+    } catch {
+      // Keep the status-only fallback when Google did not return JSON.
+    }
+    const safeDetail = detail.replace(/[\r\n]+/g, " ").slice(0, 300);
+    throw new Error(`Google Workspace request failed with HTTP ${response.status}${safeDetail ? `: ${safeDetail}` : ""}.`);
+  }
   return response;
 }
 
@@ -127,6 +137,8 @@ export async function readGmailMessage({ config, messageId, fetchImpl = fetch })
     to: headers.to,
     subject: headers.subject,
     date: headers.date,
+    messageIdHeader: headers["message-id"],
+    references: headers.references,
     body: messageText(item.payload).slice(0, 30_000)
   };
 }
@@ -135,15 +147,55 @@ function base64Url(value) {
   return Buffer.from(value, "utf8").toString("base64url");
 }
 
-export async function createGmailDraft({ config, to, subject, text, fetchImpl = fetch }) {
-  const raw = base64Url([`To: ${to}`, `Subject: ${subject}`, "Content-Type: text/plain; charset=UTF-8", "", text].join("\r\n"));
+function gmailAddress(value) {
+  const raw = String(value ?? "").trim();
+  const bracketed = raw.match(/<([^<>\s]+@[^<>\s]+)>/u)?.[1];
+  const email = bracketed ?? raw.match(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu)?.[0];
+  if (!email) throw new Error("Gmail recipient must include a complete email address, not only a display name.");
+  return bracketed ? raw : email;
+}
+
+function cleanHeader(value, label) {
+  const clean = String(value ?? "").replace(/[\r\n]+/g, " ").trim();
+  if (!clean) throw new Error(`${label} is required.`);
+  return clean;
+}
+
+function gmailRaw({ to, subject, text, inReplyTo, references }) {
+  const headers = [
+    `To: ${gmailAddress(to)}`,
+    `Subject: ${cleanHeader(subject, "Gmail subject")}`,
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit"
+  ];
+  if (inReplyTo) headers.push(`In-Reply-To: ${cleanHeader(inReplyTo, "In-Reply-To")}`);
+  if (references) headers.push(`References: ${cleanHeader(references, "References")}`);
+  return base64Url([...headers, "", String(text ?? "")].join("\r\n"));
+}
+
+export async function createGmailDraft({ config, to, subject, text, threadId, inReplyTo, references, fetchImpl = fetch }) {
+  const raw = gmailRaw({ to, subject, text, inReplyTo, references });
   const response = await googleFetch(`${GMAIL_API}/drafts`, {
     config,
     fetchImpl,
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: { raw } })
+    body: JSON.stringify({ message: { raw, ...(threadId ? { threadId } : {}) } })
   });
   const payload = await response.json();
   return { drafted: true, draftId: payload.id, messageId: payload.message?.id ?? null, to, subject };
+}
+
+export async function sendGmailMessage({ config, to, subject, text, threadId, inReplyTo, references, fetchImpl = fetch }) {
+  const raw = gmailRaw({ to, subject, text, inReplyTo, references });
+  const response = await googleFetch(`${GMAIL_API}/messages/send`, {
+    config,
+    fetchImpl,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw, ...(threadId ? { threadId } : {}) })
+  });
+  const payload = await response.json();
+  return { sent: true, messageId: payload.id ?? null, threadId: payload.threadId ?? threadId ?? null, to, subject };
 }
