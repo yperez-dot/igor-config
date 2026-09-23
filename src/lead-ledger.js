@@ -14,10 +14,10 @@ const NON_NAME_TOKENS = new Set([
   "changing", "change"
 ]);
 const NAME_STOP_TOKENS = new Set([
-  "pls", "please", "remove", "delete", "forget", "ive", "told", "u", "you",
-  "times", "dont", "don", "t", "do", "not", "add", "anymore", "from", "the",
-  "your", "my", "lead", "leads", "ledger", "reminder", "reminders", "and",
-  "her", "him", "them", "she", "he", "they", "me", "a", "an"
+  "pls", "please", "remove", "delete", "forget", "ive", "i", "ve", "im", "ill",
+  "told", "u", "you", "times", "dont", "don", "t", "do", "not", "add", "anymore",
+  "from", "the", "your", "my", "lead", "leads", "ledger", "reminder", "reminders",
+  "and", "her", "him", "them", "she", "he", "they", "me", "a", "an"
 ]);
 
 function normalize(value) {
@@ -204,6 +204,23 @@ export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = 
   return [...canonical.values()]
     .filter((lead) => includeClosed || !CLOSED_STATES.has(lead.state))
     .sort((a, b) => String(a.followUpAt ?? "9999").localeCompare(String(b.followUpAt ?? "9999")));
+}
+
+export function spokenLeadNameHint(text) {
+  const raw = String(text ?? "");
+  const afterVerb = raw.match(/\b(?:remove|delete|forget)\s+(.+)$/i)?.[1] ?? "";
+  const source = afterVerb || raw;
+  const tokens = [];
+  for (const token of normalize(source).split(" ")) {
+    if (!token) continue;
+    if (NAME_STOP_TOKENS.has(token) || /^\d+$/.test(token)) {
+      if (tokens.length) break;
+      continue;
+    }
+    tokens.push(token);
+    if (tokens.length >= 4) break;
+  }
+  return tokens.map((token) => token.charAt(0).toUpperCase() + token.slice(1)).join(" ");
 }
 
 export async function findLeadsBySpokenName(store, { ownerSenderId, text, includeClosed = true } = {}) {

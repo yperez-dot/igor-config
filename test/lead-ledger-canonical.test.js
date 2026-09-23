@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalLeadSubject, listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
+import { canonicalLeadSubject, listLeadSnapshots, saveLeadSnapshot, spokenLeadNameHint } from "../src/lead-ledger.js";
 
 function memory(snapshot, createdAt) {
   return {
@@ -26,6 +26,12 @@ test("canonicalLeadSubject cleans known legacy reminder pollution", () => {
   assert.equal(canonicalLeadSubject("that lead"), null);
   assert.equal(canonicalLeadSubject("her"), null);
   assert.equal(canonicalLeadSubject("Miriam Wang"), "Miriam Wang");
+});
+
+test("spokenLeadNameHint pulls the name after remove/delete/forget", () => {
+  assert.equal(spokenLeadNameHint("Pls remove Miriam !!! I've told u 3 times, don't add her anymore"), "Miriam");
+  assert.equal(spokenLeadNameHint("remove Miriam Wang from the list"), "Miriam Wang");
+  assert.equal(spokenLeadNameHint("REMOVE HER!!!"), "");
 });
 
 test("listLeadSnapshots dedupes Tomas variants and drops instruction-only entries", async () => {

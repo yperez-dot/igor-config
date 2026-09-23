@@ -318,6 +318,19 @@ test("remove Miriam by unique first name uses the full ledger subject", async ()
   assert.deepEqual(leads.map((lead) => lead.subject), ["Tomas Delgado"]);
 });
 
+test("remove with no matching lead asks for the full name instead of erroring", async () => {
+  const store = ledgerStore();
+  const result = await maybeScheduleLeadReminder({
+    text: "remove Miriam",
+    store,
+    chatId: "222",
+    senderId: "222"
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /I don['’]t see a Miriam on your open lead list/i);
+  assert.doesNotMatch(result.reply, /owner and(?: full)? lead name are required/i);
+});
+
 test("junk reminder phrases are not persisted as lead subjects", async () => {
   const store = ledgerStore();
   const result = await maybeScheduleLeadReminder({

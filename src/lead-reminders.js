@@ -9,6 +9,7 @@ import {
   latestLeadReminderSubject,
   leadOutcome,
   saveLeadSnapshot,
+  spokenLeadNameHint,
   updateLeadState
 } from "./lead-ledger.js";
 import { isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
@@ -165,6 +166,28 @@ export function isLeadReminderRequest(text, history = []) {
   return Boolean(TIMING_HINT_RE.test(raw) && recentReminderContext(history));
 }
 
+function displayLeadName(value) {
+  const tokens = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return "";
+  return tokens.map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()).join(" ");
+}
+
+function removalAskReply(hint) {
+  const first = displayLeadName(hint).split(" ")[0];
+  if (first) return `I don’t see a ${first} on your open lead list. Which full name should I remove?`;
+  return "Which lead should I remove? Please send the full name.";
+}
+
+function alreadyOffLedgerReply(removed, hint) {
+  const label = displayLeadName(removed?.subject) || displayLeadName(hint);
+  if (label) return `${label} is already off your lead ledger.`;
+  return "That lead is already off your lead ledger.";
+}
+
+function personNameAskReply() {
+  return "Who should I remind you to call? Please send the person’s name.";
+}
+
 function outcomeReply(subject, outcome, lead) {
   const needsGhl = !lead?.ghlStatus || /unknown|not.?in.?ghl/i.test(String(lead.ghlStatus));
   if (outcome.state === "enrolled") return needsGhl
@@ -255,7 +278,8 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
 
   const removalRequest = /\b(remove|delete|forget)\b/i.test(raw) && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw);
   if (removalRequest) {
-    const spokenMatches = await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw });
+    const nameHint = spokenLeadNameHint(raw);
+    const spokenMatches = await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw, includeClosed: false });
     const usableMatches = spokenMatches.filter((lead) => isPersonLeadSubject(lead.subject));
     if (usableMatches.length > 1) {
       const names = usableMatches.map((lead) => lead.subject).join(" or ");
@@ -268,13 +292,19 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
         return { task: null, reply: `Removed ${lead.subject} from your lead ledger and cancelled ${result.taskIds.length} pending reminder(s).` };
       } catch (error) {
         const message = String(error?.message ?? "");
-        if (/which lead should i remove/i.test(message)) return { task: null, reply: message };
-        return { task: null, reply: "Which lead should I remove? Please send the full name." };
+        if (/which lead should i remove|already off your lead ledger/i.test(message)) return { task: null, reply: message };
+        if (/already removed|was removed/i.test(message)) return { task: null, reply: alreadyOffLedgerReply(null, nameHint || lead.subject) };
+        return { task: null, reply: removalAskReply(nameHint || lead.subject) };
       }
     }
-    const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
-    if (removed) return { task: null, reply: "That lead is already removed; no follow-up will be scheduled." };
-    return { task: null, reply: "Which lead should I remove? Please send the full name." };
+    const prior = latestLeadReminderSubject(history);
+    const removed = await removedLeadFor(store, { ownerSenderId: senderId, subject: nameHint, text: raw })
+      || (prior ? await removedLeadFor(store, { ownerSenderId: senderId, subject: prior, text: raw }) : null);
+    if (removed) return { task: null, reply: alreadyOffLedgerReply(removed, nameHint || prior) };
+    const closedMatches = (await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw, includeClosed: true }))
+      .filter((entry) => isPersonLeadSubject(entry.subject) && /^(?:completed|enrolled|not_interested|closed)$/.test(entry.state));
+    if (closedMatches.length) return { task: null, reply: alreadyOffLedgerReply(closedMatches[0], nameHint) };
+    return { task: null, reply: removalAskReply(nameHint) };
   }
   const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
   if (removed) return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
@@ -316,11 +346,11 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   if (!runAt) return null;
   const existingLead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
   if (!existingLead && /\b(him|her|them)\b/i.test(raw)) {
-    return { task: null, reply: "Who should I remind you to call? Please send the person’s name." };
+    return { task: null, reply: personNameAskReply() };
   }
   const subject = existingLead?.subject || reminderSubject(subjectText || raw);
   if (!canonicalLeadSubject(subject)) {
-    return { task: null, reply: "Who should I remind you to call? Please send the person’s name." };
+    return { task: null, reply: personNameAskReply() };
   }
   if (await removedLeadFor(store, { ownerSenderId: senderId, subject, text: raw })) {
     return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };

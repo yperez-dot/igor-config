@@ -113,7 +113,7 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     async removeLead({ ownerSenderId, subject }) {
       const owner = String(ownerSenderId ?? "");
       let name = normalizedLeadText(subject);
-      if (!owner || !name || isPronounLeadName(name)) throw new Error("An owner and lead name are required.");
+      if (!owner || !name || isPronounLeadName(name)) throw new Error("Which lead should I remove? Please send the full name.");
       const client = await pool.connect();
       try {
         await client.query("BEGIN");

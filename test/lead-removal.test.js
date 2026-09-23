@@ -94,6 +94,56 @@ test("ambiguous first-name remove asks which full name", async () => {
   await pool.end();
 });
 
+test("remove Miriam with no open match asks for the full name", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "tomas-1", ownerSenderId: "owner", subject: "Tomas Delgado" });
+
+  const result = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "remove Miriam"
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /I don['’]t see a Miriam on your open lead list/i);
+  assert.match(result.reply, /Which full name should I remove/i);
+  assert.doesNotMatch(result.reply, /owner and(?: full)? lead name are required/i);
+  assert.doesNotMatch(result.reply, /Couldn['’]t finish that/i);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "owner" });
+  assert.deepEqual(leads.map((lead) => lead.subject), ["Tomas Delgado"]);
+  await pool.end();
+});
+
+test("remove Miriam when she is already off the ledger says so instead of erroring", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "miriam-1", ownerSenderId: "owner", subject: "Miriam Wang" });
+  const first = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "pls remove Miriam"
+  });
+  assert.match(first.reply, /Removed Miriam Wang/i);
+
+  const again = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "remove Miriam"
+  });
+  assert.equal(again.task, null);
+  assert.match(again.reply, /already off your lead ledger/i);
+  assert.doesNotMatch(again.reply, /owner and(?: full)? lead name are required/i);
+  assert.doesNotMatch(again.reply, /Couldn['’]t finish that/i);
+  await pool.end();
+});
+
 test("removed lead does not reappear via saveLeadSnapshot first name or full name", async () => {
   const { Pool } = newDb().adapters.createPg();
   const pool = new Pool();
