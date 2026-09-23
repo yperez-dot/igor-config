@@ -17,6 +17,7 @@ import {
   suppressionPatternsFrom
 } from "./mail-alerts.js";
 import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
+import { handlePersonalReminder } from "./personal-reminder.js";
 import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
@@ -315,6 +316,35 @@ export async function handleTelegramChat({
       content: schoolPickup.reply
     });
     return schoolPickup.reply;
+  }
+  const personalReminder = await handlePersonalReminder({
+    text: inbound.text,
+    history,
+    speaker,
+    executeTool,
+    toolContext: calendarContext,
+    store,
+    environment,
+    senderId: message.senderId,
+    chatId: message.chatId,
+    replyTo: message.replyTo
+  });
+  if (personalReminder) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: personalReminder.reply });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: message.senderId,
+      role: "user",
+      content: userText,
+      maxChars: inbound.storeMaxChars
+    });
+    await store.appendChatTurn({
+      chatId: message.chatId,
+      senderId: "igor",
+      role: "assistant",
+      content: personalReminder.reply
+    });
+    return personalReminder.reply;
   }
   const ownBooking = await bookOwnCalendarIfRequested({
     text: message.text,

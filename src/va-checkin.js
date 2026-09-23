@@ -2,6 +2,8 @@ import { easternMondayIso } from "./hub-ticker.js";
 import { telegramSpeaker } from "./identity.js";
 import { normalizeNotionId } from "./sales-sync.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
+import { isGhlContactTaskRequest, isPersonalReminderRequest } from "./task-calendar-route.js";
+import { sanitizePersonalTaskTitle } from "./task-title.js";
 import { isVaCheckinEnabled, VA_CHECKIN_ENABLED_ENV } from "./va-checkin-flag.js";
 
 export { isVaCheckinEnabled, VA_CHECKIN_ENABLED_ENV };
@@ -194,7 +196,9 @@ export function looksLikeRecentGhlContactContext(history = []) {
   });
 }
 
-export function shouldRouteVaReplyToNotion(text, { history, replyTo } = {}) {
+export function shouldRouteVaReplyToNotion(text, { history, replyTo, allowPersonalReminderMirror = false } = {}) {
+  if (isGhlContactTaskRequest(text) && !isPersonalReminderRequest(text)) return false;
+  if (isPersonalReminderRequest(text) && !allowPersonalReminderMirror) return false;
   if (looksLikeGhlCrmIntent(text) || looksLikeGhlContactNoteIntent(text)) return false;
   if (looksLikeRecentGhlContactContext(history) && !looksLikeVaProjectUpdate(text)) return false;
   if (looksLikeVaProjectUpdate(text)) return true;
@@ -731,10 +735,10 @@ export function parseVaCheckinUpdates({ text, snapshot, recipient, weekKey }) {
   const statusIntent = inferStatusIntent(raw);
   const created = [];
   const createMatch = raw.match(CREATE_TODO_RE);
-  if (createMatch?.[1]) {
+  if (createMatch?.[1] || isPersonalReminderRequest(raw)) {
     created.push({
       kind: "todo",
-      title: createMatch[1].replace(/[.?!]+$/, "").trim().slice(0, 200),
+      title: sanitizePersonalTaskTitle(raw).slice(0, 200),
       notes: raw,
       statusIntent: statusIntent ?? "open"
     });
@@ -1291,14 +1295,15 @@ export async function noteVaCheckinReply({
   replyTo,
   speaker,
   history = [],
-  now = new Date()
+  now = new Date(),
+  allowPersonalReminderMirror = false
 } = {}) {
   if (!isVaCheckinEnabled(environment)) return { recorded: false, reason: "disabled" };
   const recipient = recipientForSender(environment, senderId, speaker ?? telegramSpeaker(environment, senderId));
   if (!recipient || !store?.upsertVaCheckin) return { recorded: false };
   const weekKey = vaWeekKey(now);
-  if (!shouldRouteVaReplyToNotion(text, { history, replyTo })) {
-    return { recorded: false, recipient, weekKey, reason: "ghl_contact_work" };
+  if (!shouldRouteVaReplyToNotion(text, { history, replyTo, allowPersonalReminderMirror })) {
+    return { recorded: false, recipient, weekKey, reason: isPersonalReminderRequest(text) ? "personal_reminder" : "ghl_contact_work" };
   }
   const weeklyOpen = await hasState(store, weeklyStateId(weekKey, recipient.chatId))
     || await hasState(store, kickoffStateId(recipient.chatId));
@@ -1329,13 +1334,18 @@ export async function handleVaCheckinReply({
   now = new Date(),
   fetchImpl = fetch,
   readNotion = readVaCheckinNotion,
-  writeNotion = writeVaCheckinNotion
+  writeNotion = writeVaCheckinNotion,
+  allowPersonalReminderMirror = false
 } = {}) {
   if (!isVaCheckinEnabled(environment)) {
     return { handled: false, recorded: false, reason: "disabled" };
   }
-  if (!shouldRouteVaReplyToNotion(text, { history, replyTo })) {
-    return { handled: false, recorded: false, reason: "ghl_contact_work" };
+  if (!shouldRouteVaReplyToNotion(text, { history, replyTo, allowPersonalReminderMirror })) {
+    return {
+      handled: false,
+      recorded: false,
+      reason: isPersonalReminderRequest(text) ? "personal_reminder" : "ghl_contact_work"
+    };
   }
   const noted = await noteVaCheckinReply({
     store,
@@ -1345,7 +1355,8 @@ export async function handleVaCheckinReply({
     replyTo,
     speaker,
     history,
-    now
+    now,
+    allowPersonalReminderMirror
   });
   if (!noted.recorded || !noted.substantial) {
     return { handled: false, ...noted };

@@ -584,6 +584,35 @@ test("reply writes a monthly todo owned by the person who answered", async () =>
   assert.ok(await store.getVaCheckin(replyStateId(WEEK, "222")));
 });
 
+test("add-a-task-for-me titles keep the action, not me tomorrow leftovers", () => {
+  const plan = parseVaCheckinUpdates({
+    text: "Add a task for me tomorrow to set up GHL birthday automations",
+    snapshot: { ok: true, projects: [], todos: [] },
+    recipient: KATY,
+    weekKey: WEEK
+  });
+  assert.equal(plan.created[0].title, "Set up GHL birthday automations");
+  assert.doesNotMatch(plan.created[0].title, /^me\b/i);
+  assert.doesNotMatch(plan.created[0].title, /tomorrow/i);
+});
+
+test("personal remind-me replies do not steal the turn as Notion-only", async () => {
+  const store = memoryVaStore();
+  await store.claimVaCheckin({ id: weeklyStateId(WEEK, "111"), userId: "111", kind: "weekly", weekKey: WEEK, status: "sent" });
+  const result = await handleVaCheckinReply({
+    store,
+    environment: ENV,
+    senderId: "111",
+    chatId: "111",
+    text: "Add a task for me tomorrow to set up GHL birthday automations",
+    speaker: { role: "yahoska", name: "Yahoska Perez" },
+    now: MONDAY,
+    writeNotion: async () => assert.fail("must not write Notion-only for a personal reminder")
+  });
+  assert.equal(result.handled, false);
+  assert.equal(result.reason, "personal_reminder");
+});
+
 test("creates a weekly-focus monthly todo when no project name matches", () => {
   const plan = parseVaCheckinUpdates({
     text: "Callbacks and Maria follow-up this week.",

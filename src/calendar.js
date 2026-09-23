@@ -327,6 +327,29 @@ export function resolveTransparency(args = {}) {
   return "opaque";
 }
 
+export function resolveReminders(args = {}) {
+  if (args.reminders === false || args.useDefaultReminders === true) return null;
+  const minutes = Array.isArray(args.reminderMinutes)
+    ? args.reminderMinutes.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value >= 0)
+    : [];
+  if (minutes.length) {
+    return {
+      useDefault: false,
+      overrides: minutes.map((value) => ({ method: "popup", minutes: value }))
+    };
+  }
+  if (args.popupReminders) {
+    return {
+      useDefault: false,
+      overrides: [
+        { method: "popup", minutes: 0 },
+        { method: "popup", minutes: 10 }
+      ]
+    };
+  }
+  return null;
+}
+
 export function freeSlots({
   busy = [],
   timeMinMs,
@@ -578,6 +601,7 @@ export function proposedEvent(args, config) {
   const transparency = resolveTransparency(args);
   const allDay = resolveAllDay(args);
   const recurrence = resolveRecurrence(args);
+  const reminders = resolveReminders(args);
   const base = {
     summary: trim(args.summary) || "THEI appointment",
     timeZone: trim(args.timeZone) || config.timeZone,
@@ -588,7 +612,8 @@ export function proposedEvent(args, config) {
     allDay,
     transparency,
     free: transparency === "transparent",
-    recurrence
+    recurrence,
+    reminders
   };
 
   if (allDay) {
@@ -656,6 +681,7 @@ function eventBody(proposed) {
   if (proposed.description) body.description = proposed.description;
   if (proposed.attendees.length) body.attendees = proposed.attendees.map((email) => ({ email }));
   if (proposed.recurrence?.length) body.recurrence = proposed.recurrence;
+  if (proposed.reminders) body.reminders = proposed.reminders;
   return body;
 }
 

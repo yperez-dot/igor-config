@@ -5,6 +5,8 @@ import {
   calendarWriteBlockedResult,
   isExplicitCalendarRequest,
   isGhlContactTaskRequest,
+  isPersonalOpsReminderRequest,
+  isPersonalReminderRequest,
   isSmokeOrMetaGhlTask,
   isSmokeOrMetaLeadSubject,
   resolveTaskCalendarRoute,
@@ -59,6 +61,62 @@ test("ambiguous task-vs-calendar prefers the GHL task and does not invent a cale
 test("personal remind-me language is not forced onto a GHL task", () => {
   assert.equal(isGhlContactTaskRequest("Remind me to follow up with Tomas tomorrow at 9"), false);
   assert.equal(resolveTaskCalendarRoute("Remind me to follow up with Tomas tomorrow at 9"), "unspecified");
+  assert.equal(isPersonalOpsReminderRequest("Remind me tomorrow at 9 AM about Jocelyn's mom"), false);
+  assert.equal(isPersonalOpsReminderRequest("Remind me tomorrow to set up GHL birthday automations"), true);
+});
+
+const PERSONAL_REMINDER_PHRASES = [
+  "Add a task for me tomorrow to set up GHL birthday automations",
+  "task for me tomorrow to set up GHL birthday automations",
+  "to-do for me tomorrow to update the website",
+  "Remind me to set up GHL birthday automations",
+  "remind me tomorrow to send the SOA",
+  "ping me tomorrow to submit the Humana recert",
+  "don't let me forget to review AEP contracts",
+  "set a reminder to finish carrier recert"
+];
+
+test("personal task-for-me and remind-me phrases route to calendar, not GHL", () => {
+  for (const text of PERSONAL_REMINDER_PHRASES) {
+    assert.equal(isGhlContactTaskRequest(text), false, text);
+    assert.equal(isPersonalReminderRequest(text), true, text);
+    assert.equal(isPersonalOpsReminderRequest(text), true, text);
+    assert.equal(resolveTaskCalendarRoute(text), "calendar", text);
+    assert.equal(blocksCalendarWrite(text), false, text);
+  }
+});
+
+test("GHL contact-task control stays on the CRM path and does not become a calendar event", () => {
+  const text = "Create a GHL task on Michelle due tomorrow";
+  assert.equal(isGhlContactTaskRequest(text), true);
+  assert.equal(isPersonalOpsReminderRequest(text), false);
+  assert.equal(resolveTaskCalendarRoute(text), "ghl_task");
+  assert.equal(blocksCalendarWrite(text), true);
+  const tools = [
+    { type: "function", function: { name: "ghl_create_contact_task" } },
+    { type: "function", function: { name: "calendar_create_event" } }
+  ];
+  assert.deepEqual(
+    toolsForUserRequest(tools, text).map((tool) => tool.function.name),
+    ["ghl_create_contact_task"]
+  );
+  assert.deepEqual(toolChoiceForUserRequest(text, tools), {
+    type: "function",
+    function: { name: "ghl_create_contact_task" }
+  });
+});
+
+test("personal reminder tool choice forces calendar_create_event", () => {
+  const tools = [
+    { type: "function", function: { name: "ghl_create_contact_task" } },
+    { type: "function", function: { name: "calendar_create_event" } }
+  ];
+  const text = "Add a task for me tomorrow to set up GHL birthday automations";
+  assert.deepEqual(toolChoiceForUserRequest(text, tools), {
+    type: "function",
+    function: { name: "calendar_create_event" }
+  });
+  assert.match(taskCalendarRoutingPrompt(text), /personal reminder/i);
 });
 
 test("calendar write tools are stripped and GHL task is forced for create-task turns", () => {
