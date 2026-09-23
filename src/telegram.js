@@ -244,5 +244,11 @@ export function telegramFailureMessage(error) {
   if (/tool loop exceeded/i.test(raw)) {
     return "I got stuck looping tools. Say it again as one job — ticker, calendar, or sneak peeks — and I’ll do that in code.";
   }
+  if (/owner and (?:full )?lead name are required|which lead should i remove/i.test(raw)) {
+    return "Which lead should I remove? Please send the full name.";
+  }
+  if (/this lead was removed|already off your lead ledger/i.test(raw)) {
+    return "That lead is already off your lead ledger.";
+  }
   return `Couldn't finish that (${raw}). I'm still here — say it again.`;
 }

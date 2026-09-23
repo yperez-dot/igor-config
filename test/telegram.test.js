@@ -235,6 +235,10 @@ test("Telegram failures sound like Igor, not a generic bot", () => {
   assert.match(telegramFailureMessage(new Error("xAI tool loop exceeded the maximum number of rounds.")), /stuck looping tools/);
   assert.match(telegramFailureMessage(new Error("boom Bearer secret-token-value")), /Couldn't finish that/);
   assert.equal(telegramFailureMessage(new Error("boom Bearer secret-token-value")).includes("secret-token-value"), false);
+  const leaked = telegramFailureMessage(new Error("An owner and full lead name are required."));
+  assert.match(leaked, /Which lead should I remove/i);
+  assert.doesNotMatch(leaked, /owner and full lead name are required/i);
+  assert.doesNotMatch(leaked, /Couldn['’]t finish that/i);
 });
 
 test("Telegram texts drop markdown asterisks so they never show in chat", () => {

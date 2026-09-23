@@ -1,11 +1,15 @@
 import crypto from "node:crypto";
 import { removedLeadFor } from "./lead-removal.js";
 import {
+  canonicalLeadSubject,
   findLeadBySubject,
+  findLeadsBySpokenName,
   findMentionedLead,
+  isPersonLeadSubject,
   latestLeadReminderSubject,
   leadOutcome,
   saveLeadSnapshot,
+  spokenLeadNameHint,
   updateLeadState
 } from "./lead-ledger.js";
 import { isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
@@ -132,7 +136,7 @@ export function sanitizeReminderInput(text) {
 }
 
 export function reminderSubject(text) {
-  return sanitizeReminderInput(text)
+  const cleaned = sanitizeReminderInput(text)
     .replace(/\b(remind me|set (?:a )?reminder(?: for)?|tomorrow|today|tonight|next\s+week)\b/gi, " ")
     .replace(/\bin\s+(?:a|one|two|three|\d+)\s*(?:days?|weeks?|minutes?|hours?)\b/gi, " ")
     .replace(/\bnext\s+(?=(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b)/gi, " ")
@@ -141,7 +145,9 @@ export function reminderSubject(text) {
     .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, " ")
     .replace(/^\s*(?:to\s+)?follow[- ]?up\s+(?:with|w)\s+/i, "")
     .replace(/^\s*call\s+/i, "")
-    .replace(/\s+/g, " ").trim().replace(/^[,.-]+|[,.-]+$/g, "") || "that lead";
+    .replace(/\s+/g, " ").trim().replace(/^[,.-]+|[,.-]+$/g, "");
+  if (!cleaned || !isPersonLeadSubject(cleaned)) return "";
+  return cleaned;
 }
 
 function recentReminderContext(history = []) {
@@ -158,6 +164,28 @@ export function isLeadReminderRequest(text, history = []) {
   if (EXPLICIT_RE.test(raw)) return true;
   if (STATUS_CORRECTION_RE.test(raw)) return false;
   return Boolean(TIMING_HINT_RE.test(raw) && recentReminderContext(history));
+}
+
+function displayLeadName(value) {
+  const tokens = String(value ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return "";
+  return tokens.map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase()).join(" ");
+}
+
+function removalAskReply(hint) {
+  const first = displayLeadName(hint).split(" ")[0];
+  if (first) return `I don’t see a ${first} on your open lead list. Which full name should I remove?`;
+  return "Which lead should I remove? Please send the full name.";
+}
+
+function alreadyOffLedgerReply(removed, hint) {
+  const label = displayLeadName(removed?.subject) || displayLeadName(hint);
+  if (label) return `${label} is already off your lead ledger.`;
+  return "That lead is already off your lead ledger.";
+}
+
+function personNameAskReply() {
+  return "Who should I remind you to call? Please send the person’s name.";
 }
 
 function outcomeReply(subject, outcome, lead) {
@@ -179,8 +207,10 @@ function statusCorrectionNextAction(raw, fallback) {
 }
 
 async function resolveExistingLead(store, { ownerSenderId, text, history = [] } = {}) {
+  const spoken = await findLeadsBySpokenName(store, { ownerSenderId, text });
+  const usableLead = (lead) => lead && isPersonLeadSubject(lead.subject);
+  if (spoken.length === 1 && usableLead(spoken[0])) return spoken[0];
   const direct = await findMentionedLead(store, { ownerSenderId, text });
-  const usableLead = (lead) => lead && !/\b(?:him|her|them|this person|that person)\b/i.test(String(lead.subject ?? ""));
   if (usableLead(direct)) return direct;
   if (!/\b(him|her|them)\b/i.test(String(text ?? ""))) return null;
   // A confirmed CRM identity is stronger than a prior reminder reply. This must
@@ -248,14 +278,33 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
 
   const removalRequest = /\b(remove|delete|forget)\b/i.test(raw) && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw);
   if (removalRequest) {
-    const lead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
-    if (lead && store.removeLead) {
-      const result = await store.removeLead({ ownerSenderId: senderId, subject: lead.subject });
-      return { task: null, reply: `Removed ${lead.subject} from your lead ledger and cancelled ${result.taskIds.length} pending reminder(s).` };
+    const nameHint = spokenLeadNameHint(raw);
+    const spokenMatches = await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw, includeClosed: false });
+    const usableMatches = spokenMatches.filter((lead) => isPersonLeadSubject(lead.subject));
+    if (usableMatches.length > 1) {
+      const names = usableMatches.map((lead) => lead.subject).join(" or ");
+      return { task: null, reply: `Which lead should I remove — ${names}?` };
     }
-    const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
-    if (removed) return { task: null, reply: "That lead is already removed; no follow-up will be scheduled." };
-    if (/\blead\b/i.test(raw)) return { task: null, reply: "Which lead should I remove? Please send the full name." };
+    const lead = usableMatches[0] || await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
+    if (lead && isPersonLeadSubject(lead.subject) && store.removeLead) {
+      try {
+        const result = await store.removeLead({ ownerSenderId: senderId, subject: lead.subject });
+        return { task: null, reply: `Removed ${lead.subject} from your lead ledger and cancelled ${result.taskIds.length} pending reminder(s).` };
+      } catch (error) {
+        const message = String(error?.message ?? "");
+        if (/which lead should i remove|already off your lead ledger/i.test(message)) return { task: null, reply: message };
+        if (/already removed|was removed/i.test(message)) return { task: null, reply: alreadyOffLedgerReply(null, nameHint || lead.subject) };
+        return { task: null, reply: removalAskReply(nameHint || lead.subject) };
+      }
+    }
+    const prior = latestLeadReminderSubject(history);
+    const removed = await removedLeadFor(store, { ownerSenderId: senderId, subject: nameHint, text: raw })
+      || (prior ? await removedLeadFor(store, { ownerSenderId: senderId, subject: prior, text: raw }) : null);
+    if (removed) return { task: null, reply: alreadyOffLedgerReply(removed, nameHint || prior) };
+    const closedMatches = (await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw, includeClosed: true }))
+      .filter((entry) => isPersonLeadSubject(entry.subject) && /^(?:completed|enrolled|not_interested|closed)$/.test(entry.state));
+    if (closedMatches.length) return { task: null, reply: alreadyOffLedgerReply(closedMatches[0], nameHint) };
+    return { task: null, reply: removalAskReply(nameHint) };
   }
   const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
   if (removed) return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
@@ -297,9 +346,15 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   if (!runAt) return null;
   const existingLead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });
   if (!existingLead && /\b(him|her|them)\b/i.test(raw)) {
-    return { task: null, reply: "Who should I remind you to call? Please send the person’s name." };
+    return { task: null, reply: personNameAskReply() };
   }
   const subject = existingLead?.subject || reminderSubject(subjectText || raw);
+  if (!canonicalLeadSubject(subject)) {
+    return { task: null, reply: personNameAskReply() };
+  }
+  if (await removedLeadFor(store, { ownerSenderId: senderId, subject, text: raw })) {
+    return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
+  }
   const matchedBySubject = existingLead || await findLeadBySubject(store, { ownerSenderId: senderId, subject });
   const leadId = matchedBySubject?.leadId || crypto.randomUUID();
   const duplicate = await activeReminderFor(store, matchedBySubject, runAt);
@@ -311,7 +366,14 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   const reminderText = `Lead follow-up: ${subject}. Before I close this out: is this person in GHL, and did you update the lead outcome/status?`;
   const task = await store.createTask({ id: crypto.randomUUID(), type: "lead_management", payload: { workflow: "telegram_reminder", chatId: String(chatId), ownerSenderId: String(senderId ?? ""), leadId, text: reminderText, subject, source: "lead_followup" }, runAt });
   const resolvedOwnerRole = ownerRole || (typeof store.getTelegramSpeaker === "function" ? await store.getTelegramSpeaker(senderId) : null);
-  await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: matchedBySubject?.nextAction ?? "follow up", followUpAt: runAt, ghlStatus: matchedBySubject?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created" });
+  try {
+    await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: matchedBySubject?.nextAction ?? "follow up", followUpAt: runAt, ghlStatus: matchedBySubject?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created" });
+  } catch (error) {
+    if (/removed/i.test(String(error?.message ?? ""))) {
+      return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
+    }
+    throw error;
+  }
   const knowsGhl = matchedBySubject?.ghlStatus && !/unknown/i.test(String(matchedBySubject.ghlStatus));
   const ghlQuestion = knowsGhl ? "" : " Also, is this person already in GHL?";
   return { task, leadId, reply: `Reminder set: call ${subject} ${when}.${ghlQuestion}` };

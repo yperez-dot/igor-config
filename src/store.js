@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import pg from "pg";
-import { mentionsLead, normalizedLeadText, removedLeadFor } from "./lead-removal.js";
+import { isPronounLeadName, mentionsLead, normalizedLeadText, removedLeadFor, sameLeadName } from "./lead-removal.js";
 
 export function createStore({ connectionString, pool = new pg.Pool({ connectionString }) }) {
   const ready = pool.query(`
@@ -112,30 +112,42 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     },
     async removeLead({ ownerSenderId, subject }) {
       const owner = String(ownerSenderId ?? "");
-      const name = normalizedLeadText(subject);
-      if (!owner || name.split(" ").length < 2) throw new Error("An owner and full lead name are required.");
+      let name = normalizedLeadText(subject);
+      if (!owner || !name || isPronounLeadName(name)) throw new Error("Which lead should I remove? Please send the full name.");
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
         const memories = (await client.query("SELECT * FROM agent_memories")).rows;
-        const matching = memories.filter(row => {
+        const ownerSnapshots = memories.flatMap((row) => {
           try {
             const value = JSON.parse(row.content);
-            return value.kind === "lead_snapshot" && String(value.ownerSenderId) === owner && mentionsLead(value.subject, name);
-          } catch { return false; }
+            if (value.kind !== "lead_snapshot" || String(value.ownerSenderId) !== owner) return [];
+            return [{ row, value }];
+          } catch { return []; }
         });
+        const matchesName = (candidate) => mentionsLead(candidate, name) || sameLeadName(candidate, name);
+        let matching = ownerSnapshots.filter(({ value }) => matchesName(value.subject));
+        if (name.split(" ").length < 2) {
+          const distinct = [...new Map(matching.map(({ value }) => [normalizedLeadText(value.subject), value.subject])).values()];
+          if (distinct.length > 1) {
+            throw new Error(`Which lead should I remove — ${distinct.join(" or ")}?`);
+          }
+          if (distinct.length === 1) name = normalizedLeadText(distinct[0]);
+          else if (!matching.length) throw new Error("Which lead should I remove? Please send the full name.");
+          matching = ownerSnapshots.filter(({ value }) => mentionsLead(value.subject, name) || sameLeadName(value.subject, name));
+        }
         const previous = (await client.query("SELECT lead_ids FROM lead_removals WHERE owner_id=$1 AND subject=$2", [owner, name])).rows[0];
-        const leadIds = [...new Set([...(previous?.lead_ids ?? []), ...matching.map(row => JSON.parse(row.content).leadId).filter(Boolean)])];
+        const leadIds = [...new Set([...(previous?.lead_ids ?? []), ...matching.map(({ value }) => value.leadId).filter(Boolean)])];
         await client.query("INSERT INTO lead_removals(owner_id,subject,lead_ids) VALUES($1,$2,$3) ON CONFLICT(owner_id,subject) DO UPDATE SET lead_ids=EXCLUDED.lead_ids", [owner, name, JSON.stringify(leadIds)]);
         const tasks = (await client.query("SELECT id,payload,status FROM tasks")).rows.filter(row => {
           const p = row.payload;
           return String(p.ownerSenderId || p.chatId) === owner && !["complete", "cancelled"].includes(row.status)
-            && (leadIds.includes(p.leadId) || mentionsLead(p.subject, name) || mentionsLead(p.text, name));
+            && (leadIds.includes(p.leadId) || mentionsLead(p.subject, name) || mentionsLead(p.text, name) || sameLeadName(p.subject, name));
         });
         for (const task of tasks) await client.query("UPDATE tasks SET status='cancelled',locked_at=NULL,updated_at=NOW() WHERE id=$1", [task.id]);
-        for (const row of matching) await client.query("DELETE FROM agent_memories WHERE id=$1", [row.id]);
+        for (const { row } of matching) await client.query("DELETE FROM agent_memories WHERE id=$1", [row.id]);
         await client.query("COMMIT");
-        const result = { memoryIds: matching.map(row => row.id), taskIds: tasks.map(row => row.id), leadIds };
+        const result = { memoryIds: matching.map(({ row }) => row.id), taskIds: tasks.map(row => row.id), leadIds };
         await record("lead.removed", owner, result);
         return result;
       } catch (error) {
