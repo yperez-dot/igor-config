@@ -9,6 +9,7 @@ import {
   updateLeadState
 } from "./lead-ledger.js";
 import { isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
+import { looksLikeReferralThankYouRequest } from "./referral-thankyous.js";
 
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
@@ -150,6 +151,7 @@ function recentReminderContext(history = []) {
 export function isLeadReminderRequest(text, history = []) {
   const raw = sanitizeReminderInput(text);
   if (!raw) return false;
+  if (looksLikeReferralThankYouRequest(raw)) return false;
   if (isGhlContactTaskRequest(raw)) return false;
   if (isPersonalOpsReminderRequest(raw)) return false;
   if (STATUS_UPDATE_RE.test(raw) && !/\bremind me\b|\bset (?:a )?reminder\b/i.test(raw)) return false;
@@ -213,6 +215,7 @@ async function resolveExistingLead(store, { ownerSenderId, text, history = [] } 
 export async function maybeScheduleLeadReminder({ text, subjectText, history = [], store, chatId, senderId, ownerRole, now = new Date(), timeZone = TZ }) {
   const raw = sanitizeReminderInput(text);
   if (!raw || !store?.createTask || !chatId) return null;
+  if (looksLikeReferralThankYouRequest(raw)) return null;
 
   if (/\b(?:list|show|what are|which)\b.*\breminders?\b|^\s*(?:my\s+)?reminders?\s*\??$/i.test(raw)) {
     if (typeof store.listActiveTelegramReminders !== "function") return { task: null, reply: "I can’t list reminders from this connection yet." };

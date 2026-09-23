@@ -34,5 +34,12 @@ test("removal deletes all owner snapshots, cancels reminders, preserves other le
   assert.equal(stale.reason, "lead_removed");
   const again = await maybeScheduleLeadReminder({ store, chatId: "owner", senderId: "owner", text: "REMOVE HER!!!", history: [{role:"assistant",content:"Lead follow-up: Maria Lopez. Before I close this out:"}] });
   assert.equal(again.task, null);
+  const thankYou = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "Add to Referral Thank-Yous: Maria Lopez referred Juan Perez, agent Katy."
+  });
+  assert.equal(thankYou, null);
   await pool.end();
 });

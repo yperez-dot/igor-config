@@ -138,7 +138,8 @@ export async function handleTelegramChat({
   tools,
   executeTool,
   environment = process.env,
-  downloadFile = downloadTelegramFile
+  downloadFile = downloadTelegramFile,
+  fetchImpl = fetch
 }) {
   const history = await store.recentChatTurns(message.chatId, { limit: 24 });
   const rememberedRole = typeof store.getTelegramSpeaker === "function"
@@ -232,6 +233,18 @@ export async function handleTelegramChat({
       content: reply
     });
     return reply;
+  }
+
+  const referralThankYou = await handleReferralThankYouRequest({
+    text: inbound.text,
+    speaker,
+    environment,
+    fetchImpl
+  });
+  if (referralThankYou?.handled && referralThankYou.reply) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: referralThankYou.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: referralThankYou.reply });
+    return referralThankYou.reply;
   }
 
   const reminderHistory = message.replyTo?.text
@@ -393,17 +406,6 @@ export async function handleTelegramChat({
       content: tickerEdit.reply
     });
     return tickerEdit.reply;
-  }
-
-  const referralThankYou = await handleReferralThankYouRequest({
-    text: inbound.text,
-    speaker,
-    environment
-  });
-  if (referralThankYou?.handled && referralThankYou.reply) {
-    await sendTelegramMessage({ botToken, chatId: message.chatId, text: referralThankYou.reply });
-    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: referralThankYou.reply });
-    return referralThankYou.reply;
   }
 
   const vaUpdate = await handleVaCheckinReply({

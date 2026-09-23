@@ -138,6 +138,40 @@ test("writeReferralThankYou creates a Referral Thank-Yous row with required fiel
   assert.equal(create.body.properties["Date referred"].date.start, "2026-09-23");
 });
 
+test("handleReferralThankYouRequest creates the Maria Lopez / Juan Perez / Katy row", async () => {
+  const calls = [];
+  const result = await handleReferralThankYouRequest({
+    text: "Add to Referral Thank-Yous: Maria Lopez referred Juan Perez, agent Katy.",
+    speaker: { role: "yahoska" },
+    environment: {
+      NOTION_TOKEN: "notion-token",
+      NOTION_REFERRAL_THANKYOUS_DATA_SOURCE_ID: "2f7be747-86c2-437d-98c1-12238fd37aa4"
+    },
+    now: NOW,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, method: options.method, body: options.body ? JSON.parse(options.body) : null });
+      if (url.includes("/data_sources/2f7be74786c2437d98c112238fd37aa4") && options.method === "GET") {
+        return jsonResponse(SCHEMA);
+      }
+      if (url.endsWith("/v1/pages") && options.method === "POST") {
+        return jsonResponse({ id: "page-1" });
+      }
+      return jsonResponse({ message: `unexpected ${url}` }, 500);
+    }
+  });
+  assert.equal(result.handled, true);
+  assert.equal(result.parsed.referrer, "Maria Lopez");
+  assert.equal(result.parsed.referred, "Juan Perez");
+  assert.equal(result.parsed.agent, "Katy Robles");
+  assert.equal(result.parsed.status, "Needed");
+  assert.equal(result.written.ok, true);
+  assert.match(result.reply, /Logged on Referral Thank-Yous/);
+  assert.doesNotMatch(result.reply, /That lead was removed/i);
+  const create = calls.find((call) => call.method === "POST");
+  assert.equal(create.body.properties.Agent.select.name, "Katy Robles");
+  assert.equal(create.body.properties.Status.select.name, "Needed");
+});
+
 test("setup reply never mentions Weekly Focus as a destination", () => {
   const text = formatReferralThankYouSetupReply();
   assert.match(text, /Referral Thank-Yous/);
