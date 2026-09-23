@@ -8,7 +8,7 @@ import {
   saveLeadSnapshot,
   updateLeadState
 } from "./lead-ledger.js";
-import { isGhlContactTaskRequest } from "./task-calendar-route.js";
+import { isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
 
 const TZ = "America/New_York";
 const REMINDER_CONTEXT_RE = /when do you want me to remind|who should i remind|any open leads|any new leads|follow up|follow-up/i;
@@ -84,7 +84,7 @@ function relativeCount(token) {
   return NUMBER_WORDS.get(normalized) ?? Number(normalized);
 }
 
-export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ } = {}) {
+export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ, fallbackHour = 9 } = {}) {
   const raw = String(text ?? "").trim();
   if (!raw) return null;
   const relativeShort = raw.match(/\bin\s+(\d+)\s*(minute|minutes|hour|hours)\b/i);
@@ -119,7 +119,7 @@ export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ } = {
     }
   }
   if (!dateParts) return null;
-  const clock = parseClock(raw, /tonight/i.test(raw) ? 18 : 9);
+  const clock = parseClock(raw, /tonight/i.test(raw) ? 18 : fallbackHour);
   if (!clock) return null;
   const runAt = localDateToUtc({ ...dateParts, ...clock }, timeZone);
   if (runAt <= now && /today|tonight/i.test(raw)) return new Date(runAt.getTime() + 24 * 3_600_000);
@@ -151,6 +151,7 @@ export function isLeadReminderRequest(text, history = []) {
   const raw = sanitizeReminderInput(text);
   if (!raw) return false;
   if (isGhlContactTaskRequest(raw)) return false;
+  if (isPersonalOpsReminderRequest(raw)) return false;
   if (STATUS_UPDATE_RE.test(raw) && !/\bremind me\b|\bset (?:a )?reminder\b/i.test(raw)) return false;
   if (EXPLICIT_RE.test(raw)) return true;
   if (STATUS_CORRECTION_RE.test(raw)) return false;

@@ -317,7 +317,7 @@ export function grokTools(environment = process.env) {
         required: ["body"],
         additionalProperties: false
       }),
-      functionTool("ghl_create_contact_task", "Create a pending GoHighLevel/Xclusive CRM task on one exact contact. Use this for 'create a task', 'GHL task', 'CRM task', 'follow-up task on [contact]', or 'task due …'. If this chat already has a contact id, 'that contact' / 'this contact' / 'them' / 'him' / 'her' means pass that contactId only — do not re-search by name. Only pass contactQuery or phone when they name a different person, phone, or email. Never use calendar_create_event for those phrases. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_create_contact_task", "Create a pending GoHighLevel/Xclusive CRM task on one exact contact. Use this for 'create a task', 'GHL task', 'CRM task', 'follow-up task on [contact]', or 'task due …'. If this chat already has a contact id, 'that contact' / 'this contact' / 'them' / 'him' / 'her' means pass that contactId only — do not re-search by name. Only pass contactQuery or phone when they name a different person, phone, or email. Never use calendar_create_event for those phrases. Do not use this for personal 'remind me', 'task for me tomorrow', or 'to-do for me' — those are Google Calendar reminders. Preview the contact, task, due date, and assignee; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string" }, contactQuery: { type: "string" }, phone: { type: "string", description: "Full phone or last-4 when there is no pinned contact id." }, title: { type: "string" }, body: { type: "string" },
@@ -610,10 +610,10 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Add an event on a team Google Calendar only when the user explicitly asks for an appointment, meeting, calendar hold, or a reminder on the calendar (for example 'book 15 min', 'put on my calendar', 'appointment tomorrow'). Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. No-school days, holidays, and personal calendar reminders: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). Never use this for a GHL/CRM contact task, 'create a task', or 'task due …' — those must use ghl_create_contact_task. Do not claim it is on the calendar unless booked is true.", {
+      functionTool("calendar_create_event", "Add an event on a team Google Calendar when the user asks for an appointment, meeting, calendar hold, or a personal reminder (remind me, ping me, don't let me forget, set a reminder, add a task for me tomorrow, to-do for me). Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. Personal reminders: 15 min, free=true, popup reminders at event time and 10 minutes before; default 10:00 AM America/New_York when no time is given. Title is the action only. No-school days and holidays: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). Never use this for a GHL/CRM contact task, 'create a task on [contact]', or 'task due …' on a CRM contact — those must use ghl_create_contact_task. Do not claim it is on the calendar unless booked is true.", {
         type: "object",
         properties: {
-          summary: { type: "string", description: "Event title." },
+          summary: { type: "string", description: "Event title. Action only — strip remind me / add a task for me / dates." },
           start: { type: "string", description: "Start datetime, or YYYY-MM-DD for an all-day event." },
           end: { type: "string", description: "End datetime, or last inclusive day for all-day. Optional if durationMinutes or a single all-day date." },
           durationMinutes: { type: "integer", description: "Used when end is omitted on timed events. Default 30." },
@@ -638,6 +638,12 @@ export function grokTools(environment = process.env) {
           sendUpdates: { type: "string", enum: ["all", "none"] },
           whose: { type: "string", enum: ["me", "yahoska", "katy", "carolina"], description: "Which teammate’s calendar. Default me." },
           force: { type: "boolean", description: "Book even if the slot overlaps an existing event. Not needed when free=true." },
+          popupReminders: { type: "boolean", description: "Popup at event time and 10 minutes before. Use for personal reminders." },
+          reminderMinutes: {
+            type: "array",
+            items: { type: "integer" },
+            description: "Popup reminder offsets in minutes before the start. Example [0, 10]."
+          },
           confirmed: { type: "boolean" }
         },
         required: ["summary", "start"],

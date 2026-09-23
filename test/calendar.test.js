@@ -9,6 +9,7 @@ import {
   proposedEvent,
   resetCalendarTokenCache,
   resolveCalendarRole,
+  resolveReminders,
   resolveTransparency,
   toZonedDateTime,
   zonedUtcMs
@@ -164,6 +165,32 @@ test("booking requires confirmed=true and then creates the event", async () => {
   assert.equal(booked.booked, true);
   assert.equal(booked.event.id, "evt-1");
   assert.equal(calls.some((call) => call.method === "POST" && call.url.includes("/events")), true);
+});
+
+test("personal reminder popups attach to the Google Calendar event", () => {
+  const config = calendarConfig(calendarEnv);
+  const proposed = proposedEvent({
+    summary: "Set up GHL birthday automations",
+    start: "2026-09-23T10:00:00",
+    durationMinutes: 15,
+    free: true,
+    popupReminders: true,
+    reminderMinutes: [0, 10]
+  }, config);
+  assert.deepEqual(proposed.reminders, {
+    useDefault: false,
+    overrides: [
+      { method: "popup", minutes: 0 },
+      { method: "popup", minutes: 10 }
+    ]
+  });
+  assert.deepEqual(resolveReminders({ popupReminders: true }), {
+    useDefault: false,
+    overrides: [
+      { method: "popup", minutes: 0 },
+      { method: "popup", minutes: 10 }
+    ]
+  });
 });
 
 test("no-school days can be all-day and free", () => {

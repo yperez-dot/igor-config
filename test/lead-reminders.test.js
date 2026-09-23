@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isLeadReminderRequest, maybeScheduleLeadReminder, parseReminderRunAt } from "../src/lead-reminders.js";
+import { isPersonalOpsReminderRequest } from "../src/task-calendar-route.js";
 import { listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
 
 function ledgerStore() {
@@ -78,6 +79,26 @@ test("uses lead check-in context for terse timing replies", async () => {
   const result = await maybeScheduleLeadReminder({ text: "Maria tomorrow at 11 am", history: [{ role: "assistant", content: "Any open leads? Tell me who and when do you want me to remind you." }], store, chatId: "333", senderId: "333", now: new Date("2026-09-09T21:00:00Z") });
   assert.ok(result);
   assert.equal(created.payload.chatId, "333");
+});
+
+test("personal ops remind-me is not treated as a lead-ledger reminder", async () => {
+  const text = "Remind me tomorrow to set up GHL birthday automations";
+  assert.equal(isPersonalOpsReminderRequest(text), true);
+  assert.equal(isLeadReminderRequest(text, []), false);
+  const store = {
+    tasks: [],
+    async createTask(task) { this.tasks.push(task); return task; }
+  };
+  const result = await maybeScheduleLeadReminder({
+    text,
+    history: [],
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T18:00:00.000Z")
+  });
+  assert.equal(result, null);
+  assert.equal(store.tasks.length, 0);
 });
 
 test("create GHL task language does not become a Telegram reminder", async () => {

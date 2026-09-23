@@ -203,6 +203,48 @@ test("create GHL task strips calendar writes and forces the CRM task tool", asyn
   assert.match(reply, /Previewing the GHL task/);
 });
 
+test("add a task for me tomorrow books that person's calendar, not a GHL task", async () => {
+  const store = memoryStore();
+  const toolCalls = [];
+  let grokCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "Add a task for me tomorrow to set up GHL birthday automations"
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      return { booked: true };
+    },
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].name, "calendar_create_event");
+  assert.equal(toolCalls[0].args.summary, "Set up GHL birthday automations");
+  assert.equal(toolCalls[0].args.whose, "yahoska");
+  assert.equal(toolCalls[0].args.free, true);
+  assert.equal(toolCalls[0].args.durationMinutes, 15);
+  assert.match(reply, /on your calendar/i);
+  assert.match(reply, /Set up GHL birthday automations/);
+  assert.doesNotMatch(reply, /NOTION UPDATED/);
+  assert.deepEqual(sent, [reply]);
+});
+
 test("slow the ticker goes through the reviewed assistant workflow", async () => {
   const store = memoryStore();
   const toolCalls = [];
