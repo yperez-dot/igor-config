@@ -30,7 +30,7 @@ When someone says “remember this,” call `memory_remember`. For deeper lookup
 - **Gina Berenguer** — ~100 clients 2023–2025, **renewals only**; not an active producer.
 - Upline: **Hector Marmol** (Brokers Society / NHP). Override agencies: **BSI**, **NHP**. Anything from Hector / AgentConnection.Net / BSI upline is **private** — notify leadership (Yahoska and Katy); never post to the Agent Hub.
 - Message Katy and Carolina on **Telegram**, not the old shared WhatsApp number.
-- **Weekly VA check-in (Yahoska 2026-09-21):** Monday 9:00 AM ET Igor DMs Yahoska, Katy, and Carolina with their Notion Open projects + monthly todos (ops-brief layout). They reply in Telegram; Igor writes Notion. One Tuesday 3:00 PM ET nudge if silent. Katy and Carolina do not have Charlie.
+- **Weekly VA check-in (Yahoska 2026-09-21):** Monday 9:00 AM ET Igor DMs Yahoska, Katy, and Carolina with their Notion Open projects + monthly todos (ops-brief layout). They reply in Telegram; Igor writes Notion. One Tuesday 3:00 PM ET nudge if silent. Katy and Carolina do not have Charlie. Referral thank-you card lists are **not** this path — see Referral Thank-Yous below.
 - Yahoska’s husband is allowlisted for **her** Google Calendar only (view/book for her). He is not a substitute on compliance, deploys, or new systems.
 - Telegram reply/quote to a site-health, uptime, 404, or “Heads up” alert is about **that alert** — say what broke and the next move. Never invent a flyer/screenshot or ask her to resend a picture unless this turn actually has an image.
 
@@ -95,6 +95,23 @@ Florida 2026 dollars are in the how-paid section. Do not invent rates for other 
 - After termination they **keep paying existing book** while the agent is still contracted and policies stay in force. **90 days after termination** they can change *how* leftover commissions are paid.
 - Do not assume today’s advance / residual rules last if they cut the schedule. Existing business still pays unless they rewrite the method after that 90-day window.
 - Full write-up: `memory/knowledge/aarp-med-supp-chargebacks.md`. Call `memory_search` for “AARP chargeback” / “rapid lapse.”
+
+## Referral thank-you cards (locked 2026-09-23 — Yahoska)
+
+Clients who send referrals still need a thank-you card. Track them on **Referral Thank-Yous** only. NEVER create/update Weekly Focus or Monthly Todos for referral card lists.
+
+- Database title: Referral Thank-Yous
+- Page: https://www.notion.so/d87520440a8e461f84a63b5ac25a858b
+- Data source: `collection://2f7be747-86c2-437d-98c1-12238fd37aa4`
+- Database id: `d87520440a8e461f84a63b5ac25a858b`
+- Parent: Sales under THEI Dashboard
+- Railway overrides (names only; values live in Railway): `NOTION_REFERRAL_THANKYOUS_DATA_SOURCE_ID`, `NOTION_REFERRAL_THANKYOUS_DB_ID`
+- Applies for **Yahoska, Katy, and Carolina**
+- Required when logging a row: **Referrer** (title), **Referred**, **Agent** (Yahoska Perez / Katy Robles / Carolina Robles / Team), **Date referred** (default today if omitted), **Status=Needed**, **Channel=TBD** unless they named Amazon email / Handwrytten / Thanks.io / Other
+- Optional: Date sent, Mailing address, Notes
+- Gift/send automation (Handwrytten, Amazon, Thanks.io) is **PARKED**. Tracking only. Do not mail or generate cards.
+- Ops note: https://app.notion.com/p/3e477cd3be8e81c6831de89ad1661062 under Igor & Tech Ops
+- If they say “keep a list in Notion for clients who send referrals,” acknowledge this tracker. Do not write Weekly Focus or Monthly Todos.
 
 ## Channels, ads, site
 

@@ -245,6 +245,44 @@ test("add a task for me tomorrow books that person's calendar, not a GHL task", 
   assert.deepEqual(sent, [reply]);
 });
 
+test("keep a Notion referral thank-you list does not become Weekly Focus or Monthly Todo", async () => {
+  const store = memoryStore();
+  let grokCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: {
+      TELEGRAM_YAHOSKA_USER_ID: "8882265752",
+      VA_CHECKIN_ENABLED: "true",
+      NOTION_TOKEN: "notion-token"
+    },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "Keep a list in notion for clients who send referrals and still need thank-you cards. Track the referrer, who they referred, and the agent — Yahoska, Katy, or Carolina."
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async () => assert.fail("must not call tools for referral thank-you setup"),
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.match(reply, /Referral Thank-Yous/);
+  assert.match(reply, /never Weekly Focus or Monthly Todos/i);
+  assert.doesNotMatch(reply, /Weekly focus — week of/i);
+  assert.doesNotMatch(reply, /NOTION UPDATED/);
+  assert.doesNotMatch(reply, /\[Monthly Todo\]/);
+  assert.deepEqual(sent, [reply]);
+});
+
 test("slow the ticker goes through the reviewed assistant workflow", async () => {
   const store = memoryStore();
   const toolCalls = [];

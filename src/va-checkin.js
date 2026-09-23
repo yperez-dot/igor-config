@@ -5,6 +5,7 @@ import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 import { isGhlContactTaskRequest, isPersonalReminderRequest } from "./task-calendar-route.js";
 import { sanitizePersonalTaskTitle } from "./task-title.js";
 import { isVaCheckinEnabled, VA_CHECKIN_ENABLED_ENV } from "./va-checkin-flag.js";
+import { looksLikeReferralThankYouRequest } from "./referral-thankyous.js";
 
 export { isVaCheckinEnabled, VA_CHECKIN_ENABLED_ENV };
 
@@ -180,6 +181,7 @@ export function looksLikeGhlCrmIntent(text) {
 
 export function looksLikeVaProjectUpdate(text) {
   const raw = String(text ?? "");
+  if (looksLikeReferralThankYouRequest(raw)) return false;
   if (/\bnotion\b/i.test(raw)) return true;
   if (CREATE_TODO_RE.test(raw)) return true;
   if (/\b(?:open\s+projects?|monthly\s+todos?|weekly\s+(?:check-?in|focus))\b/i.test(raw)) return true;
@@ -197,6 +199,7 @@ export function looksLikeRecentGhlContactContext(history = []) {
 }
 
 export function shouldRouteVaReplyToNotion(text, { history, replyTo, allowPersonalReminderMirror = false } = {}) {
+  if (looksLikeReferralThankYouRequest(text)) return false;
   if (isGhlContactTaskRequest(text) && !isPersonalReminderRequest(text)) return false;
   if (isPersonalReminderRequest(text) && !allowPersonalReminderMirror) return false;
   if (looksLikeGhlCrmIntent(text) || looksLikeGhlContactNoteIntent(text)) return false;
@@ -734,6 +737,9 @@ export function parseVaCheckinUpdates({ text, snapshot, recipient, weekKey }) {
   const matched = matchItemsByText([...(snapshot?.projects ?? []), ...(snapshot?.todos ?? [])], raw);
   const statusIntent = inferStatusIntent(raw);
   const created = [];
+  if (looksLikeReferralThankYouRequest(raw)) {
+    return { updates: matched, created, ownerName: recipient.ownerName };
+  }
   const createMatch = raw.match(CREATE_TODO_RE);
   if (createMatch?.[1] || isPersonalReminderRequest(raw)) {
     created.push({
@@ -1303,7 +1309,14 @@ export async function noteVaCheckinReply({
   if (!recipient || !store?.upsertVaCheckin) return { recorded: false };
   const weekKey = vaWeekKey(now);
   if (!shouldRouteVaReplyToNotion(text, { history, replyTo, allowPersonalReminderMirror })) {
-    return { recorded: false, recipient, weekKey, reason: isPersonalReminderRequest(text) ? "personal_reminder" : "ghl_contact_work" };
+    return {
+      recorded: false,
+      recipient,
+      weekKey,
+      reason: looksLikeReferralThankYouRequest(text)
+        ? "referral_thank_you"
+        : isPersonalReminderRequest(text) ? "personal_reminder" : "ghl_contact_work"
+    };
   }
   const weeklyOpen = await hasState(store, weeklyStateId(weekKey, recipient.chatId))
     || await hasState(store, kickoffStateId(recipient.chatId));
@@ -1344,7 +1357,9 @@ export async function handleVaCheckinReply({
     return {
       handled: false,
       recorded: false,
-      reason: isPersonalReminderRequest(text) ? "personal_reminder" : "ghl_contact_work"
+      reason: looksLikeReferralThankYouRequest(text)
+        ? "referral_thank_you"
+        : isPersonalReminderRequest(text) ? "personal_reminder" : "ghl_contact_work"
     };
   }
   const noted = await noteVaCheckinReply({

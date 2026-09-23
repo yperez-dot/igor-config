@@ -658,6 +658,36 @@ test("confirmation stays plain text with the ops-brief header", () => {
   assert.doesNotMatch(text, /\*\*/);
 });
 
+const REFERRAL_LIST_PHRASE = "Keep a list in notion for clients who send referrals and still need thank-you cards. Track the referrer, who they referred, and the agent — Yahoska, Katy, or Carolina.";
+
+test("referral thank-you lists do not become Weekly Focus or Monthly Todos", async () => {
+  assert.equal(shouldRouteVaReplyToNotion(REFERRAL_LIST_PHRASE), false);
+  const plan = parseVaCheckinUpdates({
+    text: REFERRAL_LIST_PHRASE,
+    snapshot: { ok: true, projects: [], todos: [] },
+    recipient: KATY,
+    weekKey: WEEK
+  });
+  assert.equal(plan.created.length, 0);
+  assert.doesNotMatch(JSON.stringify(plan), /Weekly focus|Monthly Todo/i);
+
+  const store = memoryVaStore();
+  await store.claimVaCheckin({ id: weeklyStateId(WEEK, "111"), userId: "111", kind: "weekly", weekKey: WEEK, status: "sent" });
+  const result = await handleVaCheckinReply({
+    store,
+    environment: ENV,
+    senderId: "111",
+    chatId: "111",
+    text: REFERRAL_LIST_PHRASE,
+    speaker: { role: "yahoska", name: "Yahoska Perez" },
+    now: MONDAY,
+    writeNotion: async () => assert.fail("must not write Weekly Focus / Monthly Todos for referral thank-yous")
+  });
+  assert.equal(result.handled, false);
+  assert.equal(result.reason, "referral_thank_you");
+  assert.equal(result.reply, undefined);
+});
+
 test("contact notes and Open Leads checks do not route to Notion", () => {
   const michelleNotes = "For Michelle in the notes add that Alexa's grandma referred her";
   const smartList = "Check smart list, confirm that she's on open leads list pls in GHL";

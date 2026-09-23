@@ -4,7 +4,7 @@ The old OpenClaw workspace (`SOUL.md`, `MEMORY.md`, `IGOR_MEMORY.md`, daily note
 
 ## What loads every Telegram turn
 
-`memory/standing.md` is injected into the system prompt. That is the always-on THEI brain: team, routing, vendors, BSI/OliComm rules, brand, cancelled tools, Doral address.
+`memory/standing.md` is injected into the system prompt. That is the always-on THEI brain: team, routing, vendors, BSI/OliComm rules, brand, cancelled tools, Doral address, and Referral Thank-Yous (never Weekly Focus / Monthly Todos for referral card lists).
 
 It was distilled from `igor-config-full.md` (export 2026-08-18) and stripped of:
 

@@ -48,6 +48,7 @@ Write on Telegram reply (Igor, not Charlie):
 - Update matching project/todo Status + Notes (and append a dated paragraph on the page).
 - Create a monthly todo owned by the person who replied when they ask to add a task, or a “Weekly focus — week of …” row when they send a status with no matching title.
 - Do **not** intercept GHL/CRM contact notes, smart-list / Open Leads checks, or “add to [name]’s notes.” Those stay in Telegram GHL tools. If the reply is ambiguous but a contact was just discussed, prefer GHL notes.
+- Do **not** intercept referral thank-you card lists (clients who send referrals, still need a thank-you). Those go to the Referral Thank-Yous database. Never create Weekly Focus or Monthly Todos for that list.
 - Failed Notion writes use `NOTION UPDATE FAILED`, never a success-looking `NOTION UPDATED` card.
 
 ## Message shape
