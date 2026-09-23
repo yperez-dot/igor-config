@@ -43,3 +43,89 @@ test("removal deletes all owner snapshots, cancels reminders, preserves other le
   assert.equal(thankYou, null);
   await pool.end();
 });
+
+test("remove Miriam by first name when the open lead is unique", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "miriam-1", ownerSenderId: "owner", subject: "Miriam Wang" });
+  await saveLeadSnapshot({ store, leadId: "tomas-1", ownerSenderId: "owner", subject: "Tomas Delgado" });
+  await store.createTask({
+    id: "miriam-reminder",
+    type: "lead_management",
+    payload: { workflow: "telegram_reminder", ownerSenderId: "owner", chatId: "owner", leadId: "miriam-1", subject: "Miriam Wang", text: "Lead follow-up: Miriam Wang." }
+  });
+
+  const result = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "Pls remove Miriam !!! I've told u 3 times, don't add her anymore"
+  });
+  assert.match(result.reply, /Removed Miriam Wang/i);
+  assert.doesNotMatch(result.reply, /full lead name are required/i);
+  assert.equal((await store.getTask("miriam-reminder")).status, "cancelled");
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "owner" });
+  assert.deepEqual(leads.map((lead) => lead.subject), ["Tomas Delgado"]);
+  await pool.end();
+});
+
+test("ambiguous first-name remove asks which full name", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "m1", ownerSenderId: "owner", subject: "Miriam Wang" });
+  await saveLeadSnapshot({ store, leadId: "m2", ownerSenderId: "owner", subject: "Miriam Cohen" });
+
+  const result = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "pls remove Miriam"
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /Which lead should I remove/i);
+  assert.match(result.reply, /Miriam Wang/);
+  assert.match(result.reply, /Miriam Cohen/);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "owner" });
+  assert.equal(leads.length, 2);
+  await pool.end();
+});
+
+test("removed lead does not reappear via saveLeadSnapshot first name or full name", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "miriam-1", ownerSenderId: "owner", subject: "Miriam Wang" });
+  const removed = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "pls remove Miriam"
+  });
+  assert.match(removed.reply, /Removed Miriam Wang/i);
+
+  await assert.rejects(
+    () => saveLeadSnapshot({ store, leadId: "miriam-2", ownerSenderId: "owner", subject: "Miriam Wang" }),
+    /removed/
+  );
+  await assert.rejects(
+    () => saveLeadSnapshot({ store, leadId: "miriam-3", ownerSenderId: "owner", subject: "Miriam" }),
+    /removed/
+  );
+  const retry = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "Remind me to follow up with Miriam tomorrow at 9",
+    now: new Date("2026-09-23T16:00:00Z")
+  });
+  assert.equal(retry.task, null);
+  assert.match(retry.reply, /removed/i);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "owner" });
+  assert.equal(leads.length, 0);
+  await pool.end();
+});

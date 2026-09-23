@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalLeadSubject, listLeadSnapshots } from "../src/lead-ledger.js";
+import { canonicalLeadSubject, listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
 
 function memory(snapshot, createdAt) {
   return {
@@ -20,6 +20,12 @@ test("canonicalLeadSubject cleans known legacy reminder pollution", () => {
   assert.equal(canonicalLeadSubject("create a task on that contact"), null);
   assert.equal(canonicalLeadSubject("create a GHL task on Test Contact due tomorrow"), null);
   assert.equal(canonicalLeadSubject("Smoke test"), null);
+  assert.equal(canonicalLeadSubject("me to call her to complete her enrollment"), null);
+  assert.equal(canonicalLeadSubject("me to call her"), null);
+  assert.equal(canonicalLeadSubject("for me to call her to complete her enrollment"), null);
+  assert.equal(canonicalLeadSubject("that lead"), null);
+  assert.equal(canonicalLeadSubject("her"), null);
+  assert.equal(canonicalLeadSubject("Miriam Wang"), "Miriam Wang");
 });
 
 test("listLeadSnapshots dedupes Tomas variants and drops instruction-only entries", async () => {
@@ -79,4 +85,51 @@ test("listLeadSnapshots dedupes Tomas variants and drops instruction-only entrie
   assert.equal(tomas.followUpAt, "2026-09-16T13:00:00.000Z");
   assert.equal(tomas.ghlStatus, "in GHL");
   assert.equal(maria.nextAction, "call her");
+});
+
+test("listLeadSnapshots drops reminder-phrase subjects and saveLeadSnapshot refuses them", async () => {
+  const ownerSenderId = "111";
+  const rows = [
+    memory({
+      leadId: "junk",
+      ownerSenderId,
+      subject: "me to call her to complete her enrollment",
+      nextAction: "follow up",
+      followUpAt: "2026-09-22T20:30:00.000Z",
+      ghlStatus: "unknown",
+      state: "open",
+      updatedAt: "2026-09-22T18:12:00.000Z"
+    }, "2026-09-22T18:12:00.000Z"),
+    memory({
+      leadId: "miriam",
+      ownerSenderId,
+      subject: "Miriam Wang",
+      nextAction: "follow up",
+      followUpAt: "2026-09-22T20:30:00.000Z",
+      ghlStatus: "unknown",
+      state: "open",
+      updatedAt: "2026-09-22T18:10:00.000Z"
+    }, "2026-09-22T18:10:00.000Z")
+  ];
+  const store = {
+    memories: [...rows],
+    async listAgentMemories() { return this.memories; },
+    async saveAgentMemory({ content, tags, source }) {
+      const row = { id: "new", content, tags, source };
+      this.memories.unshift(row);
+      return row;
+    }
+  };
+
+  const leads = await listLeadSnapshots(store, { ownerSenderId });
+  assert.deepEqual(leads.map((lead) => lead.subject), ["Miriam Wang"]);
+
+  const refused = await saveLeadSnapshot({
+    store,
+    leadId: "junk-2",
+    ownerSenderId,
+    subject: "me to call her to complete her enrollment"
+  });
+  assert.equal(refused, null);
+  assert.equal((await listLeadSnapshots(store, { ownerSenderId })).length, 1);
 });

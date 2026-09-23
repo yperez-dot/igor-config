@@ -1,15 +1,39 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isLeadReminderRequest, maybeScheduleLeadReminder, parseReminderRunAt } from "../src/lead-reminders.js";
+import { isLeadReminderRequest, maybeScheduleLeadReminder, parseReminderRunAt, reminderSubject } from "../src/lead-reminders.js";
 import { isPersonalOpsReminderRequest } from "../src/task-calendar-route.js";
 import { listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
 
 function ledgerStore() {
   const memories = [];
   const tasks = [];
+  const removals = [];
   return {
     memories,
     tasks,
+    removals,
+    async listLeadRemovals(ownerId) {
+      return removals.filter((row) => row.owner_id === String(ownerId));
+    },
+    async removeLead({ ownerSenderId, subject }) {
+      const owner = String(ownerSenderId ?? "");
+      const name = String(subject ?? "").trim();
+      if (!owner || !name) throw new Error("An owner and lead name are required.");
+      const matching = memories.filter((row) => {
+        try {
+          const value = JSON.parse(row.content);
+          return value.kind === "lead_snapshot" && String(value.ownerSenderId) === owner
+            && String(value.subject).toLowerCase().includes(name.split(/\s+/)[0].toLowerCase());
+        } catch { return false; }
+      });
+      const leadIds = matching.map((row) => JSON.parse(row.content).leadId).filter(Boolean);
+      removals.push({ owner_id: owner, subject: name.toLowerCase(), lead_ids: leadIds });
+      for (const row of matching) {
+        const index = memories.indexOf(row);
+        if (index >= 0) memories.splice(index, 1);
+      }
+      return { memoryIds: matching.map((row) => row.id), taskIds: [], leadIds };
+    },
     async createTask(task) {
       const saved = { id: task.id, status: "queued", run_at: task.runAt, ...task };
       tasks.push(saved);
@@ -59,6 +83,11 @@ test("does not mistake a numeric date for the reminder time", () => {
 test("parses weekday reschedules", () => {
   const now = new Date("2026-09-09T21:00:00Z");
   assert.equal(parseReminderRunAt("no answer, call Friday at 10 am", { now }).toISOString(), "2026-09-11T14:00:00.000Z");
+});
+
+test("reminderSubject refuses leftover reminder instructions as a lead name", () => {
+  assert.equal(reminderSubject("set a reminder for me to call her today at 4:30 to complete her enrollment"), "");
+  assert.equal(reminderSubject("Remind me tomorrow at 9 AM to follow up with Ayda, Jocelyn's mom, about changing her Medicare plan").includes("Ayda"), true);
 });
 
 test("creates a private future reminder for the requesting chat", async () => {
@@ -242,14 +271,18 @@ test("pronoun reminder inherits the confirmed GHL Open Leads conversation", asyn
 
 test("confirmed GHL identity wins over a previously corrupted pronoun reminder", async () => {
   const store = ledgerStore();
-  await saveLeadSnapshot({
-    store,
-    leadId: "bad-pronoun-lead",
-    ownerSenderId: "222",
-    subject: "me to call her to complete her enrollment",
-    nextAction: "follow up",
-    ghlStatus: "unknown",
-    state: "open"
+  await store.saveAgentMemory({
+    content: JSON.stringify({
+      kind: "lead_snapshot",
+      leadId: "bad-pronoun-lead",
+      ownerSenderId: "222",
+      subject: "me to call her to complete her enrollment",
+      nextAction: "follow up",
+      ghlStatus: "unknown",
+      state: "open"
+    }),
+    tags: "lead-ledger,222:me to call her",
+    source: "telegram:legacy-junk"
   });
   const history = [
     { role: "assistant", content: "Got it — confirmed: Miriam W., phone ending in 2363, is the Miriam Wang record in GHL and she is on Open Leads." },
@@ -267,6 +300,39 @@ test("confirmed GHL identity wins over a previously corrupted pronoun reminder",
   assert.ok(result.task);
   assert.equal(result.task.payload.subject, "Miriam Wang");
   assert.doesNotMatch(result.reply, /already in GHL|me to call her/i);
+});
+
+test("remove Miriam by unique first name uses the full ledger subject", async () => {
+  const store = ledgerStore();
+  await saveLeadSnapshot({ store, leadId: "miriam-1", ownerSenderId: "222", subject: "Miriam Wang", nextAction: "follow up", state: "open" });
+  await saveLeadSnapshot({ store, leadId: "tomas-1", ownerSenderId: "222", subject: "Tomas Delgado", nextAction: "follow up", state: "open" });
+  const result = await maybeScheduleLeadReminder({
+    text: "Pls remove Miriam !!! I've told u 3 times, don't add her anymore",
+    store,
+    chatId: "222",
+    senderId: "222"
+  });
+  assert.match(result.reply, /Removed Miriam Wang/i);
+  assert.doesNotMatch(result.reply, /full lead name are required/i);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "222" });
+  assert.deepEqual(leads.map((lead) => lead.subject), ["Tomas Delgado"]);
+});
+
+test("junk reminder phrases are not persisted as lead subjects", async () => {
+  const store = ledgerStore();
+  const result = await maybeScheduleLeadReminder({
+    text: "set a reminder for me to call her today at 4:30 to complete her enrollment",
+    history: [],
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-22T18:12:00Z")
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /who should i remind you to call/i);
+  assert.equal(store.tasks.length, 0);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "222" });
+  assert.equal(leads.length, 0);
 });
 
 test("unresolved pronoun asks for a name instead of scheduling a corrupt lead", async () => {
