@@ -81,6 +81,23 @@ test("uses lead check-in context for terse timing replies", async () => {
   assert.equal(created.payload.chatId, "333");
 });
 
+test("referral thank-you create is not a lead reminder or removed-lead reply", async () => {
+  const text = "Add to Referral Thank-Yous: Maria Lopez referred Juan Perez, agent Katy.";
+  assert.equal(isLeadReminderRequest(text, []), false);
+  const store = ledgerStore();
+  store.listLeadRemovals = async () => [{ subject: "Maria Lopez", lead_ids: ["old"] }];
+  const result = await maybeScheduleLeadReminder({
+    text,
+    history: [],
+    store,
+    chatId: "222",
+    senderId: "222",
+    now: new Date("2026-09-23T16:00:00Z")
+  });
+  assert.equal(result, null);
+  assert.equal(store.tasks.length, 0);
+});
+
 test("personal ops remind-me is not treated as a lead-ledger reminder", async () => {
   const text = "Remind me tomorrow to set up GHL birthday automations";
   assert.equal(isPersonalOpsReminderRequest(text), true);

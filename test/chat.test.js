@@ -245,6 +245,18 @@ test("add a task for me tomorrow books that person's calendar, not a GHL task", 
   assert.deepEqual(sent, [reply]);
 });
 
+const REFERRAL_THANKYOU_SCHEMA = {
+  properties: {
+    Referrer: { name: "Referrer", type: "title" },
+    Referred: { name: "Referred", type: "rich_text" },
+    Agent: { name: "Agent", type: "select" },
+    Status: { name: "Status", type: "select" },
+    Channel: { name: "Channel", type: "select" },
+    "Date referred": { name: "Date referred", type: "date" },
+    Notes: { name: "Notes", type: "rich_text" }
+  }
+};
+
 test("keep a Notion referral thank-you list does not become Weekly Focus or Monthly Todo", async () => {
   const store = memoryStore();
   let grokCalled = false;
@@ -280,6 +292,67 @@ test("keep a Notion referral thank-you list does not become Weekly Focus or Mont
   assert.doesNotMatch(reply, /Weekly focus — week of/i);
   assert.doesNotMatch(reply, /NOTION UPDATED/);
   assert.doesNotMatch(reply, /\[Monthly Todo\]/);
+  assert.deepEqual(sent, [reply]);
+});
+
+test("Add to Referral Thank-Yous creates a Notion row even when that referrer is a removed lead", async () => {
+  const store = memoryStore();
+  store.createTask = async () => assert.fail("must not schedule a lead reminder");
+  store.listLeadRemovals = async () => [{ subject: "Maria Lopez", lead_ids: ["old"] }];
+  const notionCalls = [];
+  let grokCalled = false;
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store,
+    environment: {
+      TELEGRAM_YAHOSKA_USER_ID: "8882265752",
+      NOTION_TOKEN: "notion-token",
+      NOTION_REFERRAL_THANKYOUS_DATA_SOURCE_ID: "2f7be747-86c2-437d-98c1-12238fd37aa4"
+    },
+    message: {
+      chatId: 1,
+      senderId: "8882265752",
+      text: "Add to Referral Thank-Yous: Maria Lopez referred Juan Perez, agent Katy."
+    },
+    askGrok: async () => {
+      grokCalled = true;
+      return "should not run";
+    },
+    executeTool: async () => assert.fail("must not call tools for referral thank-you create"),
+    sendTelegramMessage: async (payload) => { sent.push(payload.text); },
+    fetchImpl: async (url, options = {}) => {
+      notionCalls.push({ url, method: options.method, body: options.body ? JSON.parse(options.body) : null });
+      if (String(url).includes("/data_sources/2f7be74786c2437d98c112238fd37aa4")) {
+        return { ok: true, status: 200, async json() { return REFERRAL_THANKYOU_SCHEMA; } };
+      }
+      if (String(url).endsWith("/v1/pages") && options.method === "POST") {
+        return { ok: true, status: 200, async json() { return { id: "page-maria" }; } };
+      }
+      return { ok: false, status: 500, async json() { return { message: `unexpected ${url}` }; } };
+    },
+    botToken: "token",
+    apiKey: "xai",
+    model: "grok-4.6",
+    isPlanRecommendationRequest,
+    recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.equal(grokCalled, false);
+  assert.doesNotMatch(reply, /That lead was removed/i);
+  assert.doesNotMatch(reply, /Weekly focus — week of/i);
+  assert.doesNotMatch(reply, /NOTION UPDATED/);
+  assert.match(reply, /Logged on Referral Thank-Yous/);
+  assert.match(reply, /not Weekly Focus, not Monthly Todos/i);
+  assert.match(reply, /Referrer: Maria Lopez/);
+  assert.match(reply, /Referred: Juan Perez/);
+  assert.match(reply, /Agent: Katy Robles/);
+  assert.match(reply, /Status: Needed/);
+  const create = notionCalls.find((call) => call.method === "POST");
+  assert.ok(create, "must POST a Referral Thank-Yous page");
+  assert.equal(create.body.properties.Referrer.title[0].text.content, "Maria Lopez");
+  assert.equal(create.body.properties.Referred.rich_text[0].text.content, "Juan Perez");
+  assert.equal(create.body.properties.Agent.select.name, "Katy Robles");
+  assert.equal(create.body.properties.Status.select.name, "Needed");
   assert.deepEqual(sent, [reply]);
 });
 
