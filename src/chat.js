@@ -23,6 +23,7 @@ import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
 import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput } from "./lead-reminders.js";
 import { handleVaCheckinReply } from "./va-checkin.js";
+import { handleReferralThankYouRequest } from "./referral-thankyous.js";
 import { applyMailToolResult, formatActiveMailTask, maybeContinueMailTask } from "./mail-continuity.js";
 import { applyActionToolResult, formatActiveAction, maybeContinueAction } from "./action-continuity.js";
 import {
@@ -392,6 +393,17 @@ export async function handleTelegramChat({
       content: tickerEdit.reply
     });
     return tickerEdit.reply;
+  }
+
+  const referralThankYou = await handleReferralThankYouRequest({
+    text: inbound.text,
+    speaker,
+    environment
+  });
+  if (referralThankYou?.handled && referralThankYou.reply) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: referralThankYou.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: referralThankYou.reply });
+    return referralThankYou.reply;
   }
 
   const vaUpdate = await handleVaCheckinReply({
