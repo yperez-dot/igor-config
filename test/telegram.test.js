@@ -267,6 +267,63 @@ test("downloadTelegramFile uses getFile then downloads bytes", async () => {
   assert.equal(downloaded.fileSize, 10);
 });
 
+test("downloadTelegramFile retries getFile once on AbortError", async () => {
+  let metaCalls = 0;
+  const downloaded = await downloadTelegramFile({
+    botToken: "test-token",
+    fileId: "file-1",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/getFile")) {
+        metaCalls += 1;
+        if (metaCalls === 1) throw new DOMException("The operation was aborted", "AbortError");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, result: { file_path: "documents/report.pdf", file_size: 3 } })
+        };
+      }
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.from("pdf") };
+    }
+  });
+  assert.equal(metaCalls, 2);
+  assert.equal(downloaded.buffer.toString(), "pdf");
+});
+
+test("downloadTelegramFile retries file download once on 5xx but not HTTP 400", async () => {
+  let downloadCalls = 0;
+  await downloadTelegramFile({
+    botToken: "test-token",
+    fileId: "file-1",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/getFile")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, result: { file_path: "documents/report.pdf", file_size: 3 } })
+        };
+      }
+      downloadCalls += 1;
+      if (downloadCalls === 1) return { ok: false, status: 503 };
+      return { ok: true, status: 200, arrayBuffer: async () => Buffer.from("pdf") };
+    }
+  });
+  assert.equal(downloadCalls, 2);
+
+  let badRequestCalls = 0;
+  await assert.rejects(downloadTelegramFile({
+    botToken: "test-token",
+    fileId: "file-2",
+    fetchImpl: async (url) => {
+      if (url.endsWith("/getFile")) {
+        badRequestCalls += 1;
+        return { ok: false, status: 400, json: async () => ({ ok: false, description: "Bad Request" }) };
+      }
+      throw new Error("download should not run");
+    }
+  }), /Bad Request/);
+  assert.equal(badRequestCalls, 1);
+});
+
 test("Telegram failures sound like Igor, not a generic bot", () => {
   assert.match(telegramFailureMessage(new Error("xAI request failed with HTTP 429")), /Grok didn't answer/);
   assert.match(telegramFailureMessage(new Error("The operation was aborted due to timeout")), /ran long/);
