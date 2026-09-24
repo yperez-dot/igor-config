@@ -1,32 +1,39 @@
 import { processTask as baseProcessTask } from "./worker-core.js";
 import { personalGhlOpsSnapshotForChat } from "./ghl-personal.js";
 import crypto from "node:crypto";
-import { stripTelegramMarkdown } from "./telegram.js";
+import { splitTelegramText, stripTelegramMarkdown } from "./telegram.js";
 import { leadCheckinPhase } from "./lead-silence.js";
 
 // Check-ins may be claimed by the legacy worker; keep their bot separate from
 // that worker's other notifications and newsletter workflows.
 export async function sendLeadCheckinTelegram({ botToken, chatId, text, fetchImpl = fetch }) {
-  const bodyText = stripTelegramMarkdown(text).slice(0, 4096);
-  const entities = [...bodyText.matchAll(/^(?:📋|👥|✅|📅|🔴|🔹|👋|🔁)[^\n]+/gm)].map(match => ({ type: "bold", offset: match.index, length: match[0].length }));
-  const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text: bodyText, entities, disable_web_page_preview: true }),
-    signal: AbortSignal.timeout(20_000)
-  });
-  const body = await response.json();
-  if (!response.ok || !body.ok || !body.result?.message_id) {
-    throw new Error(`Lead check-in Telegram delivery rejected (HTTP ${response.status}, code ${body.error_code ?? "unknown"}).`);
+  const chunks = splitTelegramText(stripTelegramMarkdown(text));
+  const receipts = [];
+  for (const bodyText of chunks) {
+    const entities = [...bodyText.matchAll(/^(?:📋|👥|✅|📅|🔴|🔹|👋|🔁)[^\n]+/gm)].map(match => ({ type: "bold", offset: match.index, length: match[0].length }));
+    const response = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: bodyText, entities, disable_web_page_preview: true }),
+      signal: AbortSignal.timeout(20_000)
+    });
+    const body = await response.json();
+    if (!response.ok || !body.ok || !body.result?.message_id) {
+      throw new Error(`Lead check-in Telegram delivery rejected (HTTP ${response.status}, code ${body.error_code ?? "unknown"}).`);
+    }
+    receipts.push({ messageId: body.result.message_id, botId: body.result.from?.id, chatId: body.result.chat?.id });
   }
-  return { messageId: body.result.message_id, botId: body.result.from?.id, chatId: body.result.chat?.id };
+  if (receipts.length === 1) return receipts[0];
+  return { ...receipts.at(-1), messageIds: receipts.map((receipt) => receipt.messageId), messageCount: receipts.length };
 }
 
 export function easternCheckinDay(date) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
-export async function boundedGhlLookup(lookup, { timeoutMs = 15_000 } = {}) {
+export const GHL_LOOKUP_TIMEOUT_MS = 30_000;
+
+export async function boundedGhlLookup(lookup, { timeoutMs = GHL_LOOKUP_TIMEOUT_MS } = {}) {
   const controller = new AbortController();
   let timer;
   try {
@@ -103,7 +110,7 @@ export async function processTask(task, options = {}) {
           now: lookupNow,
           signal,
           store: options.store
-        }), { timeoutMs: options.ghlTimeoutMs ?? 15_000 })
+        }), { timeoutMs: options.ghlTimeoutMs ?? GHL_LOOKUP_TIMEOUT_MS })
       });
       delivered = Number(result?.recipientCount ?? 0) > 0;
       const completedSkip = result?.reason === "no_untouched_leads";

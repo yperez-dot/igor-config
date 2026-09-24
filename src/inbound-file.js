@@ -261,6 +261,20 @@ function sizeLabel(fileSize) {
     : `${(fileSize / 1024).toFixed(1)} KB`;
 }
 
+export function friendlyInboundFileError(error) {
+  const raw = String(error?.message ?? error ?? "");
+  if (/20 MB bot download limit|larger than Telegram/i.test(raw)) {
+    return "It is over Telegram’s 20 MB download limit. Please send a smaller file, screenshots, or a shareable link";
+  }
+  if (/timeout|AbortError|aborted/i.test(raw)) {
+    return "Telegram timed out while I was downloading it. Please resend the file once; if it still fails, send screenshots or paste the important text";
+  }
+  if (/pdf/i.test(raw)) {
+    return "I received the PDF, but I couldn’t read it this time. Please resend it once, or send screenshots of the pages you need reviewed";
+  }
+  return "I received it, but Telegram couldn’t deliver readable file data this time. Please resend it once, or send screenshots or pasted text";
+}
+
 export function formatInboundUserText({
   caption = "",
   fileName,
@@ -555,7 +569,7 @@ export async function resolveInboundUserText({
         fileName,
         mimeType,
         fileSize,
-        error: error.message
+        error: friendlyInboundFileError(error)
       }),
       storeMaxChars: DOCUMENT_TURN_MAX_CHARS,
       media: []

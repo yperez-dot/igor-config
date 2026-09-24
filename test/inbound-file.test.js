@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractInboundDocument, formatInboundUserText, resolveInboundUserText, toGrokImage } from "../src/inbound-file.js";
+import { extractInboundDocument, formatInboundUserText, friendlyInboundFileError, resolveInboundUserText, toGrokImage } from "../src/inbound-file.js";
 import { writeStoredZip } from "../src/zip.js";
 
 const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -128,6 +128,15 @@ test("download failures still tell Grok the filename arrived", async () => {
   assert.match(inbound.text, /Did u get it/);
   assert.match(inbound.text, /deck\.pptx/);
   assert.match(inbound.text, /could not be read/);
+  assert.match(inbound.text, /Please resend it once/i);
+  assert.doesNotMatch(inbound.text, /Telegram getFile failed/i);
+});
+
+test("inbound PDF timeout copy is useful and hides the raw exception", () => {
+  const message = friendlyInboundFileError(new Error("PDF download aborted due to timeout at /tmp/private"));
+  assert.match(message, /timed out/i);
+  assert.match(message, /resend/i);
+  assert.doesNotMatch(message, /\/tmp|aborted due/i);
 });
 
 test("photos are attached as Grok vision images", async () => {
