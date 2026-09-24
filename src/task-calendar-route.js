@@ -8,6 +8,7 @@ const PERSONAL_FOR_ME_RE = /\b(?:add|create|make|new)\s+(?:a\s+|an\s+|the\s+)?(?
 const NAMED_LEAD_FOLLOWUP_RE = /\b(?:follow[- ]?up with|follow up w\b|call)\s+[A-Za-z]/i;
 const LEADING_NAME_REMIND_RE = /^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+\s+remind me\b/;
 const SMOKE_LEAD_RE = /\b(?:smoke\s*test|test\s+contact|qa\s+test|dummy\s+(?:contact|lead)|fake\s+contact)\b/i;
+const FOLLOWUP_TIMING_RE = /\b(?:today|tomorrow|tonight|next\s+week|sunday|monday|tuesday|wednesday|thursday|friday|saturday|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 
 export const CALENDAR_WRITE_TOOLS = new Set([
   "calendar_create_event",
@@ -49,6 +50,13 @@ export function isGhlContactTaskRequest(text) {
   if (isPersonalReminderRequest(raw) && !hasGhlContactTaskQualifier(raw)) return false;
   if (PERSONAL_FOR_ME_RE.test(raw) && !hasGhlContactTaskQualifier(raw)) return false;
   return GHL_TASK_RE.test(raw);
+}
+
+export function isAmbiguousLeadFollowUpRequest(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw || !NAMED_LEAD_FOLLOWUP_RE.test(raw) || !FOLLOWUP_TIMING_RE.test(raw)) return false;
+  if (isPersonalReminderRequest(raw) || isGhlContactTaskRequest(raw) || isExplicitCalendarRequest(raw)) return false;
+  return true;
 }
 
 export function isExplicitCalendarRequest(text) {

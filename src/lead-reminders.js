@@ -12,7 +12,7 @@ import {
   spokenLeadNameHint,
   updateLeadState
 } from "./lead-ledger.js";
-import { isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
+import { isAmbiguousLeadFollowUpRequest, isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
 import { looksLikeReferralThankYouRequest } from "./referral-thankyous.js";
 
 const TZ = "America/New_York";
@@ -276,7 +276,10 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
     return { task: null, leadId: lead.leadId, reply: matching.length ? `Cancelled ${lead.subject}’s reminder.` : `${lead.subject} has no active reminder.` };
   }
 
-  const removalRequest = /\b(remove|delete|forget)\b/i.test(raw) && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw);
+  const explicitCrmRemoval = /\b(?:from|in)\s+(?:ghl|crm|go\s*high\s*level|xclusive)\b|\b(?:ghl|crm|go\s*high\s*level|xclusive)\s+(?:contact|record)\b/i.test(raw);
+  const removalRequest = /\b(remove|delete|forget)\b/i.test(raw)
+    && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw)
+    && !explicitCrmRemoval;
   if (removalRequest) {
     const nameHint = spokenLeadNameHint(raw);
     const spokenMatches = await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw, includeClosed: false });
@@ -306,9 +309,17 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
     if (closedMatches.length) return { task: null, reply: alreadyOffLedgerReply(closedMatches[0], nameHint) };
     return { task: null, reply: removalAskReply(nameHint) };
   }
-  const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
-  if (removed) return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
-  if (/\b(him|her|them)\b/i.test(raw)) {
+
+  if (isAmbiguousLeadFollowUpRequest(raw) && !recentReminderContext(history)) {
+    return { task: null, reply: "Do you want me to make this a GHL task, a personal reminder, or both?" };
+  }
+
+  const leadReminderRequest = isLeadReminderRequest(raw, history);
+  if (leadReminderRequest) {
+    const removed = await removedLeadFor(store, { ownerSenderId: senderId, text: raw });
+    if (removed) return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };
+  }
+  if (leadReminderRequest && /\b(him|her|them)\b/i.test(raw)) {
     const prior = latestLeadReminderSubject(history);
     if (prior && await removedLeadFor(store, { ownerSenderId: senderId, subject: prior })) {
       return { task: null, reply: "That lead was removed. Please name the active lead you want to follow up with." };
@@ -318,6 +329,9 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   if (STATUS_CORRECTION_RE.test(raw)) {
     const lead = await findMentionedLead(store, { ownerSenderId: senderId, text: raw });
     if (lead) {
+      if (await removedLeadFor(store, { ownerSenderId: senderId, subject: lead.subject, text: raw })) {
+        return { task: null, reply: "That lead was removed. I have not reopened it or changed its status." };
+      }
       await updateLeadState({ store, lead, state: "open", nextAction: statusCorrectionNextAction(raw, lead.nextAction) });
       const ghlNote = lead.ghlStatus && !/unknown/i.test(String(lead.ghlStatus)) ? ` I still have ${lead.subject} as ${lead.ghlStatus} in the lead notes.` : "";
       return { task: null, leadId: lead.leadId, reply: `Got it — ${lead.subject} has not enrolled in a plan yet. I’ll keep the lead open; next step is to select a plan.${ghlNote} Do you want me to remind you to follow up?` };
@@ -341,7 +355,7 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
     }
   }
 
-  if (!isLeadReminderRequest(raw, history)) return null;
+  if (!leadReminderRequest) return null;
   const runAt = parseReminderRunAt(raw, { now, timeZone });
   if (!runAt) return null;
   const existingLead = await resolveExistingLead(store, { ownerSenderId: senderId, text: raw, history });

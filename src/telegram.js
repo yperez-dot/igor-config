@@ -250,5 +250,8 @@ export function telegramFailureMessage(error) {
   if (/this lead was removed|already off your lead ledger/i.test(raw)) {
     return "That lead is already off your lead ledger.";
   }
+  if (/\b(?:validation|invalid|required|must provide|must include|missing)\b/i.test(raw)) {
+    return "I’m missing a detail I need to finish that. Tell me what you want done and who it’s for, and I’ll ask one clear question if anything is still unclear.";
+  }
   return `Couldn't finish that (${raw}). I'm still here — say it again.`;
 }

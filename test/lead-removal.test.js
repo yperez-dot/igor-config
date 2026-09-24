@@ -179,3 +179,45 @@ test("removed lead does not reappear via saveLeadSnapshot first name or full nam
   assert.equal(leads.length, 0);
   await pool.end();
 });
+
+test("removed ledger name does not block later explicit CRM work", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "maria-1", ownerSenderId: "owner", subject: "Maria Lopez" });
+  const removed = await maybeScheduleLeadReminder({ store, chatId: "owner", senderId: "owner", text: "remove Maria Lopez" });
+  assert.match(removed.reply, /Removed Maria Lopez/i);
+
+  for (const text of [
+    "Add Maria to GHL",
+    "Create a GHL task for Maria tomorrow",
+    "Send Maria the SOA",
+    "Book Maria for Friday",
+    "Delete Maria from GHL"
+  ]) {
+    assert.equal(await maybeScheduleLeadReminder({ store, chatId: "owner", senderId: "owner", text }), null, text);
+  }
+  await pool.end();
+});
+
+test("natural lead follow-up asks whether to use GHL, a personal reminder, or both", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  await saveLeadSnapshot({ store, leadId: "tomas-1", ownerSenderId: "owner", subject: "Tomas Delgado" });
+
+  const result = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "Follow up with Tomas tomorrow"
+  });
+  assert.equal(result.task, null);
+  assert.match(result.reply, /GHL task/i);
+  assert.match(result.reply, /personal reminder/i);
+  assert.match(result.reply, /or both/i);
+  assert.equal((await store.listActiveTelegramReminders({ chatId: "owner", ownerSenderId: "owner" })).length, 0);
+  await pool.end();
+});
