@@ -625,3 +625,56 @@ test("contact preview survives to a later sí and creates only the saved draft",
   assert.match(result.reply, /intake can continue/i);
   assert.match(result.reply, /note next/i);
 });
+
+test("client message preview declines without send", async () => {
+  const preview = applyCrmToolResult(null, "ghl_send_message", {}, {
+    needsConfirmation: true,
+    proposed: { contactId: "contact-1", contact: "Maria R.", channel: "sms", message: "Hola María" }
+  });
+  const result = await maybeContinueCrmTask({
+    text: "no lo envíes", scratch: preview, speaker: yahoska,
+    executeTool: async () => assert.fail("decline must not send")
+  });
+  assert.equal(result.scratch.pending, null);
+  assert.match(result.reply, /no envié/i);
+});
+
+test("client message sí sends once and duplicate confirmation cannot resend", async () => {
+  const preview = applyCrmToolResult(null, "ghl_send_message", {}, {
+    needsConfirmation: true,
+    proposed: { contactId: "contact-1", contact: "Maria R.", channel: "sms", message: "Hola María" }
+  });
+  let sends = 0;
+  const sent = await maybeContinueCrmTask({
+    text: "sí", scratch: preview, speaker: yahoska,
+    executeTool: async (name, args) => {
+      sends += 1;
+      assert.equal(name, "ghl_send_message");
+      assert.equal(args.confirmed, true);
+      return { sent: true, messageId: "message-1", contact: "Maria R.", channel: "sms" };
+    }
+  });
+  assert.equal(sends, 1);
+  assert.equal(sent.scratch.pending, null);
+  assert.match(sent.reply, /Enviado por SMS/);
+  const duplicate = await maybeContinueCrmTask({
+    text: "sí", scratch: sent.scratch, speaker: yahoska,
+    executeTool: async () => { sends += 1; }
+  });
+  assert.equal(duplicate, null);
+  assert.equal(sends, 1);
+});
+
+test("client message does not claim sent without sent=true and messageId", async () => {
+  const preview = applyCrmToolResult(null, "ghl_send_message", {}, {
+    needsConfirmation: true,
+    proposed: { contactId: "contact-1", contact: "Maria R.", channel: "sms", message: "Call us" }
+  });
+  const result = await maybeContinueCrmTask({
+    text: "yes", scratch: preview, speaker: yahoska,
+    executeTool: async () => ({ sent: false, status: "pending" })
+  });
+  assert.doesNotMatch(result.reply, /^Sent\b/i);
+  assert.match(result.reply, /couldn’t confirm/i);
+  assert.equal(result.scratch.pending.tool, "ghl_send_message");
+});
