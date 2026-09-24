@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { downloadTelegramFile, registerTelegramWebhook, sendTelegramDocument, sendTelegramMessage, stripTelegramMarkdown, supportedMessage, telegramConfig, telegramFailureMessage } from "../src/telegram.js";
+import { downloadTelegramFile, registerTelegramWebhook, sendTelegramDocument, sendTelegramMessage, splitTelegramText, stripTelegramMarkdown, supportedMessage, telegramConfig, telegramFailureMessage } from "../src/telegram.js";
 import { isPlanRecommendationRequest, isSpanish, recommendationRefusal, unavailableMessage } from "../src/grok.js";
 
 test("Telegram configuration parses an explicit team allowlist", () => {
@@ -203,6 +203,44 @@ test("document send posts a file to Telegram", async () => {
   assert.equal(request.body instanceof FormData, true);
 });
 
+test("document send retries once on Telegram 5xx", async () => {
+  let calls = 0;
+  await sendTelegramDocument({
+    botToken: "test-token",
+    chatId: 99,
+    filename: "stale-leads.csv",
+    content: "name\nMaria\n",
+    fetchImpl: async () => ({ ok: ++calls === 2, status: calls === 1 ? 503 : 200 })
+  });
+  assert.equal(calls, 2);
+});
+
+test("document send retries once on timeout and does not retry a 4xx", async () => {
+  let timeoutCalls = 0;
+  await sendTelegramDocument({
+    botToken: "test-token",
+    chatId: 99,
+    filename: "report.pdf",
+    content: "pdf",
+    fetchImpl: async () => {
+      timeoutCalls += 1;
+      if (timeoutCalls === 1) throw new DOMException("The operation was aborted", "AbortError");
+      return { ok: true, status: 200 };
+    }
+  });
+  assert.equal(timeoutCalls, 2);
+
+  let badRequestCalls = 0;
+  await assert.rejects(sendTelegramDocument({
+    botToken: "test-token",
+    chatId: 99,
+    filename: "report.pdf",
+    content: "pdf",
+    fetchImpl: async () => ({ ok: false, status: (++badRequestCalls, 400) })
+  }), /HTTP 400/);
+  assert.equal(badRequestCalls, 1);
+});
+
 test("downloadTelegramFile uses getFile then downloads bytes", async () => {
   const calls = [];
   const downloaded = await downloadTelegramFile({
@@ -250,6 +288,41 @@ test("Telegram texts drop markdown asterisks so they never show in chat", () => 
     "What’s wrong\nThe Sep 2 card is early. Clicking it can 404."
   );
   assert.equal(stripTelegramMarkdown("* leftover bullet\n`blog/index.html`"), "• leftover bullet\nblog/index.html");
+});
+
+test("Telegram text splitter preserves the full message under the 4096 limit", () => {
+  const text = `${"A".repeat(3800)}\n\n${"B".repeat(3800)}\n${"C".repeat(1200)}`;
+  const chunks = splitTelegramText(text);
+  assert.equal(chunks.join(""), text);
+  assert.equal(chunks.length, 3);
+  assert.ok(chunks.every((chunk) => chunk.length <= 4096));
+});
+
+test("Telegram text splitter never cuts an emoji surrogate pair", () => {
+  const text = `${"A".repeat(4095)}😀tail`;
+  const chunks = splitTelegramText(text);
+  assert.equal(chunks.join(""), text);
+  assert.ok(chunks.every((chunk) => chunk.length <= 4096));
+  assert.equal(chunks[0].endsWith("\uD83D"), false);
+  assert.equal(chunks[1].startsWith("\uDE00"), false);
+});
+
+test("sendTelegramMessage sends every long-message chunk including the tail", async () => {
+  const sent = [];
+  const text = `${"A".repeat(4090)}\n${"GHL chase tail".repeat(400)}`;
+  await sendTelegramMessage({
+    botToken: "test-token",
+    chatId: 99,
+    text,
+    fetchImpl: async (_url, options) => {
+      sent.push(JSON.parse(options.body).text);
+      return { ok: true, json: async () => ({ ok: true }) };
+    }
+  });
+  assert.ok(sent.length > 1);
+  assert.ok(sent.every((chunk) => chunk.length <= 4096));
+  assert.equal(sent.join(""), text);
+  assert.match(sent.at(-1), /GHL chase tail/);
 });
 
 test("sendTelegramMessage strips markdown before posting", async () => {

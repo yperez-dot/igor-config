@@ -154,16 +154,27 @@ export async function sendTelegramDocument({
   caption,
   fetchImpl = fetch
 }) {
-  const form = new FormData();
-  form.set("chat_id", String(chatId));
-  form.set("document", new Blob([content], { type: "text/csv;charset=utf-8" }), filename);
-  if (caption) form.set("caption", String(caption).slice(0, 1024));
-  const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendDocument`, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(30_000)
-  });
-  if (!response.ok) throw new Error(`Telegram document send failed with HTTP ${response.status}`);
+  const url = `${TELEGRAM_API}/bot${botToken}/sendDocument`;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const form = new FormData();
+    form.set("chat_id", String(chatId));
+    form.set("document", new Blob([content], { type: "text/csv;charset=utf-8" }), filename);
+    if (caption) form.set("caption", String(caption).slice(0, 1024));
+    try {
+      const response = await fetchImpl(url, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(30_000)
+      });
+      if (response.ok) return;
+      if (attempt === 0 && response.status >= 500) continue;
+      throw new Error(`Telegram document send failed with HTTP ${response.status}`);
+    } catch (error) {
+      const retryable = /timeout|AbortError|aborted/i.test(String(error?.name ?? "") + " " + String(error?.message ?? ""));
+      if (attempt === 0 && retryable) continue;
+      throw error;
+    }
+  }
 }
 
 export function stripTelegramMarkdown(text) {
@@ -178,6 +189,29 @@ export function stripTelegramMarkdown(text) {
     .replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "$1");
 }
 
+export function splitTelegramText(text, maxChars = 4096) {
+  const raw = String(text ?? "");
+  if (!raw) return [""];
+  if (!Number.isInteger(maxChars) || maxChars < 1) throw new Error("Telegram chunk size must be a positive integer.");
+  const chunks = [];
+  let remaining = raw;
+  while (remaining.length > maxChars) {
+    const window = remaining.slice(0, maxChars);
+    const paragraphBreak = window.lastIndexOf("\n\n") + 2;
+    const lineBreak = window.lastIndexOf("\n") + 1;
+    const wordBreak = window.lastIndexOf(" ") + 1;
+    const preferred = Math.max(paragraphBreak, lineBreak, wordBreak);
+    let cut = preferred >= Math.floor(maxChars * 0.5) ? preferred : maxChars;
+    const beforeCut = remaining.charCodeAt(cut - 1);
+    const afterCut = remaining.charCodeAt(cut);
+    if (beforeCut >= 0xD800 && beforeCut <= 0xDBFF && afterCut >= 0xDC00 && afterCut <= 0xDFFF) cut -= 1;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut);
+  }
+  if (remaining || !chunks.length) chunks.push(remaining);
+  return chunks;
+}
+
 function sanitizeTelegramErrorDescription(description) {
   return String(description ?? "unknown error")
     .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
@@ -188,25 +222,28 @@ function sanitizeTelegramErrorDescription(description) {
 }
 
 export async function sendTelegramMessage({ botToken, chatId, text, fetchImpl = fetch }) {
-  const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: stripTelegramMarkdown(text).slice(0, 4096),
-      disable_web_page_preview: true
-    }),
-    signal: AbortSignal.timeout(20_000)
-  });
-  let body = null;
-  try {
-    body = await response.json();
-  } catch {
-    body = null;
-  }
-  if (!response.ok) {
-    const sanitizedDescription = sanitizeTelegramErrorDescription(body?.description);
-    throw new Error(`Telegram send failed: HTTP ${response.status} to chat ${chatId}, Telegram error: ${sanitizedDescription}`);
+  const chunks = splitTelegramText(stripTelegramMarkdown(text));
+  for (const chunk of chunks) {
+    const response = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: chunk,
+        disable_web_page_preview: true
+      }),
+      signal: AbortSignal.timeout(20_000)
+    });
+    let body = null;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    if (!response.ok) {
+      const sanitizedDescription = sanitizeTelegramErrorDescription(body?.description);
+      throw new Error(`Telegram send failed: HTTP ${response.status} to chat ${chatId}, Telegram error: ${sanitizedDescription}`);
+    }
   }
 }
 
@@ -243,6 +280,9 @@ export function telegramFailureMessage(error) {
   }
   if (/tool loop exceeded/i.test(raw)) {
     return "I got stuck looping tools. Say it again as one job — ticker, calendar, or sneak peeks — and I’ll do that in code.";
+  }
+  if (/Telegram document send failed/i.test(raw)) {
+    return "I couldn’t send that file after retrying. Ask me to send it again; if Telegram still refuses it, I can email it instead.";
   }
   if (/owner and (?:full )?lead name are required|which lead should i remove/i.test(raw)) {
     return "Which lead should I remove? Please send the full name.";

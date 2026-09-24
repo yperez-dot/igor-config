@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { newDb } from 'pg-mem';
 import { createStore } from '../src/store.js';
-import { processTask, boundedGhlLookup, easternCheckinDay } from '../src/process-task-personal.js';
+import { processTask, boundedGhlLookup, easternCheckinDay, GHL_LOOKUP_TIMEOUT_MS, sendLeadCheckinTelegram } from '../src/process-task-personal.js';
 import { legacySchedules, LIVE_SCHEDULE_IDS } from '../src/legacy-schedules.js';
 const environment = { TELEGRAM_BOT_TOKEN: 'test', TELEGRAM_ALLOWED_USER_IDS: '1,2,3', TELEGRAM_YAHOSKA_USER_ID: '1', TELEGRAM_KATY_USER_ID: '2', TELEGRAM_CAROLINA_USER_ID: '3', GHL_API_TOKEN: 'test' };
 const now = new Date('2026-09-14T13:10:00Z');
@@ -60,6 +60,11 @@ test('lookup rejection propagates for fail-open handler',async()=>{
   await assert.rejects(boundedGhlLookup(async()=>{throw new Error('GHL unavailable');}),/GHL unavailable/);
 });
 
+test('GHL check-in lookup has headroom beyond the 25 second HTTP timeout', () => {
+  assert.equal(GHL_LOOKUP_TIMEOUT_MS, 30_000);
+  assert.ok(GHL_LOOKUP_TIMEOUT_MS > 25_000);
+});
+
 test('check-ins use their dedicated bot and record Telegram receipts', async () => {
   const events=[];
   const result=await processTask(task,{now, environment:{...environment,GHL_API_TOKEN:'',LEAD_CHECKIN_TELEGRAM_BOT_TOKEN:'current-bot'},
@@ -73,9 +78,24 @@ test('other workflows keep their original Telegram bot', async () => {
   await processTask({payload:{workflow:'telegram_reminder',chatId:'1',text:'test'}},{environment:{...environment,LEAD_CHECKIN_TELEGRAM_BOT_TOKEN:'current-bot'},sendTelegram:async({botToken})=>assert.equal(botToken,'test')});
 });
 test('Telegram application-level failure cannot be recorded as delivered',async()=>{
-  const {sendLeadCheckinTelegram}=await import('../src/process-task-personal.js');
   await assert.rejects(sendLeadCheckinTelegram({botToken:'test',chatId:'1',text:'test',fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:false,error_code:400})})}),/rejected/);
   assert.deepEqual(await sendLeadCheckinTelegram({botToken:'test',chatId:'1',text:'test',fetchImpl:async()=>({ok:true,status:200,json:async()=>({ok:true,result:{message_id:123,from:{id:456},chat:{id:1}}})})}),{messageId:123,botId:456,chatId:1});
+});
+
+test('long lead check-ins send every chunk and preserve the GHL tail', async () => {
+  const sent=[];
+  let messageId=100;
+  const text=`📋 Morning brief\n${'A'.repeat(4080)}\n🔴 GHL chase list\n${'Maria\n'.repeat(300)}`;
+  const receipt=await sendLeadCheckinTelegram({botToken:'test',chatId:'1',text,fetchImpl:async(_url,options)=>{
+    sent.push(JSON.parse(options.body));
+    return {ok:true,status:200,json:async()=>({ok:true,result:{message_id:++messageId,from:{id:456},chat:{id:1}}})};
+  }});
+  assert.ok(sent.length > 1);
+  assert.ok(sent.every(({text:chunk})=>chunk.length <= 4096));
+  assert.equal(sent.map(({text:chunk})=>chunk).join(''),text);
+  assert.match(sent.at(-1).text,/Maria/);
+  assert.equal(receipt.messageCount,sent.length);
+  assert.equal(receipt.messageIds.length,sent.length);
 });
 test('early evening delivery replaces only those recipients at six and resets next day', async () => {
   const store = await fixture();
