@@ -900,12 +900,83 @@ export function ghlListSoaSnippets() {
   return Object.entries(GHL_SOA_SNIPPETS).map(([name, value]) => ({ name, ...value }));
 }
 
-export async function ghlPrepareSoaMessage({ token, locationId, contactId, contactQuery, snippetName, fetchImpl = fetch }) {
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+export async function ghlPrepareSoaMessage({ token, locationId, contactId, contactQuery, phone, snippetName, fetchImpl = fetch }) {
+  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, phone, fetchImpl });
   if (contact.error) return contact;
   const rendered = renderSoaSnippet(String(snippetName ?? "").trim(), contact.firstName);
   if (!rendered) return { error: "Choose one of the four approved SOA snippets: SOA ENG, SOA SPA, Scope of Appointment, or SPA Scope of Appointment." };
   return { contact, snippet: rendered };
+}
+
+export async function ghlPrepareClientMessage({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  phone,
+  channel = "sms",
+  subject,
+  message,
+  fetchImpl = fetch
+}) {
+  const normalizedChannel = String(channel ?? "sms").trim().toLowerCase();
+  if (!new Set(["sms", "email"]).has(normalizedChannel)) {
+    return { error: "Choose SMS or email for the client message." };
+  }
+  const cleanMessage = String(message ?? "").trim();
+  if (!cleanMessage) return { error: "Tell me the message you want to send." };
+  const cleanSubject = String(subject ?? "").trim();
+  if (normalizedChannel === "email" && !cleanSubject) {
+    return { error: "An email subject is required before I can preview it." };
+  }
+  const contact = await ghlResolveContact({
+    token, locationId, contactId, query: contactQuery, phone, fetchImpl
+  });
+  if (contact.error) return contact;
+  return {
+    contact,
+    channel: normalizedChannel,
+    subject: normalizedChannel === "email" ? cleanSubject : null,
+    message: cleanMessage
+  };
+}
+
+export async function ghlSendClientMessage(options) {
+  const plan = await ghlPrepareClientMessage(options);
+  if (plan.error) return plan;
+  const isEmail = plan.channel === "email";
+  const htmlMessage = plan.message
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/\n/g, "<br>");
+  const result = await ghlJson(`${GHL_API}/conversations/messages`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    version: GHL_V3,
+    method: "POST",
+    body: {
+      type: isEmail ? "Email" : "SMS",
+      contactId: plan.contact.id,
+      status: "pending",
+      ...(isEmail
+        ? { subject: plan.subject, html: `<p>${htmlMessage}</p>`, message: plan.message }
+        : { message: plan.message })
+    }
+  });
+  return {
+    sent: Boolean(result.messageId),
+    contact: plan.contact.name,
+    phoneLast4: plan.contact.phoneLast4,
+    channel: plan.channel,
+    subject: plan.subject,
+    messageId: result.messageId ?? null,
+    emailMessageId: result.emailMessageId ?? null,
+    conversationId: result.conversationId ?? null,
+    status: result.msg ?? "queued"
+  };
 }
 
 export async function ghlSendSoaMessage(options) {
