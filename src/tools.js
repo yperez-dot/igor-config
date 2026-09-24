@@ -33,6 +33,7 @@ import {
   ghlListContractTemplates,
   ghlListSoaSnippets,
   ghlListPipelines,
+  ghlListOpportunities,
   ghlMoveOpportunityStage,
   ghlSendClientMessage,
   ghlPrepareClinicalUpdate,
@@ -208,6 +209,16 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("ghl")) {
     tools.push(
+      functionTool("ghl_list_opportunities", "List PHI-light GHL opportunities by status and optional pipeline. Default won. Use for Won/Sold lists and counts, FB won, Facebook Ads won, or wins on THEI Website. Prefer this over ghl_stale_leads for Won/Sold; facebook_ads_insights is Meta ad spend, not CRM wins. FB, Facebook, FB Ads, and Medi-Medi resolve to Facebook Ads. Reply briefly with counts, then masked name · stage · owner · updated rows; say when truncated. No CSV or email is sent.", {
+        type: "object",
+        properties: {
+          status: { type: "string", description: "won (default), open, abandoned, or all. Sold means won." },
+          pipelineName: { type: "string", description: "Pipeline name or alias, e.g. FB, Facebook Ads, THEI Website." },
+          pipelineId: { type: "string", description: "Exact pipeline id, when known; takes precedence over name." },
+          limit: { type: "integer", description: "Maximum masked rows returned. Default 25, maximum 50." }
+        },
+        additionalProperties: false
+      }),
       functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails the person in this chat (Katy → krobles@healthexps.com, otherwise yperez@healthexps.com) when SMTP for info@ is configured.", {
         type: "object",
         properties: {
@@ -1072,6 +1083,21 @@ export async function executeTool(name, rawArgs, {
         threadId: args.threadId,
         inReplyTo: args.inReplyTo,
         references: args.references,
+        fetchImpl
+      });
+    }
+
+    if (name === "ghl_list_opportunities") {
+      const config = ghlConfig(environment);
+      if (!config.token) return { error: "GHL is not connected.", missingEnv: ["GHL_API_TOKEN"] };
+      return ghlListOpportunities({
+        token: config.token,
+        locationId: config.locationId,
+        status: args.status ?? "won",
+        pipelineName: args.pipelineName,
+        pipelineId: args.pipelineId,
+        limit: Math.max(1, Math.min(50, Math.trunc(Number(args.limit) || 25))),
+        environment,
         fetchImpl
       });
     }
