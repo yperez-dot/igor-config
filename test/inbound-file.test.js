@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractInboundDocument, formatInboundUserText, friendlyInboundFileError, resolveInboundUserText, toGrokImage } from "../src/inbound-file.js";
+import { extractInboundDocument, extractInboundDocumentText, formatInboundUserText, friendlyInboundFileError, resolveInboundUserText, toGrokImage } from "../src/inbound-file.js";
 import { writeStoredZip } from "../src/zip.js";
 
 const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -92,6 +92,50 @@ test("extracts CSV as utf8 text", () => {
     buffer: Buffer.from("name,phoneLast4\nMaria G.,1212\n")
   });
   assert.match(extracted, /Maria G\.,1212/);
+});
+
+test("PDF prompt extraction prefers pdftotext output", async () => {
+  let invocation;
+  const extracted = await extractInboundDocumentText({
+    fileName: "aep-guide.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n(scanned placeholder)\n%%EOF"),
+    execFileImpl: async (command, args, options) => {
+      invocation = { command, args, options };
+      return { stdout: "AEP readiness guide\nOpen Leads follow-up" };
+    }
+  });
+  assert.equal(invocation.command, "pdftotext");
+  assert.deepEqual(invocation.args.slice(0, 4), ["-layout", "-enc", "UTF-8", invocation.args[3]]);
+  assert.equal(invocation.args.at(-1), "-");
+  assert.equal(invocation.options.timeout, 15_000);
+  assert.match(extracted, /AEP readiness guide/);
+});
+
+test("PDF prompt extraction falls back when pdftotext is unavailable", async () => {
+  const extracted = await extractInboundDocumentText({
+    fileName: "fallback.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\n1 0 obj\n(Enrollment follow-up notes)\nendobj\n%%EOF", "latin1"),
+    execFileImpl: async () => { throw Object.assign(new Error("spawn pdftotext ENOENT"), { code: "ENOENT" }); }
+  });
+  assert.match(extracted, /Enrollment follow-up notes/);
+});
+
+test("empty or scanned PDF gets screenshot guidance without raw paths", async () => {
+  const inbound = await resolveInboundUserText({
+    message: {
+      text: "review this",
+      document: { fileId: "pdf-1", fileName: "scan.pdf", mimeType: "application/pdf", fileSize: 100 }
+    },
+    botToken: "token",
+    downloadTelegramFile: async () => ({ buffer: Buffer.from("%PDF-1.4\n%%EOF"), fileSize: 100 }),
+    extractInboundDocument: async () => ""
+  });
+  assert.match(inbound.text, /scanned or image-only/i);
+  assert.match(inbound.text, /screenshots/i);
+  assert.match(inbound.text, /pasted text/i);
+  assert.doesNotMatch(inbound.text, /\/tmp|igor-pdf/i);
 });
 
 test("resolveInboundUserText downloads a PPTX and keeps it in the prompt", async () => {
