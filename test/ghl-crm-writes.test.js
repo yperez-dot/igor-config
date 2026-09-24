@@ -89,6 +89,7 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.equal(names.includes("ghl_create_appointment"), true);
   assert.equal(names.includes("ghl_list_soa_snippets"), true);
   assert.equal(names.includes("ghl_send_soa_message"), true);
+  assert.equal(names.includes("ghl_send_message"), true);
   assert.equal(names.includes("ghl_check_open_leads"), true);
   const noteTool = grokTools(environment).find((tool) => tool.function.name === "ghl_add_contact_note");
   assert.match(noteTool.function.description, /never Notion/i);
@@ -98,6 +99,9 @@ test("Igor exposes approval-gated GHL tag and contract tools", () => {
   assert.match(searchTool.function.description, /do not require the first name to match/i);
   const updateTool = grokTools(environment).find((tool) => tool.function.name === "ghl_update_contact");
   assert.match(updateTool.function.description, /corrects a name/i);
+  const messageTool = grokTools(environment).find((tool) => tool.function.name === "ghl_send_message");
+  assert.match(messageTool.function.description, /explicit yes\/sí/i);
+  assert.match(messageTool.function.description, /sent=true.*messageId/i);
 });
 
 test("connected systems lists approval-gated GHL contact create", async () => {
@@ -219,6 +223,46 @@ test("confirmed SOA email sends through GHL conversations", async () => {
   assert.equal(write.body.subject, "Alcance de la cita- Se necesita su firma");
   assert.match(write.body.html, /Ver Documento/);
   assert.match(write.body.html, /6882a11e37c06601fe0c299b/);
+});
+
+test("SOA preview resolves by last-4 even when the spoken name differs", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_send_soa_message", {
+    contactQuery: "Wrong Name", phone: "0123", snippetName: "SOA ENG"
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.contact, "Jane D.");
+  assert.equal(result.proposed.contactId, "contact-1");
+  const search = calls.find((call) => call.target.includes("/contacts/search"));
+  assert.ok(search);
+  assert.equal(calls.some((call) => call.target.endsWith("/conversations/messages")), false);
+});
+
+test("general GHL SMS previews exact body without sending", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_send_message", {
+    contactQuery: "Jane Doe", channel: "sms", message: "Hi Jane, please call us when you can."
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.contact, "Jane D.");
+  assert.equal(result.proposed.channel, "sms");
+  assert.equal(result.proposed.message, "Hi Jane, please call us when you can.");
+  assert.equal(calls.some((call) => call.target.endsWith("/conversations/messages")), false);
+});
+
+test("confirmed general GHL email sends once and returns evidence", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_send_message", {
+    contactId: "contact-1", channel: "email", subject: "Next steps",
+    message: "Hi Jane, here are your next steps.", confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.sent, true);
+  assert.equal(result.messageId, "message-1");
+  const writes = calls.filter((call) => call.target.endsWith("/conversations/messages"));
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].body.type, "Email");
+  assert.equal(writes[0].body.subject, "Next steps");
+  assert.equal(writes[0].body.message, "Hi Jane, here are your next steps.");
 });
 
 test("GHL task with a pinned contact id ignores name search even when query is passed", async () => {
