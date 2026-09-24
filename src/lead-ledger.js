@@ -289,13 +289,13 @@ export async function updateLeadState({ store, lead, state, nextAction, followUp
 export function leadOutcome(text) {
   const raw = String(text ?? "").trim();
   if (!raw) return null;
-  if (/\b(enrolled|sold|application submitted|submitted the application)\b/i.test(raw)) return { state: "enrolled", closed: true };
-  if (/\b(done|completed|all set|handled|finished)\b/i.test(raw)) return { state: "completed", closed: true };
-  if (/\b(not interested|doesn['’]?t want|declined|no longer interested)\b/i.test(raw)) return { state: "not_interested", closed: true };
-  if (/\b(no answer|didn['’]?t answer|did not answer|no response|voicemail|left (?:a )?message)\b/i.test(raw)) {
+  if (/\b(enrolled|sold|application submitted|submitted the application|inscrito|inscrita|vendido|vendida|solicitud enviada)\b/i.test(raw)) return { state: "enrolled", closed: true };
+  if (/\b(done|completed|all set|handled|finished|listo|completado|completada|terminado|terminada)\b/i.test(raw)) return { state: "completed", closed: true };
+  if (/\b(not interested|doesn['’]?t want|declined|no longer interested|no interesado|no interesada|rechaz[oó]|ya no le interesa)\b/i.test(raw)) return { state: "not_interested", closed: true };
+  if (/\b(no answer|didn['’]?t answer|did not answer|no response|voicemail|left (?:a )?message|no contest[oó]|sin respuesta|dej[eé] (?:un )?mensaje)\b/i.test(raw)) {
     return { state: "open", closed: false, nextAction: "follow up again" };
   }
-  if (/\b(waiting|pending|need to verify|checking|waiting on)\b/i.test(raw)) return { state: "waiting", closed: false };
+  if (/\b(waiting|pending|need to verify|checking|waiting on|esperando|pendiente|hay que verificar)\b/i.test(raw)) return { state: "waiting", closed: false };
   return null;
 }
 
