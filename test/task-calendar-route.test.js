@@ -4,6 +4,7 @@ import {
   blocksCalendarWrite,
   calendarWriteBlockedResult,
   isExplicitCalendarRequest,
+  isAmbiguousLeadFollowUpRequest,
   isGhlContactTaskRequest,
   isPersonalOpsReminderRequest,
   isPersonalReminderRequest,
@@ -14,6 +15,13 @@ import {
   toolChoiceForUserRequest,
   toolsForUserRequest
 } from "../src/task-calendar-route.js";
+
+test("natural dated lead follow-ups are ambiguous until the user chooses the destination", () => {
+  assert.equal(isAmbiguousLeadFollowUpRequest("Follow up with Tomas tomorrow"), true);
+  assert.equal(isAmbiguousLeadFollowUpRequest("Call Maria Friday at 10 AM"), true);
+  assert.equal(isAmbiguousLeadFollowUpRequest("Remind me to follow up with Tomas tomorrow"), false);
+  assert.equal(isAmbiguousLeadFollowUpRequest("Create a GHL task for Tomas tomorrow"), false);
+});
 
 const TASK_PHRASES = [
   "Create a GHL task on Michelle due tomorrow",
