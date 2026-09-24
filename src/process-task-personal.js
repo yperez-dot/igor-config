@@ -3,6 +3,7 @@ import { personalGhlOpsSnapshotForChat } from "./ghl-personal.js";
 import crypto from "node:crypto";
 import { splitTelegramText, stripTelegramMarkdown } from "./telegram.js";
 import { leadCheckinPhase } from "./lead-silence.js";
+import { processTelegramJob } from "./telegram-job.js";
 
 // Check-ins may be claimed by the legacy worker; keep their bot separate from
 // that worker's other notifications and newsletter workflows.
@@ -70,6 +71,9 @@ function scopedCheckinEnvironment(environment, chatId) {
 }
 
 export async function processTask(task, options = {}) {
+  if (task?.payload?.workflow === "telegram_chat") {
+    return processTelegramJob(task, options);
+  }
   if (task?.payload?.workflow !== "lead_followup_checkin") {
     return baseProcessTask(task, options);
   }

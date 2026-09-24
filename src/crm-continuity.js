@@ -169,6 +169,29 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
     }
   }
 
+  if (name === "ghl_create_contact") {
+    if (result.needsConfirmation && (args.firstName || args.name || result.proposed?.firstName)) {
+      next.pending = {
+        tool: "ghl_create_contact",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          ...(args.firstName ? { firstName: args.firstName } : {}),
+          ...(args.lastName ? { lastName: args.lastName } : {}),
+          ...(args.name ? { name: args.name } : {}),
+          ...(args.phone ? { phone: args.phone } : {}),
+          ...(args.email ? { email: args.email } : {}),
+          ...(Array.isArray(args.tags) ? { tags: args.tags } : {}),
+          ...(result.proposed?.assignedTo || args.assignedTo
+            ? { assignedTo: result.proposed?.assignedTo || args.assignedTo }
+            : {}),
+          ...(args.owner ? { owner: args.owner } : {})
+        }
+      };
+    } else if (result.created) {
+      next.pending = null;
+    }
+  }
+
   if (name === "ghl_update_contact" && result.updated) {
     next.spokenName = result.firstName || next.spokenName;
     next.storedName = result.contact || next.storedName;
@@ -247,6 +270,12 @@ export function formatActiveCrmTask(scratch) {
     lines.push(`  title: ${String(scratch.pending.args?.title ?? "").slice(0, 200)}`);
     lines.push(`  due: ${scratch.pending.args?.dueDate || "(needed)"}`);
     lines.push("If they say yes/sí/ok/do it, CALL ghl_create_contact_task with confirmed=true on this same draft and contact id. This is a CRM task, not a Google Calendar event.");
+  }
+  if (scratch.pending?.tool === "ghl_create_contact") {
+    const args = scratch.pending.args || {};
+    const name = args.name || [args.firstName, args.lastName].filter(Boolean).join(" ") || scratch.spokenName || "the new contact";
+    lines.push(`- Pending contact (${scratch.pending.approved ? "already approved — create it" : "previewed, waiting for yes"}): ${name}`);
+    lines.push("If they say yes/sí/ok/do it, CALL ghl_create_contact once with confirmed=true using this exact saved draft. Do not reconstruct it from chat and do not create a second contact.");
   }
   lines.push("Look it up = use this contact id, then last-4, then name. Never ask them to paste a GHL contact id when any of those exist.");
   lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
@@ -428,6 +457,12 @@ function noteWriteArgs(scratch) {
   };
 }
 
+function contactWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_create_contact") return null;
+  return { ...pending.args, confirmed: true };
+}
+
 function displayName(scratch, fallback = "that contact") {
   return scratch?.storedName || scratch?.spokenName || fallback;
 }
@@ -449,6 +484,19 @@ async function savePendingTask(scratch, executeTool) {
   if (!args?.title || !args?.dueDate) return { scratch, result: null };
   const result = await executeTool("ghl_create_contact_task", args);
   const next = applyCrmToolResult({ ...scratch, pending: { ...scratch.pending, approved: true } }, "ghl_create_contact_task", args, result);
+  return { scratch: next, result };
+}
+
+async function savePendingContact(scratch, executeTool) {
+  const args = contactWriteArgs(scratch);
+  if (!args || (!args.firstName && !args.name)) return { scratch, result: null };
+  const result = await executeTool("ghl_create_contact", args);
+  const next = applyCrmToolResult(
+    { ...scratch, pending: { ...scratch.pending, approved: true } },
+    "ghl_create_contact",
+    args,
+    result
+  );
   return { scratch: next, result };
 }
 
@@ -579,6 +627,26 @@ export async function maybeContinueCrmTask({
     return {
       scratch: saved.scratch,
       reply: `Couldn’t save that note — ${toolError(saved.result)}. I’ll keep the draft and retry with the contact id / last-4 we already have. I don’t need you to paste a GHL id.`
+    };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_create_contact") {
+    const nextApproved = {
+      ...merged,
+      pending: { ...merged.pending, approved: true }
+    };
+    const saved = await savePendingContact(nextApproved, executeTool);
+    if (saved.result?.created) {
+      return {
+        scratch: saved.scratch,
+        reply: `Created ${displayName(saved.scratch, "the contact")} in GHL. I saved the contact id, so the intake can continue without starting over. Send me the enrollment/referral note next; after that I can check Open Leads and offer the SOA.`
+      };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: saved.result?.idempotencyUncertain
+        ? "I couldn’t verify whether the earlier create finished, so I did not create a second contact. I kept the intake draft and flagged it for a safe lookup."
+        : `Couldn’t create that contact yet — ${toolError(saved.result)}. I kept the exact intake draft so you won’t have to start over.`
     };
   }
 

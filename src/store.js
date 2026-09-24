@@ -26,7 +26,9 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       attempts INTEGER NOT NULL DEFAULT 0,
-      locked_at TIMESTAMPTZ
+      locked_at TIMESTAMPTZ,
+      telegram_chat_id TEXT,
+      telegram_update_id BIGINT
     );
     CREATE TABLE IF NOT EXISTS schedules (
       id TEXT PRIMARY KEY,
@@ -48,12 +50,22 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       update_id TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS task_effects (
+      task_id TEXT NOT NULL,
+      effect_key TEXT NOT NULL,
+      status TEXT NOT NULL,
+      result JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (task_id, effect_key)
+    );
     CREATE TABLE IF NOT EXISTS chat_turns (
       id BIGSERIAL PRIMARY KEY,
       chat_id TEXT NOT NULL,
       sender_id TEXT NOT NULL,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
+      source_key TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS agent_memories (
@@ -96,6 +108,13 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS run_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS telegram_chat_id TEXT;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS telegram_update_id BIGINT;
+    CREATE INDEX IF NOT EXISTS tasks_telegram_order_idx
+      ON tasks(telegram_chat_id, telegram_update_id);
+    ALTER TABLE chat_turns ADD COLUMN IF NOT EXISTS source_key TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS chat_turns_source_key_idx
+      ON chat_turns(source_key);
   `);
 
   const record = async (eventType, subjectId, detail) => {
@@ -202,23 +221,66 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       await record("task.status_changed", id, { status });
       return this.getTask(id);
     },
-    async claimQueuedTask() {
-      const { rows } = await pool.query(`
-        WITH candidate AS (
-          SELECT id FROM tasks
-          WHERE status = 'queued' AND run_at <= NOW()
-          ORDER BY run_at, created_at
-          FOR UPDATE SKIP LOCKED
-          LIMIT 1
-        )
-        UPDATE tasks
-        SET status = 'running', attempts = attempts + 1, locked_at = NOW(), updated_at = NOW()
-        WHERE id = (SELECT id FROM candidate)
-        RETURNING *
-      `);
-      if (!rows[0]) return null;
-      await record("task.claimed", rows[0].id, { attempts: rows[0].attempts });
-      return rows[0];
+    async claimQueuedTask({ now = new Date(), leaseMs = 5 * 60 * 1000, maxAttempts = 3, skipLocked = true } = {}) {
+      const staleBefore = new Date(new Date(now).getTime() - leaseMs);
+      const client = await pool.connect();
+      let task = null;
+      try {
+        await client.query("BEGIN");
+        const { rows } = await client.query(`
+          SELECT candidate.id, candidate.telegram_chat_id, candidate.telegram_update_id
+          FROM tasks AS candidate
+          WHERE (
+            (candidate.status = 'queued' AND candidate.run_at <= $1)
+            OR (
+              candidate.status = 'running'
+              AND candidate.payload->>'workflow' = 'telegram_chat'
+              AND candidate.locked_at <= $2
+              AND candidate.attempts < $3
+            )
+          )
+          ORDER BY candidate.run_at, candidate.created_at
+          LIMIT 20
+          FOR UPDATE${skipLocked ? " SKIP LOCKED" : ""}
+        `, [new Date(now), staleBefore, maxAttempts]);
+        let candidate = null;
+        for (const row of rows) {
+          if (!row.telegram_chat_id) {
+            candidate = row;
+            break;
+          }
+          const earlier = await client.query(
+            `SELECT id FROM tasks
+             WHERE telegram_chat_id = $1
+               AND telegram_update_id < $2
+               AND status IN ('queued', 'running')
+             LIMIT 1`,
+            [row.telegram_chat_id, row.telegram_update_id]
+          );
+          if (!earlier.rows.length) {
+            candidate = row;
+            break;
+          }
+        }
+        if (candidate) {
+          const claimed = await client.query(
+            `UPDATE tasks
+             SET status = 'running', attempts = attempts + 1, locked_at = NOW(), updated_at = NOW()
+             WHERE id = $1 RETURNING *`,
+            [candidate.id]
+          );
+          task = claimed.rows[0] ?? null;
+        }
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+      if (!task) return null;
+      await record("task.claimed", task.id, { attempts: task.attempts });
+      return task;
     },
     async completeTask(id, detail = {}) {
       await pool.query("UPDATE tasks SET status = 'complete', locked_at = NULL, updated_at = NOW() WHERE id = $1", [id]);
@@ -228,6 +290,14 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
     async failTask(id, detail = {}) {
       await pool.query("UPDATE tasks SET status = 'failed', locked_at = NULL, updated_at = NOW() WHERE id = $1", [id]);
       await record("task.failed", id, detail);
+      return this.getTask(id);
+    },
+    async retryTask(id, { runAt = new Date(), detail = {} } = {}) {
+      await pool.query(
+        "UPDATE tasks SET status = 'queued', run_at = $2, locked_at = NULL, updated_at = NOW() WHERE id = $1",
+        [id, runAt]
+      );
+      await record("task.retry_queued", id, detail);
       return this.getTask(id);
     },
     async createSchedule({ id, taskType, cron, payload, active = true, timezone = "America/New_York" }) {
@@ -299,6 +369,61 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
       );
       return result.rowCount === 1;
     },
+    async enqueueTelegramUpdate(message) {
+      const updateId = String(message?.updateId ?? "").trim();
+      if (!updateId) throw new Error("A Telegram update id is required.");
+      const taskId = `telegram-update:${updateId}`;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const claimed = await client.query(
+          "INSERT INTO processed_updates (update_id) VALUES ($1) ON CONFLICT DO NOTHING RETURNING update_id",
+          [updateId]
+        );
+        if (!claimed.rowCount) {
+          await client.query("ROLLBACK");
+          return { enqueued: false, task: await this.getTask(taskId) };
+        }
+        await client.query(
+          `INSERT INTO tasks (
+             id, type, status, payload, run_at, telegram_chat_id, telegram_update_id
+           ) VALUES ($1, 'daily_operations', 'queued', $2, NOW(), $3, $4)`,
+          [taskId, { workflow: "telegram_chat", updateId, message }, String(message.chatId), updateId]
+        );
+        await client.query(
+          "INSERT INTO audit_events (event_type, subject_id, detail) VALUES ('telegram.job_enqueued', $1, $2)",
+          [updateId, { taskId }]
+        );
+        await client.query("COMMIT");
+        return { enqueued: true, task: await this.getTask(taskId) };
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    },
+    async claimTaskEffect(taskId, effectKey) {
+      const inserted = await pool.query(
+        `INSERT INTO task_effects (task_id, effect_key, status)
+         VALUES ($1, $2, 'started') ON CONFLICT DO NOTHING`,
+        [String(taskId), String(effectKey)]
+      );
+      if (inserted.rowCount === 1) return { execute: true, status: "started", result: null };
+      const { rows } = await pool.query(
+        "SELECT status, result FROM task_effects WHERE task_id = $1 AND effect_key = $2",
+        [String(taskId), String(effectKey)]
+      );
+      return { execute: false, status: rows[0]?.status ?? "started", result: rows[0]?.result ?? null };
+    },
+    async completeTaskEffect(taskId, effectKey, result = {}) {
+      await pool.query(
+        `UPDATE task_effects SET status = 'complete', result = $3, updated_at = NOW()
+         WHERE task_id = $1 AND effect_key = $2`,
+        [String(taskId), String(effectKey), result]
+      );
+      return result;
+    },
     async recentChatTurns(chatId, { limit = 16, includeTimestamps = false } = {}) {
       const { rows } = await pool.query(
         `SELECT role, content, created_at FROM chat_turns
@@ -311,12 +436,13 @@ export function createStore({ connectionString, pool = new pg.Pool({ connectionS
         ? { role: row.role, content: row.content, createdAt: row.created_at }
         : { role: row.role, content: row.content });
     },
-    async appendChatTurn({ chatId, senderId, role, content, keep = 40, maxChars = 1500 }) {
+    async appendChatTurn({ chatId, senderId, role, content, keep = 40, maxChars = 1500, sourceKey = null }) {
       if (role !== "user" && role !== "assistant") throw new Error("Chat turns must use role user or assistant.");
       const limit = Number(maxChars) > 0 ? Number(maxChars) : 1500;
       await pool.query(
-        "INSERT INTO chat_turns (chat_id, sender_id, role, content) VALUES ($1, $2, $3, $4)",
-        [String(chatId), String(senderId), role, String(content ?? "").slice(0, limit)]
+        `INSERT INTO chat_turns (chat_id, sender_id, role, content, source_key)
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (source_key) DO NOTHING`,
+        [String(chatId), String(senderId), role, String(content ?? "").slice(0, limit), sourceKey]
       );
       await this.pruneChatTurns(chatId, { keep });
     },

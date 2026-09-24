@@ -273,3 +273,70 @@ test("remembers an inferred Telegram speaker so later turns stay on their calend
   assert.equal(await store.getTelegramSpeaker("999"), "katy");
   await store.close();
 });
+
+test("durably enqueues one task per Telegram update and reclaims a crashed job", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+  const message = { updateId: 901, chatId: 99, senderId: "111", text: "create a lead" };
+
+  const first = await store.enqueueTelegramUpdate(message);
+  const duplicate = await store.enqueueTelegramUpdate(message);
+  assert.equal(first.enqueued, true);
+  assert.equal(first.task.id, "telegram-update:901");
+  assert.equal(duplicate.enqueued, false);
+
+  const claimed = await store.claimQueuedTask({ now: new Date(Date.now() + 1_000), skipLocked: false });
+  assert.equal(claimed.id, first.task.id);
+  assert.equal(claimed.attempts, 1);
+  assert.equal(await store.claimQueuedTask({ now: new Date(Date.now() + 2_000), skipLocked: false }), null);
+
+  const recovered = await store.claimQueuedTask({
+    now: new Date(Date.now() + 6 * 60 * 1000),
+    leaseMs: 5 * 60 * 1000,
+    skipLocked: false
+  });
+  assert.equal(recovered.id, first.task.id);
+  assert.equal(recovered.attempts, 2);
+  await store.close();
+});
+
+test("task effects and sourced chat turns stay single-effect on replay", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+
+  const first = await store.claimTaskEffect("task-1", "ghl:create");
+  assert.equal(first.execute, true);
+  await store.completeTaskEffect("task-1", "ghl:create", { created: true, contactId: "contact-1" });
+  const replay = await store.claimTaskEffect("task-1", "ghl:create");
+  assert.deepEqual(replay, {
+    execute: false,
+    status: "complete",
+    result: { created: true, contactId: "contact-1" }
+  });
+
+  await store.appendChatTurn({ chatId: "99", senderId: "111", role: "user", content: "yes", sourceKey: "task-1:user" });
+  await store.appendChatTurn({ chatId: "99", senderId: "111", role: "user", content: "yes", sourceKey: "task-1:user" });
+  assert.equal((await store.recentChatTurns("99")).length, 1);
+  await store.close();
+});
+
+test("claims Telegram updates in order within one chat", async () => {
+  const database = newDb();
+  const { Pool } = database.adapters.createPg();
+  const store = createStore({ pool: new Pool() });
+  await store.ready;
+  await store.enqueueTelegramUpdate({ updateId: 100, chatId: 99, senderId: "111", text: "preview Maria" });
+  await store.enqueueTelegramUpdate({ updateId: 101, chatId: 99, senderId: "111", text: "sí" });
+
+  const first = await store.claimQueuedTask({ now: new Date(Date.now() + 1_000), skipLocked: false });
+  assert.equal(first.payload.updateId, "100");
+  assert.equal(await store.claimQueuedTask({ now: new Date(Date.now() + 2_000), skipLocked: false }), null);
+  await store.completeTask(first.id);
+  const second = await store.claimQueuedTask({ now: new Date(Date.now() + 3_000), skipLocked: false });
+  assert.equal(second.payload.updateId, "101");
+  await store.close();
+});
