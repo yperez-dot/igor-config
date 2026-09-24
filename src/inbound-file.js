@@ -158,6 +158,38 @@ function extractPdfText(buffer) {
   return [...new Set(literals)].join("\n");
 }
 
+export async function extractPdfTextLocally(buffer, { execFileImpl = execFileAsync } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), "igor-pdf-"));
+  try {
+    const input = join(dir, "input.pdf");
+    await writeFile(input, buffer);
+    const result = await execFileImpl("pdftotext", ["-layout", "-enc", "UTF-8", input, "-"], {
+      timeout: 15_000,
+      maxBuffer: EXTRACTED_TEXT_MAX_CHARS * 4,
+      encoding: "utf8"
+    });
+    return String(result?.stdout ?? "").replace(/\f/g, "\n\n").trim();
+  } catch {
+    return "";
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+export async function extractInboundDocumentText({
+  fileName,
+  mimeType = "",
+  buffer,
+  execFileImpl = execFileAsync
+}) {
+  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+  if (looksLikePdf(bytes, fileName, String(mimeType).toLowerCase())) {
+    const localText = await extractPdfTextLocally(bytes, { execFileImpl });
+    if (localText) return localText;
+  }
+  return extractInboundDocument({ fileName, mimeType, buffer: bytes });
+}
+
 export function extractInboundDocument({ fileName, mimeType = "", buffer }) {
   const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   const ext = extensionOf(fileName);
@@ -320,6 +352,10 @@ export function formatInboundUserText({
   }
   const text = String(extracted ?? "").trim();
   if (!text) {
+    if (extensionOf(fileName) === "pdf" || String(mimeType).toLowerCase() === "application/pdf") {
+      parts.push("The PDF arrived, but it has no extractable text. It may be scanned or image-only. Ask the user for screenshots of the needed pages or pasted text.");
+      return parts.join("\n\n");
+    }
     parts.push("The file arrived, but no extractable text was found locally. OliComm may still parse it on upload — do not refuse ingest just because Telegram extraction was empty.");
     if (uploadable && uploadClassification) {
       parts.push(`OliComm bucket guess: ${uploadClassification.label} (${uploadClassification.confidence} confidence — ${uploadClassification.reason}). Igor checks filename and headers — if they disagree, he asks which tab. CALL olicomm_preview_upload first, then propose olicomm_upload only after bucket confirm. Never call an upload clean unless verification.status is match (row-by-row + totals).`);
@@ -374,7 +410,7 @@ export async function resolveInboundUserText({
   message,
   botToken,
   downloadTelegramFile,
-  extractInboundDocument: extract = extractInboundDocument
+  extractInboundDocument: extract = extractInboundDocumentText
 }) {
   if (message.photo) {
     try {
@@ -526,7 +562,7 @@ export async function resolveInboundUserText({
         media: []
       };
     }
-    const extracted = extract({
+    const extracted = await extract({
       fileName,
       mimeType,
       buffer: downloaded.buffer

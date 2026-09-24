@@ -119,14 +119,34 @@ export async function downloadTelegramFile({
   botToken,
   fileId,
   fetchImpl = fetch,
-  maxBytes = 20 * 1024 * 1024
+  maxBytes = 20 * 1024 * 1024,
+  downloadTimeoutMs = Number(process.env.TELEGRAM_FILE_DOWNLOAD_TIMEOUT_MS) || 60_000
 }) {
-  const metaResponse = await fetchImpl(`${TELEGRAM_API}/bot${botToken}/getFile`, {
+  const fetchWithRetry = async (url, options, timeoutMs) => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const response = await fetchImpl(url, {
+          ...options,
+          signal: AbortSignal.timeout(timeoutMs)
+        });
+        if (attempt === 0 && response.status >= 500) continue;
+        return response;
+      } catch (error) {
+        const retryable = /timeout|AbortError|aborted/i.test(
+          `${String(error?.name ?? "")} ${String(error?.message ?? "")}`
+        );
+        if (attempt === 0 && retryable) continue;
+        throw error;
+      }
+    }
+    throw new Error("Telegram file request failed after retrying.");
+  };
+
+  const metaResponse = await fetchWithRetry(`${TELEGRAM_API}/bot${botToken}/getFile`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ file_id: fileId }),
-    signal: AbortSignal.timeout(20_000)
-  });
+    body: JSON.stringify({ file_id: fileId })
+  }, 20_000);
   const meta = await metaResponse.json();
   if (!metaResponse.ok || !meta.ok || !meta.result?.file_path) {
     throw new Error(meta.description || `Telegram getFile failed with HTTP ${metaResponse.status}`);
@@ -135,9 +155,11 @@ export async function downloadTelegramFile({
     throw new Error("File is larger than Telegram’s 20 MB bot download limit.");
   }
 
-  const fileResponse = await fetchImpl(`${TELEGRAM_API}/file/bot${botToken}/${meta.result.file_path}`, {
-    signal: AbortSignal.timeout(30_000)
-  });
+  const fileResponse = await fetchWithRetry(
+    `${TELEGRAM_API}/file/bot${botToken}/${meta.result.file_path}`,
+    {},
+    Math.max(1_000, Number(downloadTimeoutMs) || 60_000)
+  );
   if (!fileResponse.ok) throw new Error(`Telegram file download failed with HTTP ${fileResponse.status}`);
   const buffer = Buffer.from(await fileResponse.arrayBuffer());
   if (buffer.length > maxBytes) {
