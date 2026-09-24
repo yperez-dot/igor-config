@@ -9,6 +9,7 @@ const NAMED_LEAD_FOLLOWUP_RE = /\b(?:follow[- ]?up with|follow up w\b|call)\s+[A
 const LEADING_NAME_REMIND_RE = /^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+\s+remind me\b/;
 const SMOKE_LEAD_RE = /\b(?:smoke\s*test|test\s+contact|qa\s+test|dummy\s+(?:contact|lead)|fake\s+contact)\b/i;
 const FOLLOWUP_TIMING_RE = /\b(?:today|tomorrow|tonight|next\s+week|sunday|monday|tuesday|wednesday|thursday|friday|saturday|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+const GHL_PIPELINE_MOVE_RE = /\b(?:move|advance|update)\b.{0,80}\b(?:pipeline|stage|to)\b|\b(?:mueve|mover|actualiza|cambia)\b.{0,80}\b(?:pipeline|etapa|a)\b|\b(?:enrolled|enrolled|no answer)\b.{0,40}\b(?:pipeline|stage|update)\b/i;
 
 export const CALENDAR_WRITE_TOOLS = new Set([
   "calendar_create_event",
@@ -52,6 +53,10 @@ export function isGhlContactTaskRequest(text) {
   return GHL_TASK_RE.test(raw);
 }
 
+export function isGhlPipelineMoveRequest(text) {
+  return GHL_PIPELINE_MOVE_RE.test(String(text ?? ""));
+}
+
 export function isAmbiguousLeadFollowUpRequest(text) {
   const raw = String(text ?? "").trim();
   if (!raw || !NAMED_LEAD_FOLLOWUP_RE.test(raw) || !FOLLOWUP_TIMING_RE.test(raw)) return false;
@@ -91,6 +96,9 @@ export function toolsForUserRequest(tools, text) {
 
 export function toolChoiceForUserRequest(text, tools = []) {
   const names = (tools ?? []).map((tool) => tool?.function?.name ?? tool?.name);
+  if (isGhlPipelineMoveRequest(text) && names.includes("ghl_move_opportunity_stage")) {
+    return { type: "function", function: { name: "ghl_move_opportunity_stage" } };
+  }
   if (isPersonalOpsReminderRequest(text) && names.includes("calendar_create_event")) {
     return { type: "function", function: { name: "calendar_create_event" } };
   }
@@ -102,6 +110,14 @@ export function toolChoiceForUserRequest(text, tools = []) {
 }
 
 export function taskCalendarRoutingPrompt(text) {
+  if (isGhlPipelineMoveRequest(text)) {
+    return [
+      "## Hard routing for this turn",
+      "This is a GHL opportunity pipeline-stage request.",
+      "Call ghl_move_opportunity_stage without confirmed and preview the masked contact, pipeline, and target stage.",
+      "Do not write until the user explicitly says yes/sí; a later confirmation must reuse the saved ids."
+    ].join("\n");
+  }
   const route = resolveTaskCalendarRoute(text);
   if (route === "ghl_task") {
     return [

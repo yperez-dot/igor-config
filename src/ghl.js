@@ -269,6 +269,7 @@ export async function ghlSearchOpportunities({
   startAfterId,
   status,
   pipelineId,
+  contactId,
   fetchImpl = fetch
 }) {
   const params = new URLSearchParams({
@@ -277,12 +278,108 @@ export async function ghlSearchOpportunities({
   });
   if (status) params.set("status", status);
   if (pipelineId) params.set("pipeline_id", pipelineId);
+  if (contactId) params.set("contact_id", contactId);
   if (startAfter) params.set("startAfter", String(startAfter));
   if (startAfterId) params.set("startAfterId", startAfterId);
   const body = await ghlJson(`${GHL_API}/opportunities/search?${params}`, { token, fetchImpl });
   return {
     opportunities: body.opportunities ?? body.data ?? [],
     meta: body.meta ?? {}
+  };
+}
+
+function exactName(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+export async function ghlPrepareOpportunityStageMove({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  phone,
+  opportunityId,
+  pipelineId,
+  pipelineName,
+  stageId,
+  stageName,
+  fetchImpl = fetch
+}) {
+  const contact = await ghlResolveContact({
+    token, locationId, contactId, query: contactQuery, phone, fetchImpl
+  });
+  if (contact.error) return contact;
+  const pipelines = await ghlListPipelines({ token, locationId, fetchImpl });
+  let pipeline = pipelineId
+    ? pipelines.find((entry) => String(entry.id) === String(pipelineId))
+    : pipelineName
+      ? pipelines.find((entry) => exactName(entry.name) === exactName(pipelineName))
+      : null;
+  let stage = null;
+  if (stageId) {
+    const matches = pipelines.flatMap((entry) => (entry.stages ?? [])
+      .filter((candidate) => String(candidate.id) === String(stageId))
+      .map((candidate) => ({ pipeline: entry, stage: candidate })));
+    if (matches.length === 1) ({ pipeline, stage } = matches[0]);
+  } else if (stageName) {
+    const candidates = (pipeline ? [pipeline] : pipelines).flatMap((entry) => (entry.stages ?? [])
+      .filter((candidate) => exactName(candidate.name) === exactName(stageName))
+      .map((candidate) => ({ pipeline: entry, stage: candidate })));
+    if (candidates.length > 1) return { error: "More than one GHL pipeline has that stage. Tell me which pipeline to use." };
+    if (candidates.length === 1) ({ pipeline, stage } = candidates[0]);
+  }
+  if (!pipeline) return { error: "I could not find that GHL pipeline." };
+  if (!stage) return { error: "I could not find that stage in the selected GHL pipeline." };
+
+  const searched = await ghlSearchOpportunities({
+    token, locationId, contactId: contact.id, pipelineId: pipeline.id, limit: 100, fetchImpl
+  });
+  const candidates = searched.opportunities.filter((entry) => {
+    const entryContactId = entry.contactId ?? entry.contact?.id;
+    return String(entryContactId ?? "") === String(contact.id)
+      && String(entry.pipelineId ?? "") === String(pipeline.id);
+  });
+  const opportunity = opportunityId
+    ? candidates.find((entry) => String(entry.id) === String(opportunityId))
+    : candidates.length === 1 ? candidates[0] : null;
+  if (!opportunity && candidates.length > 1) {
+    return { error: "I found more than one opportunity for that contact in this pipeline. Choose the exact opportunity first." };
+  }
+  if (!opportunity) return { error: "I could not find an opportunity for that contact in the selected pipeline." };
+  return {
+    contact,
+    opportunityId: opportunity.id,
+    pipeline: { id: pipeline.id, name: pipeline.name },
+    stage: { id: stage.id, name: stage.name },
+    preview: {
+      contact: contact.name,
+      phoneLast4: contact.phoneLast4,
+      pipeline: pipeline.name,
+      stage: stage.name,
+      opportunityId: opportunity.id,
+      contactId: contact.id,
+      pipelineId: pipeline.id,
+      stageId: stage.id
+    }
+  };
+}
+
+export async function ghlMoveOpportunityStage(options) {
+  const plan = await ghlPrepareOpportunityStageMove(options);
+  if (plan.error) return plan;
+  await ghlJson(`${GHL_API}/opportunities/${encodeURIComponent(plan.opportunityId)}`, {
+    token: options.token,
+    fetchImpl: options.fetchImpl,
+    method: "PUT",
+    body: { pipelineId: plan.pipeline.id, pipelineStageId: plan.stage.id }
+  });
+  return {
+    updated: true,
+    opportunityId: plan.opportunityId,
+    contact: plan.contact.name,
+    phoneLast4: plan.contact.phoneLast4,
+    pipeline: plan.pipeline.name,
+    stage: plan.stage.name
   };
 }
 

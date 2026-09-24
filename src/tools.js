@@ -33,12 +33,14 @@ import {
   ghlListContractTemplates,
   ghlListSoaSnippets,
   ghlListPipelines,
+  ghlMoveOpportunityStage,
   ghlPrepareClinicalUpdate,
   ghlPrepareContract,
   ghlPrepareCreateContact,
   ghlPrepareContactNote,
   ghlPrepareContactTask,
   ghlPrepareAppointment,
+  ghlPrepareOpportunityStageMove,
   ghlPrepareSoaMessage,
   ghlPrepareTagChange,
   ghlRecentClientMessages,
@@ -49,6 +51,7 @@ import {
   ghlUpdateContact
   ,ghlSendSoaMessage
 } from "./ghl.js";
+import { personalOpenLeadsForChat } from "./ghl-personal.js";
 import { telegramSpeaker } from "./identity.js";
 import {
   findLatestMailAlert,
@@ -108,6 +111,7 @@ const WRITE_TOOLS = new Set([
   "ghl_update_contact",
   "ghl_create_contact",
   "ghl_create_contact_task",
+  "ghl_move_opportunity_stage",
   "ghl_create_appointment",
   "ghl_create_contract",
   "ghl_send_soa_message",
@@ -232,6 +236,11 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
+      functionTool("ghl_list_personal_open_leads", "List the current Telegram speaker's GHL Open Leads. Membership requires the exact active_prospect tag and the contact must be assigned to this speaker. This is not the Neon reminder ledger and not an agency-wide list.", {
+        type: "object",
+        properties: { limit: { type: "integer", description: "Maximum rows shown. Default 12, maximum 25." } },
+        additionalProperties: false
+      }),
       functionTool("ghl_update_contact", "Update a known GHL contact's first and/or last name. Use this when the user corrects a name (her name is actually Miriam not Michelle). Reuse the Active CRM task contact id, a last-4 phone match, or ghl_create_contact — do not only re-search the new name and give up. After the rename, continue the pending note or Open Leads check. First call previews the rename; write only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
@@ -263,6 +272,22 @@ export function grokTools(environment = process.env) {
       functionTool("ghl_list_pipelines", "List GHL pipelines and stage names for the THEI location.", {
         type: "object",
         properties: {},
+        additionalProperties: false
+      }),
+      functionTool("ghl_move_opportunity_stage", "Preview and then move one GHL opportunity to a pipeline stage. First call without confirmed to resolve and preview the masked contact, pipeline, and stage. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          contactQuery: { type: "string", description: "Contact name, email fragment, phone, or last-4." },
+          phone: { type: "string" },
+          opportunityId: { type: "string" },
+          pipelineId: { type: "string" },
+          pipelineName: { type: "string" },
+          stageId: { type: "string" },
+          stageName: { type: "string", description: "Exact target stage, such as No Answer or Enrolled." },
+          confirmed: { type: "boolean" }
+        },
+        required: ["stageName"],
         additionalProperties: false
       }),
       functionTool("ghl_recent_client_messages", "Read a client's recent inbound GHL SMS and email messages when the team asks Igor to pull medications or doctors from their conversation. Keep the reply PHI-light.", {
@@ -1126,6 +1151,14 @@ export async function executeTool(name, rawArgs, {
       });
     }
 
+    if (name === "ghl_list_personal_open_leads") {
+      try {
+        return await personalOpenLeadsForChat({ environment, chatId, fetchImpl, limit: args.limit });
+      } catch {
+        return { error: "I couldn’t load your GHL Open Leads right now. Please try again in a moment." };
+      }
+    }
+
     if (name === "ghl_update_contact") {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
@@ -1190,6 +1223,38 @@ export async function executeTool(name, rawArgs, {
           stages: (pipeline.stages ?? []).map((stage) => ({ id: stage.id, name: stage.name }))
         }))
       };
+    }
+
+    if (name === "ghl_move_opportunity_stage") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        phone: args.phone,
+        opportunityId: args.opportunityId,
+        pipelineId: args.pipelineId,
+        pipelineName: args.pipelineName,
+        stageId: args.stageId,
+        stageName: args.stageName,
+        fetchImpl
+      };
+      try {
+        if (blocked) {
+          const plan = await ghlPrepareOpportunityStageMove(request);
+          if (plan.error) return plan;
+          return {
+            ...blocked,
+            proposed: plan.preview,
+            hint: "Show this exact contact, pipeline, and target stage. Move it only after the user says yes/sí."
+          };
+        }
+        return await ghlMoveOpportunityStage(request);
+      } catch {
+        return { error: "I couldn’t update that GHL opportunity right now. Nothing was moved. Please try again." };
+      }
     }
 
     if (name === "ghl_recent_client_messages") {

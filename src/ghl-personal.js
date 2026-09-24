@@ -1,5 +1,6 @@
 import { ghlConfig, resolveKnownGhlOwner } from "./ghl.js";
 import { mentionsLead } from "./lead-removal.js";
+import { last4, maskName } from "./redact.js";
 
 // Mirrors Contacts > Open Leads: Tag Is active_prospect, scoped to the recipient.
 export async function personalOpenLeads({ token, locationId, userId, fetchImpl = fetch, removals = [] }) {
@@ -27,6 +28,7 @@ export async function personalOpenLeads({ token, locationId, userId, fetchImpl =
       leads.push({
         id: row.id,
         name,
+        phoneLast4: last4(row.phone),
         dateUpdated: row.dateUpdated ?? row.lastActivity ?? row.updatedAt ?? null
       });
     }
@@ -34,6 +36,47 @@ export async function personalOpenLeads({ token, locationId, userId, fetchImpl =
     if (!added || page === 10) { truncated = true; break; }
   }
   return { leads: leads.sort((a, b) => a.name.localeCompare(b.name)), truncated };
+}
+
+export async function personalOpenLeadsForChat({
+  environment = process.env,
+  chatId,
+  fetchImpl = fetch,
+  limit = 12
+}) {
+  const config = ghlConfig(environment);
+  if (!config.token) return { error: "GHL is not configured right now." };
+  const email = ghlEmailForChat(environment, chatId);
+  if (!email) return { error: "Your Telegram account is not mapped to a GHL owner yet." };
+
+  let owner = resolveKnownGhlOwner(email, environment);
+  if (!owner?.id) {
+    owner = await ghlFindUserByEmail({
+      token: config.token,
+      locationId: config.locationId,
+      email,
+      fetchImpl
+    });
+  }
+  if (!owner?.id) return { error: "I could not match your Telegram account to a GHL owner." };
+
+  const result = await personalOpenLeads({
+    token: config.token,
+    locationId: config.locationId,
+    userId: owner.id,
+    fetchImpl
+  });
+  const cap = Math.min(Math.max(Number(limit) || 12, 1), 25);
+  return {
+    ownerId: owner.id,
+    total: result.leads.length,
+    truncated: result.truncated,
+    leads: result.leads.slice(0, cap).map((lead) => ({
+      id: lead.id,
+      name: maskName(lead.name),
+      phoneLast4: lead.phoneLast4 || "not on file"
+    }))
+  };
 }
 
 const GHL_API = "https://services.leadconnectorhq.com";
