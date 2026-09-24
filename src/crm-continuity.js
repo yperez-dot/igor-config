@@ -14,12 +14,13 @@ const CRM_TOOLS = new Set([
   "ghl_create_appointment",
   "ghl_create_contract",
   "ghl_send_soa_message",
+  "ghl_send_message",
   "ghl_recent_client_messages",
   "ghl_update_clinical_profile"
 ]);
 
 const AFFIRM_RE = /^(?:yes|yep|yeah|yup|si|sí|ok|okay|do it|go ahead|save(?: it)?|hazlo|dale|correcto|confirmo)(?:\s*(?:please|pls|igor|do it|save it|thanks|thank you))?[.!\s]*$/i;
-const DECLINE_RE = /^(?:no|nope|cancel|never mind|nevermind|don['’]?t|do not|no lo hagas|cancela)(?:\s*(?:it|please|por favor))?[.!\s]*$/i;
+const DECLINE_RE = /^(?:no|nope|cancel|never mind|nevermind|don['’]?t|do not|no lo (?:hagas|env[ií]es|mandes)|cancela)(?:\s*(?:it|please|por favor))?[.!\s]*$/i;
 const LOOK_UP_RE = /\blook(?:\s+it)?\s+up\b|\blook(?:\s+her|\s+him|\s+them)?\s+up\b|\bb[uú]sca(?:lo|la|le)?\b|\bfind (?:her|him|them|it)\b/i;
 const NON_CRM_TOPIC_RE = /\b(?:e-?mails?|gmail|inbox|outbox|sent\s+(?:mail|message)|google\s+drive|drive\s+file|calendar|website|github|railway)\b/i;
 const EXPLICIT_CRM_TOPIC_RE = /\b(?:ghl|crm|go\s*high\s*level|contact|client|lead|prospect|open\s+leads|active[_\s-]?prospect|last[- ]?4|follow[- ]?up\s+task|(?:ghl|crm|contact)\s+task|create\s+(?:a|an|the)\s+task|task\s+due)\b/i;
@@ -153,6 +154,8 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_create_contact") next.goal = next.goal || "create_contact";
   if (name === "ghl_create_contact_task") next.goal = "create_task";
   if (name === "ghl_move_opportunity_stage") next.goal = "move_pipeline_stage";
+  if (name === "ghl_send_message") next.goal = "send_client_message";
+  if (name === "ghl_send_soa_message") next.goal = "send_soa";
 
   if (name === "ghl_add_contact_note") {
     if (result.needsConfirmation && result.proposed?.body) {
@@ -239,6 +242,38 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
     }
   }
 
+  if (name === "ghl_send_message") {
+    if (result.needsConfirmation && result.proposed?.contactId && result.proposed?.message) {
+      next.pending = {
+        tool: "ghl_send_message",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          contactId: result.proposed.contactId,
+          channel: result.proposed.channel,
+          ...(result.proposed.subject ? { subject: result.proposed.subject } : {}),
+          message: result.proposed.message
+        }
+      };
+    } else if (result.sent && result.messageId) {
+      next.pending = null;
+    }
+  }
+
+  if (name === "ghl_send_soa_message") {
+    if (result.needsConfirmation && result.proposed?.contactId && result.proposed?.snippet) {
+      next.pending = {
+        tool: "ghl_send_soa_message",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          contactId: result.proposed.contactId,
+          snippetName: result.proposed.snippet
+        }
+      };
+    } else if (result.sent && result.messageId) {
+      next.pending = null;
+    }
+  }
+
   return next;
 }
 
@@ -304,6 +339,17 @@ export function formatActiveCrmTask(scratch) {
     lines.push(`- Pending pipeline move (${scratch.pending.approved ? "already approved — apply it" : "previewed, waiting for yes"}):`);
     lines.push(`  ${args.pipelineName || "pipeline"} → ${args.stageName || "target stage"}`);
     lines.push("If they say yes/sí, CALL ghl_move_opportunity_stage once with confirmed=true using these exact saved ids. If they decline, do not write.");
+  }
+  if (scratch.pending?.tool === "ghl_send_message") {
+    const args = scratch.pending.args || {};
+    lines.push(`- Pending GHL ${args.channel || "client"} message (${scratch.pending.approved ? "approved — send once" : "waiting for yes"}):`);
+    if (args.subject) lines.push(`  subject: ${String(args.subject).slice(0, 200)}`);
+    lines.push(String(args.message ?? "").slice(0, 1_500));
+    lines.push("Send only after explicit yes/sí. Never say sent unless the result has sent=true and messageId.");
+  }
+  if (scratch.pending?.tool === "ghl_send_soa_message") {
+    lines.push(`- Pending SOA: ${scratch.pending.args?.snippetName || "approved snippet"} (waiting for yes/sí).`);
+    lines.push("Never say sent unless the result has sent=true and messageId.");
   }
   lines.push("Look it up = use this contact id, then last-4, then name. Never ask them to paste a GHL contact id when any of those exist.");
   lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
@@ -497,6 +543,18 @@ function stageMoveWriteArgs(scratch) {
   return { ...pending.args, confirmed: true };
 }
 
+function clientMessageWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_send_message") return null;
+  return { ...pending.args, confirmed: true };
+}
+
+function soaWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_send_soa_message") return null;
+  return { ...pending.args, confirmed: true };
+}
+
 function displayName(scratch, fallback = "that contact") {
   return scratch?.storedName || scratch?.spokenName || fallback;
 }
@@ -541,6 +599,32 @@ async function savePendingStageMove(scratch, executeTool) {
   const next = applyCrmToolResult(
     { ...scratch, pending: { ...scratch.pending, approved: true } },
     "ghl_move_opportunity_stage",
+    args,
+    result
+  );
+  return { scratch: next, result };
+}
+
+async function savePendingClientMessage(scratch, executeTool) {
+  const args = clientMessageWriteArgs(scratch);
+  if (!args?.contactId || !args?.message) return { scratch, result: null };
+  const result = await executeTool("ghl_send_message", args);
+  const next = applyCrmToolResult(
+    { ...scratch, pending: { ...scratch.pending, approved: true } },
+    "ghl_send_message",
+    args,
+    result
+  );
+  return { scratch: next, result };
+}
+
+async function savePendingSoa(scratch, executeTool) {
+  const args = soaWriteArgs(scratch);
+  if (!args?.contactId || !args?.snippetName) return { scratch, result: null };
+  const result = await executeTool("ghl_send_soa_message", args);
+  const next = applyCrmToolResult(
+    { ...scratch, pending: { ...scratch.pending, approved: true } },
+    "ghl_send_soa_message",
     args,
     result
   );
@@ -721,6 +805,49 @@ export async function maybeContinueCrmTask({
       reply: /\b(?:no lo hagas|cancela)\b/i.test(String(text))
         ? "Entendido — no moví la oportunidad en GHL."
         : "Okay — I didn’t move the GHL opportunity."
+    };
+  }
+
+  if (DECLINE_RE.test(String(text ?? "").trim()) && ["ghl_send_message", "ghl_send_soa_message"].includes(merged.pending?.tool)) {
+    const spanish = /\b(?:no lo (?:env[ií]es|mandes|hagas)|cancela)\b/i.test(String(text));
+    return {
+      scratch: { ...merged, pending: null },
+      reply: spanish ? "Entendido — no envié el mensaje." : "Okay — I didn’t send the message."
+    };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_send_message") {
+    const saved = await savePendingClientMessage(
+      { ...merged, pending: { ...merged.pending, approved: true } },
+      executeTool
+    );
+    if (saved.result?.sent === true && saved.result?.messageId) {
+      return {
+        scratch: saved.scratch,
+        reply: /^(?:si|sí|hazlo|dale)/i.test(String(text).trim())
+          ? `Enviado por ${saved.result.channel === "email" ? "email" : "SMS"} a ${saved.result.contact}.`
+          : `Sent by ${saved.result.channel === "email" ? "email" : "SMS"} to ${saved.result.contact}.`
+      };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: /^(?:si|sí|hazlo|dale)/i.test(String(text).trim())
+        ? "No pude confirmar que GHL lo enviara, así que no voy a decir que fue enviado. Guardé la vista previa para reintentar."
+        : "I couldn’t confirm GHL sent it, so I’m not reporting it as sent. I kept the preview for a safe retry."
+    };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_send_soa_message") {
+    const saved = await savePendingSoa(
+      { ...merged, pending: { ...merged.pending, approved: true } },
+      executeTool
+    );
+    if (saved.result?.sent === true && saved.result?.messageId) {
+      return { scratch: saved.scratch, reply: `SOA sent to ${saved.result.contact}.` };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: "I couldn’t confirm GHL sent the SOA, so I’m not reporting it as sent. I kept the approved preview."
     };
   }
 

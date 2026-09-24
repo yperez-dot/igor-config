@@ -34,6 +34,7 @@ import {
   ghlListSoaSnippets,
   ghlListPipelines,
   ghlMoveOpportunityStage,
+  ghlSendClientMessage,
   ghlPrepareClinicalUpdate,
   ghlPrepareContract,
   ghlPrepareCreateContact,
@@ -41,6 +42,7 @@ import {
   ghlPrepareContactTask,
   ghlPrepareAppointment,
   ghlPrepareOpportunityStageMove,
+  ghlPrepareClientMessage,
   ghlPrepareSoaMessage,
   ghlPrepareTagChange,
   ghlRecentClientMessages,
@@ -115,6 +117,7 @@ const WRITE_TOOLS = new Set([
   "ghl_create_appointment",
   "ghl_create_contract",
   "ghl_send_soa_message",
+  "ghl_send_message",
   "send_internal_email",
   "netlify_deploy",
   "railway_redeploy_service",
@@ -387,10 +390,25 @@ export function grokTools(environment = process.env) {
         properties: {
           contactId: { type: "string" },
           contactQuery: { type: "string" },
+          phone: { type: "string", description: "Full phone or last-4. Phone wins even if the spoken first name differs." },
           snippetName: { type: "string", enum: ["SOA ENG", "SOA SPA", "Scope of Appointment", "SPA Scope of Appointment"] },
           confirmed: { type: "boolean" }
         },
         required: ["snippetName"],
+        additionalProperties: false
+      }),
+      functionTool("ghl_send_message", "Send a general client SMS or email through GHL. First call previews the masked contact, channel, exact body, and email subject. Send only after explicit yes/sí. Never claim sent unless the result has sent=true and a messageId.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          contactQuery: { type: "string", description: "Contact name, email, phone, or last-4." },
+          phone: { type: "string", description: "Full phone or last-4; phone wins over a name mismatch." },
+          channel: { type: "string", enum: ["sms", "email"] },
+          subject: { type: "string", description: "Required for email; omit for SMS." },
+          message: { type: "string", description: "Exact client-facing body to preview and send." },
+          confirmed: { type: "boolean" }
+        },
+        required: ["channel", "message"],
         additionalProperties: false
       })
     );
@@ -895,7 +913,7 @@ export async function executeTool(name, rawArgs, {
     return calendarWriteBlockedResult(name);
   }
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_update_contact", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_update_contact", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message", "ghl_send_message"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -1434,13 +1452,14 @@ export async function executeTool(name, rawArgs, {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
       const config = ghlConfig(environment);
-      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, snippetName: args.snippetName, fetchImpl };
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, phone: args.phone, snippetName: args.snippetName, fetchImpl };
       if (blocked) {
         const plan = await ghlPrepareSoaMessage(request);
         if (plan.error) return plan;
         return {
           ...blocked,
           proposed: {
+            contactId: plan.contact.id,
             contact: plan.contact.name,
             snippet: plan.snippet.name,
             channel: plan.snippet.channel,
@@ -1452,6 +1471,46 @@ export async function executeTool(name, rawArgs, {
         };
       }
       return ghlSendSoaMessage(request);
+    }
+
+    if (name === "ghl_send_message") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        phone: args.phone,
+        channel: args.channel,
+        subject: args.subject,
+        message: args.message,
+        fetchImpl
+      };
+      try {
+        if (blocked) {
+          const plan = await ghlPrepareClientMessage(request);
+          if (plan.error) return plan;
+          return {
+            ...blocked,
+            proposed: {
+              contactId: plan.contact.id,
+              contact: plan.contact.name,
+              phoneLast4: plan.contact.phoneLast4,
+              channel: plan.channel,
+              subject: plan.subject,
+              message: plan.message
+            },
+            hint: "Show the complete message. Send only after explicit yes/sí."
+          };
+        }
+        return await ghlSendClientMessage(request);
+      } catch {
+        const spanish = /[¿¡áéíóúñ]|\b(?:enviar|envía|mensaje|cliente|correo)\b/i.test(String(userText ?? args.message ?? ""));
+        return { error: spanish
+          ? "No pude enviar ese mensaje por GHL. No lo marcaré como enviado; inténtalo de nuevo."
+          : "I couldn’t send that GHL message. Nothing was reported as sent; please try again." };
+      }
     }
 
     if (name === "notion_search") {
