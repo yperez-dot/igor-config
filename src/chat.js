@@ -24,6 +24,7 @@ import { downloadTelegramFile } from "./telegram.js";
 import { isLeadReminderRequest, maybeScheduleLeadReminder, sanitizeReminderInput } from "./lead-reminders.js";
 import { handleVaCheckinReply } from "./va-checkin.js";
 import { handleReferralThankYouRequest } from "./referral-thankyous.js";
+import { handlePersonalOpenLeads } from "./open-leads-chat.js";
 import { applyMailToolResult, formatActiveMailTask, maybeContinueMailTask } from "./mail-continuity.js";
 import { applyActionToolResult, formatActiveAction, maybeContinueAction } from "./action-continuity.js";
 import {
@@ -245,6 +246,19 @@ export async function handleTelegramChat({
     await sendTelegramMessage({ botToken, chatId: message.chatId, text: referralThankYou.reply });
     await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: referralThankYou.reply });
     return referralThankYou.reply;
+  }
+
+  const personalOpenLeads = await handlePersonalOpenLeads({
+    text: inbound.text,
+    speaker,
+    environment,
+    chatId: message.senderId,
+    fetchImpl
+  });
+  if (personalOpenLeads?.handled) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: personalOpenLeads.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: personalOpenLeads.reply });
+    return personalOpenLeads.reply;
   }
 
   const reminderHistory = message.replyTo?.text
