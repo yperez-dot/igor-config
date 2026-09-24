@@ -588,3 +588,40 @@ test("yes after a GHL task preview saves the CRM task", async () => {
   assert.match(result.reply, /not a calendar/);
   assert.equal(result.scratch.pending, null);
 });
+
+test("contact preview survives to a later sí and creates only the saved draft", async () => {
+  const preview = applyCrmToolResult(null, "ghl_create_contact", {
+    firstName: "Maria",
+    lastName: "Rivera",
+    phone: "3055552363",
+    email: "maria@example.com",
+    tags: ["active_prospect", "prospect"],
+    owner: "Katy"
+  }, {
+    needsConfirmation: true,
+    proposed: { firstName: "Maria", lastName: "Rivera", assignedTo: "katy-user-id" }
+  });
+  assert.equal(preview.pending.tool, "ghl_create_contact");
+  assert.equal(preview.pending.args.phone, "3055552363");
+
+  let writes = 0;
+  const result = await maybeContinueCrmTask({
+    text: "sí",
+    history: [{ role: "assistant", content: "I can create Maria Rivera. Say yes to confirm." }],
+    scratch: preview,
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      writes += 1;
+      assert.equal(name, "ghl_create_contact");
+      assert.equal(args.confirmed, true);
+      assert.equal(args.phone, "3055552363");
+      assert.equal(args.assignedTo, "katy-user-id");
+      return { created: true, contactId: "contact-maria-1", contact: "Maria R." };
+    }
+  });
+  assert.equal(writes, 1);
+  assert.equal(result.scratch.contactId, "contact-maria-1");
+  assert.equal(result.scratch.pending, null);
+  assert.match(result.reply, /intake can continue/i);
+  assert.match(result.reply, /note next/i);
+});

@@ -69,7 +69,8 @@ export async function runClaimedTask({
   task,
   notify,
   environment = process.env,
-  processFn = processTask
+  processFn = processTask,
+  sendTelegram = sendTelegramMessage
 }) {
   if (isStaleScheduledTask(task)) {
     const result = { status: "skipped", reason: "stale" };
@@ -90,6 +91,36 @@ export async function runClaimedTask({
     });
     return result;
   } catch (error) {
+    if (task.payload?.workflow === "telegram_chat") {
+      const attempts = Number(task.attempts ?? 1);
+      if (attempts < 3 && typeof store.retryTask === "function") {
+        await store.retryTask(task.id, {
+          runAt: new Date(Date.now() + Math.max(attempts, 1) * 5_000),
+          detail: { workflow: "telegram_chat", attempt: attempts }
+        });
+        return { status: "retrying", reason: "telegram job retry queued" };
+      }
+      await store.failTask(task.id, { workflow: "telegram_chat", reason: error.message });
+      if (typeof store.record === "function") {
+        await store.record("telegram.message_failed", String(task.payload?.updateId ?? ""), {
+          taskId: task.id,
+          attempts
+        });
+      }
+      try {
+        const telegram = telegramConfig(environment);
+        if (telegram.botToken && task.payload?.message?.chatId) {
+          await sendTelegram({
+            botToken: telegram.botToken,
+            chatId: task.payload.message.chatId,
+            text: "I’m sorry—I couldn’t finish that after retrying. I saved the failure so it isn’t silent. Please send the request again, and I’ll pick it up from the saved CRM context."
+          });
+        }
+      } catch {
+        // The durable failed state remains visible even if Telegram is unavailable.
+      }
+      return { status: "failed", reason: "telegram job retries exhausted" };
+    }
     await store.failTask(task.id, { workflow: task.payload?.workflow, reason: error.message });
     try {
       const workflow = task.payload?.workflow ?? "unknown";

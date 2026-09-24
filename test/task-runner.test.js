@@ -89,3 +89,50 @@ test("completes stale claimed tasks without running the workflow", async () => {
   assert.equal(result.status, "skipped");
   assert.equal(completed[0].detail.reason, "stale");
 });
+
+test("post-ACK Telegram jobs retry without sending a raw failure", async () => {
+  const retried = [];
+  const sent = [];
+  const result = await runClaimedTask({
+    store: {
+      async retryTask(id, options) { retried.push({ id, options }); },
+      async failTask() { throw new Error("must not fail on first attempt"); }
+    },
+    task: {
+      id: "telegram-update:7",
+      attempts: 1,
+      payload: { workflow: "telegram_chat", updateId: "7", message: { chatId: "99" } }
+    },
+    notify: async () => {},
+    sendTelegram: async (args) => sent.push(args),
+    processFn: async () => { throw new Error("HTTP 422 internal_field"); }
+  });
+  assert.equal(result.status, "retrying");
+  assert.equal(retried.length, 1);
+  assert.equal(sent.length, 0);
+});
+
+test("exhausted Telegram job sends one human failure line without raw internals", async () => {
+  const sent = [];
+  const failed = [];
+  const result = await runClaimedTask({
+    store: {
+      async failTask(id, detail) { failed.push({ id, detail }); },
+      async record() {}
+    },
+    task: {
+      id: "telegram-update:8",
+      attempts: 3,
+      payload: { workflow: "telegram_chat", updateId: "8", message: { chatId: "99" } }
+    },
+    environment: { TELEGRAM_BOT_TOKEN: "bot" },
+    notify: async () => {},
+    sendTelegram: async (args) => sent.push(args),
+    processFn: async () => { throw new Error("HTTP 422 internal_field"); }
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(failed.length, 1);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /couldn’t finish.*retrying/i);
+  assert.doesNotMatch(sent[0].text, /422|internal_field|stack/i);
+});

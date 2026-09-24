@@ -2,25 +2,20 @@ import crypto from "node:crypto";
 import express from "express";
 import cron from "node-cron";
 import { createStore } from "./store.js";
-import { askGrok, isPlanRecommendationRequest, modelConfig, recommendationRefusal, unavailableMessage } from "./grok.js";
-import { handleTelegramChat } from "./chat.js";
 import { migrationCapabilities, migrationSummary } from "./migration.js";
-import { executeTool, grokTools } from "./tools.js";
 import { connectedSystems } from "./systems.js";
 import { probeTeamCalendarAccess } from "./calendar.js";
 import { inactiveScheduleIds, liveScheduleIds, legacySchedules } from "./legacy-schedules.js";
 import { createTaskNotifier, startTaskPoller } from "./task-runner.js";
 import { runtimeIdentity } from "./worker-core.js";
-import { registerTelegramWebhook, sendTelegramMessage, supportedMessage, telegramConfig, telegramFailureMessage, verifyTelegramRequest } from "./telegram.js";
+import { registerTelegramWebhook, supportedMessage, telegramConfig, verifyTelegramRequest } from "./telegram.js";
 import { queueVaCheckinKickoff, recoverVaCheckinKickoffOnce, sendVaHelpOutreachOnce, vaCheckinDeliveryHealth, vaHelpOutreachDeliveryHealth } from "./va-checkin.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const DATABASE_URL = process.env.DATABASE_URL;
 const API_KEY = process.env.IGOR_API_KEY;
-const MODEL = modelConfig(process.env);
 const TELEGRAM = telegramConfig();
 const TELEGRAM_WEBHOOK_URL = process.env.TELEGRAM_WEBHOOK_URL;
-const TOOLS = grokTools();
 const BLOCKED_TASK_TYPES = new Set(["plan_recommendation", "enrollment_decision", "client_plan_selection"]);
 const SENSITIVE_FIELD = /^(ssn|socialSecurityNumber|medicareNumber|mbi|dateOfBirth|dob|memberId|policyNumber)$/i;
 const ALLOWED_TASK_TYPES = new Set([
@@ -161,44 +156,14 @@ app.post("/v1/telegram/webhook", async (request, response) => {
 
   const message = supportedMessage(request.body, TELEGRAM.allowedUserIds);
   if (!message) return response.sendStatus(200);
-  if (!await store.claimUpdate(message.updateId)) return response.sendStatus(200);
+  const queued = await store.enqueueTelegramUpdate(message);
+  if (queued.enqueued) {
+    await store.record("telegram.message_received", String(message.updateId), { source: "telegram" });
+  }
 
-  await store.record("telegram.message_received", String(message.updateId), { source: "telegram" });
-
-  // Telegram retries webhooks that stay open while an LLM or external tool works.
-  // Acknowledge the claimed update first, then finish it in this long-lived process.
-  response.sendStatus(200);
-
-  void (async () => {
-    try {
-    await handleTelegramChat({
-      store,
-      message,
-      askGrok,
-      sendTelegramMessage,
-      botToken: TELEGRAM.botToken,
-      apiKey: MODEL.apiKey,
-      model: MODEL.model,
-      isPlanRecommendationRequest,
-      recommendationRefusal,
-      unavailableMessage,
-      tools: TOOLS,
-      executeTool,
-      environment: process.env
-    });
-    } catch (error) {
-      await store.record("telegram.message_failed", String(message.updateId), { reason: error.message });
-      try {
-        await sendTelegramMessage({
-          botToken: TELEGRAM.botToken,
-          chatId: message.chatId,
-          text: telegramFailureMessage(error)
-        });
-      } catch {
-        // The update is already recorded; avoid logging message content or secrets.
-      }
-    }
-  })();
+  // Persist the work before acknowledging it. Either Railway service can claim
+  // the durable task, including after a restart; duplicate update_ids are no-ops.
+  return response.sendStatus(200);
 });
 
 app.use(authenticated);
