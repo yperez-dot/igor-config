@@ -10,6 +10,7 @@ const CRM_TOOLS = new Set([
   "ghl_create_contact",
   "ghl_manage_contact_tags",
   "ghl_create_contact_task",
+  "ghl_move_opportunity_stage",
   "ghl_create_appointment",
   "ghl_create_contract",
   "ghl_send_soa_message",
@@ -18,6 +19,7 @@ const CRM_TOOLS = new Set([
 ]);
 
 const AFFIRM_RE = /^(?:yes|yep|yeah|yup|si|sí|ok|okay|do it|go ahead|save(?: it)?|hazlo|dale|correcto|confirmo)(?:\s*(?:please|pls|igor|do it|save it|thanks|thank you))?[.!\s]*$/i;
+const DECLINE_RE = /^(?:no|nope|cancel|never mind|nevermind|don['’]?t|do not|no lo hagas|cancela)(?:\s*(?:it|please|por favor))?[.!\s]*$/i;
 const LOOK_UP_RE = /\blook(?:\s+it)?\s+up\b|\blook(?:\s+her|\s+him|\s+them)?\s+up\b|\bb[uú]sca(?:lo|la|le)?\b|\bfind (?:her|him|them|it)\b/i;
 const NON_CRM_TOPIC_RE = /\b(?:e-?mails?|gmail|inbox|outbox|sent\s+(?:mail|message)|google\s+drive|drive\s+file|calendar|website|github|railway)\b/i;
 const EXPLICIT_CRM_TOPIC_RE = /\b(?:ghl|crm|go\s*high\s*level|contact|client|lead|prospect|open\s+leads|active[_\s-]?prospect|last[- ]?4|follow[- ]?up\s+task|(?:ghl|crm|contact)\s+task|create\s+(?:a|an|the)\s+task|task\s+due)\b/i;
@@ -150,6 +152,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_update_contact") next.goal = next.goal || "rename";
   if (name === "ghl_create_contact") next.goal = next.goal || "create_contact";
   if (name === "ghl_create_contact_task") next.goal = "create_task";
+  if (name === "ghl_move_opportunity_stage") next.goal = "move_pipeline_stage";
 
   if (name === "ghl_add_contact_note") {
     if (result.needsConfirmation && result.proposed?.body) {
@@ -217,6 +220,25 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
     }
   }
 
+  if (name === "ghl_move_opportunity_stage") {
+    if (result.needsConfirmation && result.proposed?.opportunityId) {
+      next.pending = {
+        tool: "ghl_move_opportunity_stage",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          contactId: result.proposed.contactId || next.contactId || args.contactId,
+          opportunityId: result.proposed.opportunityId,
+          pipelineId: result.proposed.pipelineId,
+          pipelineName: result.proposed.pipeline,
+          stageId: result.proposed.stageId,
+          stageName: result.proposed.stage
+        }
+      };
+    } else if (result.updated) {
+      next.pending = null;
+    }
+  }
+
   return next;
 }
 
@@ -276,6 +298,12 @@ export function formatActiveCrmTask(scratch) {
     const name = args.name || [args.firstName, args.lastName].filter(Boolean).join(" ") || scratch.spokenName || "the new contact";
     lines.push(`- Pending contact (${scratch.pending.approved ? "already approved — create it" : "previewed, waiting for yes"}): ${name}`);
     lines.push("If they say yes/sí/ok/do it, CALL ghl_create_contact once with confirmed=true using this exact saved draft. Do not reconstruct it from chat and do not create a second contact.");
+  }
+  if (scratch.pending?.tool === "ghl_move_opportunity_stage") {
+    const args = scratch.pending.args || {};
+    lines.push(`- Pending pipeline move (${scratch.pending.approved ? "already approved — apply it" : "previewed, waiting for yes"}):`);
+    lines.push(`  ${args.pipelineName || "pipeline"} → ${args.stageName || "target stage"}`);
+    lines.push("If they say yes/sí, CALL ghl_move_opportunity_stage once with confirmed=true using these exact saved ids. If they decline, do not write.");
   }
   lines.push("Look it up = use this contact id, then last-4, then name. Never ask them to paste a GHL contact id when any of those exist.");
   lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
@@ -463,6 +491,12 @@ function contactWriteArgs(scratch) {
   return { ...pending.args, confirmed: true };
 }
 
+function stageMoveWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_move_opportunity_stage") return null;
+  return { ...pending.args, confirmed: true };
+}
+
 function displayName(scratch, fallback = "that contact") {
   return scratch?.storedName || scratch?.spokenName || fallback;
 }
@@ -494,6 +528,19 @@ async function savePendingContact(scratch, executeTool) {
   const next = applyCrmToolResult(
     { ...scratch, pending: { ...scratch.pending, approved: true } },
     "ghl_create_contact",
+    args,
+    result
+  );
+  return { scratch: next, result };
+}
+
+async function savePendingStageMove(scratch, executeTool) {
+  const args = stageMoveWriteArgs(scratch);
+  if (!args?.opportunityId || !args?.stageId) return { scratch, result: null };
+  const result = await executeTool("ghl_move_opportunity_stage", args);
+  const next = applyCrmToolResult(
+    { ...scratch, pending: { ...scratch.pending, approved: true } },
+    "ghl_move_opportunity_stage",
     args,
     result
   );
@@ -665,6 +712,30 @@ export async function maybeContinueCrmTask({
     return {
       scratch: saved.scratch,
       reply: `Couldn’t save that GHL task — ${toolError(saved.result)}. I’ll keep the draft and retry with the contact id / last-4 we already have.`
+    };
+  }
+
+  if (DECLINE_RE.test(String(text ?? "").trim()) && merged.pending?.tool === "ghl_move_opportunity_stage") {
+    return {
+      scratch: { ...merged, pending: null },
+      reply: /\b(?:no lo hagas|cancela)\b/i.test(String(text))
+        ? "Entendido — no moví la oportunidad en GHL."
+        : "Okay — I didn’t move the GHL opportunity."
+    };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_move_opportunity_stage") {
+    const nextApproved = { ...merged, pending: { ...merged.pending, approved: true } };
+    const saved = await savePendingStageMove(nextApproved, executeTool);
+    if (saved.result?.updated) {
+      return {
+        scratch: saved.scratch,
+        reply: `Moved ${saved.result.contact || displayName(saved.scratch)} to ${saved.result.stage} in ${saved.result.pipeline}.`
+      };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: "I couldn’t move that GHL opportunity right now. Nothing else was changed, and I kept the approved preview so we can retry safely."
     };
   }
 
