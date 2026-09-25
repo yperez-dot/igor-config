@@ -22,6 +22,7 @@ import {
 } from "./email.js";
 import {
   ghlApplyClinicalUpdate,
+  ghlGetClinicalProfile,
   ghlApplyTagChange,
   ghlConfig,
   ghlCreateContract,
@@ -54,6 +55,7 @@ import {
   ,ghlSendSoaMessage
 } from "./ghl.js";
 import { personalOpenLeadsForChat } from "./ghl-personal.js";
+import { formatReviewPlansDraft } from "./review-plans.js";
 import { telegramSpeaker } from "./identity.js";
 import {
   findLatestMailAlert,
@@ -299,6 +301,14 @@ export function grokTools(environment = process.env) {
           contactQuery: { type: "string", description: "Client name, phone fragment, or email fragment." },
           contactId: { type: "string", description: "Exact GHL contact id when already known." },
           limit: { type: "integer", description: "Maximum recent messages. Default 20." }
+        },
+        additionalProperties: false
+      }),
+      functionTool("ghl_get_clinical_profile", "Read the Providers and Rx records linked to one GHL contact for an Updated Meds and Drs review email. Empty arrays are a successful result. If clinical data is unavailable, still draft the email with the empty-file wording and show internalNote only to the Telegram team member.", {
+        type: "object",
+        properties: {
+          contactQuery: { type: "string", description: "Client name, phone fragment, or email fragment." },
+          contactId: { type: "string", description: "Exact GHL contact id when already known." }
         },
         additionalProperties: false
       }),
@@ -931,6 +941,7 @@ export async function executeTool(name, rawArgs, {
             ? {
                 available: true,
                 readRecentSmsAndEmail: true,
+                readLinkedProvidersAndMedications: true,
                 updateDoctorsAndMedications: true,
                 writeMode: "approval-gated",
                 approvers: ["Yahoska", "Katy", "Carolina"],
@@ -939,6 +950,7 @@ export async function executeTool(name, rawArgs, {
             : {
                 available: false,
                 readRecentSmsAndEmail: false,
+                readLinkedProvidersAndMedications: false,
                 updateDoctorsAndMedications: false,
                 missingEnv: ["GHL_API_TOKEN"]
               }
@@ -1287,6 +1299,32 @@ export async function executeTool(name, rawArgs, {
         limit: args.limit,
         fetchImpl
       });
+    }
+
+    if (name === "ghl_get_clinical_profile") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const profile = await ghlGetClinicalProfile({
+        token: config.token,
+        locationId: config.locationId,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        environment,
+        fetchImpl
+      });
+      if (profile.error) return profile;
+      return {
+        ...profile,
+        draft: formatReviewPlansDraft({
+          people: [{
+            firstName: String(profile.contact ?? args.contactQuery ?? "Client").split(/\s+/)[0],
+            providers: profile.providers,
+            medications: profile.medications
+          }],
+          senderName: telegramSpeaker(environment, senderId, senderProfile).name?.split(/\s+/)[0] || "Yahoska"
+        })
+      };
     }
 
     if (name === "ghl_update_clinical_profile") {

@@ -50,6 +50,7 @@ function ghlFixtureFetch(calls = []) {
 test("GHL clinical tools are available when GHL is connected", () => {
   const names = grokTools(environment).map((tool) => tool.function.name);
   assert.equal(names.includes("ghl_recent_client_messages"), true);
+  assert.equal(names.includes("ghl_get_clinical_profile"), true);
   assert.equal(names.includes("ghl_update_clinical_profile"), true);
 });
 
@@ -57,9 +58,99 @@ test("connected-systems status exposes approval-gated GHL clinical readiness", a
   const result = await executeTool("list_connected_systems", {}, { environment });
   assert.equal(result.capabilities.ghlClinical.available, true);
   assert.equal(result.capabilities.ghlClinical.readRecentSmsAndEmail, true);
+  assert.equal(result.capabilities.ghlClinical.readLinkedProvidersAndMedications, true);
   assert.equal(result.capabilities.ghlClinical.updateDoctorsAndMedications, true);
   assert.equal(result.capabilities.ghlClinical.writeMode, "approval-gated");
   assert.deepEqual(result.capabilities.ghlClinical.approvers, ["Yahoska", "Katy", "Carolina"]);
+});
+
+function clinicalReadFetch({ providers = [], medications = [], failObjects = false } = {}) {
+  return async (url, options = {}) => {
+    const target = String(url);
+    if (/\/contacts\/contact-1$/.test(target)) {
+      return json({ contact: { id: "contact-1", firstName: "Maria", lastName: "Lopez" } });
+    }
+    if (target.includes("/objects/?")) {
+      if (failObjects) throw new Error("simulated clinical read failure");
+      return json({ objects: [
+        { key: "custom_objects.providers", labels: { plural: "Providers" }, primaryDisplayProperty: "custom_objects.providers.name" },
+        { key: "custom_objects.rx", labels: { plural: "Rx" }, primaryDisplayProperty: "custom_objects.rx.name" }
+      ] });
+    }
+    if (target.includes("/associations/objectKey/custom_objects.providers")) {
+      return json({ associations: [{ id: "provider-association", firstObjectKey: "contact", secondObjectKey: "custom_objects.providers" }] });
+    }
+    if (target.includes("/associations/objectKey/custom_objects.rx")) {
+      return json({ associations: [{ id: "rx-association", firstObjectKey: "contact", secondObjectKey: "custom_objects.rx" }] });
+    }
+    if (target.includes("/associations/relations/contact-1?")) {
+      const values = target.includes("provider-association") ? providers : medications;
+      return json({ relations: values.map((_, index) => ({
+        associationId: target.includes("provider-association") ? "provider-association" : "rx-association",
+        firstRecordId: "contact-1",
+        secondRecordId: `${target.includes("provider-association") ? "provider" : "rx"}-${index + 1}`
+      })) });
+    }
+    const providerMatch = target.match(/\/objects\/custom_objects\.providers\/records\/provider-(\d+)$/);
+    if (providerMatch) return json({ record: { properties: { name: providers[Number(providerMatch[1]) - 1] } } });
+    const rxMatch = target.match(/\/objects\/custom_objects\.rx\/records\/rx-(\d+)$/);
+    if (rxMatch) return json({ record: { properties: { name: medications[Number(rxMatch[1]) - 1] } } });
+    throw new Error(`Unexpected GHL request: ${target} (${options.method ?? "GET"})`);
+  };
+}
+
+test("GHL clinical read returns linked provider and medication display names without writing", async () => {
+  const calls = [];
+  const fetchImpl = clinicalReadFetch({ providers: ["Dr. Rivera"], medications: ["Metformin"] });
+  const result = await executeTool("ghl_get_clinical_profile", { contactId: "contact-1" }, {
+    environment,
+    senderProfile: { firstName: "Yahoska" },
+    fetchImpl: async (url, options) => {
+      calls.push({ url: String(url), method: options?.method ?? "GET" });
+      return fetchImpl(url, options);
+    }
+  });
+
+  assert.equal(result.contact, "Maria L.");
+  assert.deepEqual(result.providers, ["Dr. Rivera"]);
+  assert.deepEqual(result.medications, ["Metformin"]);
+  assert.equal(result.draft.subject, "Updated Meds and Drs");
+  assert.match(result.draft.body, /Providers\n- Dr\. Rivera/);
+  assert.equal(result.clinicalDataUnavailable, undefined);
+  assert.equal(calls.every((call) => call.method === "GET"), true);
+});
+
+test("GHL clinical read treats empty linked lists as success", async () => {
+  const result = await executeTool("ghl_get_clinical_profile", { contactId: "contact-1" }, {
+    environment,
+    senderProfile: { firstName: "Katy" },
+    fetchImpl: clinicalReadFetch()
+  });
+  assert.deepEqual(result.providers, []);
+  assert.deepEqual(result.medications, []);
+  assert.equal(result.clinicalDataUnavailable, undefined);
+});
+
+test("GHL clinical API failure returns empty lists and an internal fallback note", async () => {
+  const result = await executeTool("ghl_get_clinical_profile", { contactId: "contact-1" }, {
+    environment,
+    senderProfile: { firstName: "Carolina" },
+    fetchImpl: clinicalReadFetch({ failObjects: true })
+  });
+  assert.deepEqual(result.providers, []);
+  assert.deepEqual(result.medications, []);
+  assert.equal(result.clinicalDataUnavailable, true);
+  assert.match(result.internalNote, /still use the empty-file version/i);
+  assert.match(result.draft.body, /don’t have any providers or medications on file/i);
+});
+
+test("GHL clinical read uses the same audience gate as clinical writes", async () => {
+  const result = await executeTool("ghl_get_clinical_profile", { contactId: "contact-1" }, {
+    environment,
+    senderProfile: { firstName: "Other" },
+    fetchImpl: async () => { throw new Error("must not call GHL"); }
+  });
+  assert.match(result.error, /Only Yahoska, Katy, or Carolina/);
 });
 
 test("GHL clinical update previews exact values and requires approval", async () => {

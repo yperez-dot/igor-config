@@ -678,3 +678,15 @@ test("client message does not claim sent without sent=true and messageId", async
   assert.match(result.reply, /couldn’t confirm/i);
   assert.equal(result.scratch.pending.tool, "ghl_send_message");
 });
+
+test("clinical profile reads keep the active contact for review-plan continuity", () => {
+  const scratch = applyCrmToolResult(null, "ghl_get_clinical_profile", { contactQuery: "Maria Lopez" }, {
+    contactId: "contact-1",
+    contact: "Maria L.",
+    providers: [],
+    medications: []
+  });
+  assert.equal(scratch.contactId, "contact-1");
+  assert.equal(scratch.storedName, "Maria L.");
+  assert.equal(scratch.goal, "review_plans");
+});
