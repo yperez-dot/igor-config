@@ -288,6 +288,90 @@ export async function ghlSearchOpportunities({
   };
 }
 
+export async function ghlListOpportunities({
+  token,
+  locationId,
+  status = "won",
+  pipelineId,
+  pipelineName,
+  limit = 40,
+  maxPages = 10,
+  fetchImpl = fetch,
+  environment = process.env
+}) {
+  const pipelines = await ghlListPipelines({ token, locationId, fetchImpl });
+  const aliases = new Set(["facebook", "fb", "fb ads", "facebook ads", "medi-medi", "medi medi"]);
+  const requestedName = String(pipelineName ?? "").trim().toLowerCase();
+  const resolvedName = aliases.has(requestedName) ? "facebook ads" : requestedName;
+  const pipeline = pipelineId
+    ? pipelines.find((entry) => String(entry.id) === String(pipelineId))
+    : resolvedName ? pipelines.find((entry) => String(entry.name).trim().toLowerCase() === resolvedName) : null;
+  if ((pipelineId || requestedName) && !pipeline) {
+    const available = pipelines.map((entry) => entry.name).join(", ") || "none";
+    throw new Error(`GHL pipeline not found: ${pipelineName || pipelineId}. Available pipelines: ${available}.`);
+  }
+
+  const selectedStatus = String(status ?? "won").trim().toLowerCase() || "won";
+  const searchStatus = selectedStatus === "sold" ? "won" : selectedStatus;
+  if (!["won", "open", "abandoned", "all"].includes(searchStatus)) {
+    throw new Error("GHL opportunity status must be won, open, abandoned, or all.");
+  }
+  const ownerLabels = new Map(ghlKnownOwners(environment).map((owner) => [owner.id, owner.key === "yahoska" ? "YP" : owner.key === "katy" ? "KR" : "CM"]));
+  const rows = [];
+  const byPipeline = {};
+  const byStage = {};
+  let scanned = 0;
+  let truncated = false;
+  let startAfter;
+  let startAfterId;
+  const pageCap = Math.max(1, Math.min(100, Math.trunc(Number(maxPages) || 10)));
+  const rowCap = Math.max(1, Math.min(50, Math.trunc(Number(limit) || 40)));
+
+  for (let page = 0; page < pageCap; page += 1) {
+    const { opportunities, meta } = await ghlSearchOpportunities({
+      token, locationId, status: searchStatus === "all" ? undefined : searchStatus,
+      pipelineId: pipeline?.id, limit: 100, startAfter, startAfterId, fetchImpl
+    });
+    scanned += opportunities.length;
+    for (const opportunity of opportunities) {
+      // GHL search is the source of truth, but guard against a mismatched API result.
+      if (searchStatus !== "all" && String(opportunity.status ?? "").toLowerCase() !== searchStatus) continue;
+      if (pipeline && String(opportunity.pipelineId) !== String(pipeline.id)) continue;
+      const row = maskOpportunity(opportunity, pipelines);
+      row.assignedTo = ownerLabels.get(row.assignedTo) ?? row.assignedTo;
+      byPipeline[row.pipeline || "unknown"] = (byPipeline[row.pipeline || "unknown"] ?? 0) + 1;
+      byStage[row.stage || "unknown"] = (byStage[row.stage || "unknown"] ?? 0) + 1;
+      if (rows.length < rowCap) rows.push(row);
+    }
+    if (!opportunities.length) break;
+    const nextId = meta.startAfterId ?? opportunities.at(-1)?.id;
+    const nextAfter = meta.startAfter;
+    const hasMore = Boolean(meta.nextPage || meta.startAfterId || opportunities.length === 100);
+    if (!hasMore) break;
+    if ((!nextId && !nextAfter) || (nextId === startAfterId && nextAfter === startAfter)) {
+      truncated = true;
+      break;
+    }
+    if (page === pageCap - 1) {
+      truncated = true;
+      break;
+    }
+    startAfterId = nextId;
+    startAfter = nextAfter;
+  }
+
+  return {
+    status: searchStatus,
+    pipeline: pipeline?.name ?? null,
+    totalCount: Object.values(byPipeline).reduce((sum, count) => sum + count, 0),
+    scanned,
+    truncated,
+    byPipeline,
+    byStage,
+    leads: rows
+  };
+}
+
 function exactName(value) {
   return String(value ?? "").trim().toLowerCase();
 }
