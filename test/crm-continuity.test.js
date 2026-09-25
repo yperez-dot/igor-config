@@ -3,11 +3,14 @@ import test from "node:test";
 import { handleTelegramChat } from "../src/chat.js";
 import {
   applyCrmToolResult,
+  bindStickyContactArgs,
+  clearStickyContact,
   explicitCrmContactOverride,
   extractLast4FromText,
   extractNamedContact,
   formatActiveCrmTask,
   ghlTaskPreviewArgs,
+  householdContacts,
   isAffirmative,
   isLookItUp,
   isThreadContactReference,
@@ -15,6 +18,7 @@ import {
   maybeContinueCrmTask,
   mergeThreadIdentifiers,
   parseGhlTaskDraft,
+  stickyContactFor,
   switchesAwayFromCrm,
   parseNameCorrection
 } from "../src/crm-continuity.js";
@@ -677,4 +681,214 @@ test("client message does not claim sent without sent=true and messageId", async
   assert.doesNotMatch(result.reply, /^Sent\b/i);
   assert.match(result.reply, /couldn’t confirm/i);
   assert.equal(result.scratch.pending.tool, "ghl_send_message");
+});
+
+function householdAfterCreates() {
+  const pablo = applyCrmToolResult(null, "ghl_create_contact", {
+    firstName: "Pablo",
+    lastName: "Muskat"
+  }, {
+    created: true,
+    contactId: "contact-pablo-1",
+    contact: "Pablo M.",
+    firstName: "Pablo",
+    lastName: "Muskat"
+  });
+  return applyCrmToolResult(pablo, "ghl_create_contact", {
+    firstName: "Miriam",
+    lastName: "Muskat"
+  }, {
+    created: true,
+    contactId: "contact-miriam-1",
+    contact: "Miriam M.",
+    firstName: "Miriam",
+    lastName: "Muskat"
+  });
+}
+
+test("couple create keeps both sticky this-chat contact ids keyed by name", () => {
+  const scratch = householdAfterCreates();
+  const roster = householdContacts(scratch);
+  assert.equal(roster.length, 2);
+  assert.equal(roster.find((entry) => /pablo/i.test(entry.spokenName || entry.role))?.contactId, "contact-pablo-1");
+  assert.equal(roster.find((entry) => /miriam/i.test(entry.spokenName || entry.role))?.contactId, "contact-miriam-1");
+  assert.equal(scratch.contactId, "contact-miriam-1");
+  const packed = formatActiveCrmTask(scratch);
+  assert.match(packed, /contact-pablo-1/);
+  assert.match(packed, /contact-miriam-1/);
+  assert.match(packed, /win over name search/i);
+  assert.match(packed, /Never ask the user to paste an id Igor just created/i);
+});
+
+test("clinical and notes bind the sticky id and strip name search when a this-chat id exists", () => {
+  const scratch = householdAfterCreates();
+  const clinical = bindStickyContactArgs(scratch, "ghl_update_clinical_profile", {
+    contactQuery: "Pablo",
+    doctors: ["Dr. Rivera"],
+    medications: ["Metformin"]
+  });
+  assert.equal(clinical.contactId, "contact-pablo-1");
+  assert.equal(Object.hasOwn(clinical, "contactQuery"), false);
+  assert.equal(Object.hasOwn(clinical, "query"), false);
+  const note = bindStickyContactArgs(scratch, "ghl_add_contact_note", {
+    contactQuery: "Miriam Muskat",
+    body: "Concern: wants a callback about the doctors."
+  });
+  assert.equal(note.contactId, "contact-miriam-1");
+  assert.equal(Object.hasOwn(note, "contactQuery"), false);
+  assert.equal(stickyContactFor(scratch, { contactQuery: "Pablo" }).contactId, "contact-pablo-1");
+  assert.equal(stickyContactFor(scratch, { query: "a different Pablo" }), null);
+});
+
+test("create then approved clinical write uses sticky id with zero name re-search", async () => {
+  const preview = applyCrmToolResult(householdAfterCreates(), "ghl_update_clinical_profile", {
+    contactQuery: "Pablo",
+    doctors: ["Dr. Rivera"],
+    medications: ["Metformin"]
+  }, {
+    needsConfirmation: true,
+    proposed: {
+      contact: "Pablo M.",
+      contactId: "contact-pablo-1",
+      doctors: ["Dr. Rivera"],
+      medications: ["Metformin"]
+    }
+  });
+  assert.equal(preview.pending.tool, "ghl_update_clinical_profile");
+  assert.equal(preview.pending.args.contactId, "contact-pablo-1");
+
+  const toolCalls = [];
+  const result = await maybeContinueCrmTask({
+    text: "Yes",
+    history: [{ role: "assistant", content: "Pablo M. — Dr. Rivera, Metformin. Say yes and I’ll save it." }],
+    scratch: preview,
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      assert.equal(name, "ghl_update_clinical_profile");
+      assert.equal(args.confirmed, true);
+      assert.equal(args.contactId, "contact-pablo-1");
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      assert.equal(Object.hasOwn(args, "query"), false);
+      return { updated: true, contactId: "contact-pablo-1", contact: { id: "contact-pablo-1", name: "Pablo M." } };
+    }
+  });
+  assert.equal(toolCalls.length, 1);
+  assert.match(result.reply, /Saved the approved doctors/i);
+  assert.doesNotMatch(result.reply, /paste/i);
+  assert.equal(result.scratch.pending, null);
+});
+
+test("approved notes after couple create stay on the sticky person and never ask for the new id", async () => {
+  const preview = applyCrmToolResult(householdAfterCreates(), "ghl_add_contact_note", {
+    contactQuery: "Pablo",
+    body: "Concern: follow up on the approved doctors."
+  }, {
+    needsConfirmation: true,
+    proposed: {
+      contact: "Pablo M.",
+      contactId: "contact-pablo-1",
+      body: "Concern: follow up on the approved doctors."
+    }
+  });
+  const result = await maybeContinueCrmTask({
+    text: "Yes",
+    scratch: preview,
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_add_contact_note");
+      assert.equal(args.contactId, "contact-pablo-1");
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      return { created: true, contactId: "contact-pablo-1", contact: "Pablo M." };
+    }
+  });
+  assert.match(result.reply, /Saved the note/);
+  assert.doesNotMatch(result.reply, /paste/i);
+});
+
+test("clinical write failure retries the sticky id and does not attach a lookalike Pablo", async () => {
+  const preview = applyCrmToolResult(householdAfterCreates(), "ghl_update_clinical_profile", {
+    contactQuery: "Pablo"
+  }, {
+    needsConfirmation: true,
+    proposed: {
+      contact: "Pablo M.",
+      contactId: "contact-pablo-1",
+      doctors: ["Dr. Rivera"],
+      medications: ["Metformin"]
+    }
+  });
+  const result = await maybeContinueCrmTask({
+    text: "Yes",
+    scratch: preview,
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_update_clinical_profile");
+      assert.equal(args.contactId, "contact-pablo-1");
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      return { error: "GHL write failed", candidates: [{ id: "contact-other-pablo", name: "Pablo S." }] };
+    }
+  });
+  assert.match(result.reply, /sticky this-chat contact id/i);
+  assert.doesNotMatch(result.reply, /need (?:the|a) GHL (?:contact )?id/i);
+  assert.match(result.reply, /don’t need you to paste/i);
+  assert.equal(result.scratch.contactId === "contact-other-pablo", false);
+  assert.equal(householdContacts(result.scratch).some((entry) => entry.contactId === "contact-other-pablo"), false);
+  assert.equal(result.scratch.pending?.args?.contactId, "contact-pablo-1");
+});
+
+test("sticky id 404 clears only that entry and asks once", () => {
+  const scratch = householdAfterCreates();
+  const next = applyCrmToolResult(scratch, "ghl_update_clinical_profile", {
+    contactId: "contact-pablo-1"
+  }, {
+    error: "Couldn't load that GHL contact by id. I did not search other contacts by name.",
+    notFound: true,
+    contactId: "contact-pablo-1"
+  });
+  assert.equal(householdContacts(next).some((entry) => entry.contactId === "contact-pablo-1"), false);
+  assert.equal(householdContacts(next).some((entry) => entry.contactId === "contact-miriam-1"), true);
+  assert.equal(next.stickyCleared, "contact-pablo-1");
+  const remaining = clearStickyContact(scratch, "contact-pablo-1");
+  assert.equal(remaining.contactId, "contact-miriam-1");
+});
+
+test("Telegram follow-up after couple create injects Pablo’s sticky id and never name-searches", async () => {
+  const store = memoryStore(householdAfterCreates());
+  const { grokCalled, toolCalls, reply } = await chatTurn({
+    store,
+    text: "add Dr. Rivera and Metformin for Pablo",
+    askGrok: async (request) => {
+      assert.match(request.systemPrompt, /contact-pablo-1/);
+      assert.match(request.systemPrompt, /contact-miriam-1/);
+      assert.match(request.systemPrompt, /win over name search/i);
+      const result = await request.executeTool("ghl_update_clinical_profile", {
+        contactQuery: "Pablo",
+        doctors: ["Dr. Rivera"],
+        medications: ["Metformin"]
+      });
+      assert.equal(result.needsConfirmation, true);
+      return "Previewed Pablo’s doctors. I already have his this-chat id.";
+    },
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_update_clinical_profile");
+      assert.equal(args.contactId, "contact-pablo-1");
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      return {
+        needsConfirmation: true,
+        proposed: {
+          contact: "Pablo M.",
+          contactId: args.contactId,
+          doctors: args.doctors,
+          medications: args.medications
+        }
+      };
+    }
+  });
+  assert.equal(grokCalled, true);
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].args.contactId, "contact-pablo-1");
+  assert.equal(Object.hasOwn(toolCalls[0].args, "contactQuery"), false);
+  assert.match(reply, /this-chat id/i);
+  assert.doesNotMatch(reply, /paste/i);
 });

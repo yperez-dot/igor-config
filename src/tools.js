@@ -105,6 +105,7 @@ import {
   putGithubFile
 } from "./github-workflow.js";
 import { blocksCalendarWrite, calendarWriteBlockedResult, CALENDAR_WRITE_TOOLS } from "./task-calendar-route.js";
+import { bindStickyContactArgs } from "./crm-continuity.js";
 
 const WRITE_TOOLS = new Set([
   "ghl_update_clinical_profile",
@@ -220,7 +221,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. Reuse the Active CRM task / this-chat contact id or last-4 instead of asking the user to paste a GHL id. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
+      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. After ghl_create_contact or any successful resolve, Active CRM / this-chat contact ids win over name search — pass contactId and do not re-search lookalikes by name. Never ask the user to paste a GHL id Igor just created in this thread. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
         type: "object",
         properties: {
           query: { type: "string", description: "Name, phone, last-4, email fragment, or GHL contact id from this chat. Phone/last-4 is matched first and does not need the first name to match." },
@@ -257,7 +258,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_create_contact", "Create a new GHL contact. First call previews the exact name, optional phone/email, tags, and owner; write only after Yahoska, Katy, or Carolina confirms. Returns the new contact id. Open Leads is the GHL smart list for tag active_prospect (underscore). New AEP/prospect creates default to active_prospect and prospect; never use 'active prospect' (space) or active-prospect.", {
+      functionTool("ghl_create_contact", "Create a new GHL contact. First call previews the exact name, optional phone/email, tags, and owner; write only after Yahoska, Katy, or Carolina confirms. Returns the new contact id, which is persisted as a sticky Active CRM / this-chat id — later clinical writes and notes MUST reuse that contactId and must not re-search by name. For couples/households, keep each person's returned id. Never ask the user to paste an id just created in this thread. Open Leads is the GHL smart list for tag active_prospect (underscore). New AEP/prospect creates default to active_prospect and prospect; never use 'active prospect' (space) or active-prospect.", {
         type: "object",
         properties: {
           firstName: { type: "string", description: "Given name. Required unless name is provided." },
@@ -302,11 +303,11 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_update_clinical_profile", "Add doctor/provider and medication/Rx records to a GHL contact using the existing custom objects and associations. First call without confirmed to show the exact proposed names and ask for approval. Only call again with confirmed=true after Yahoska, Katy, or Carolina explicitly approves that exact client and list.", {
+      functionTool("ghl_update_clinical_profile", "Add doctor/provider and medication/Rx records to a GHL contact using the existing custom objects and associations. After create or any successful resolve, pass the sticky Active CRM / this-chat contactId for that person. Do not re-search by name when a this-chat id exists. Never ask the user for an id Igor just created. On write failure, retry that same sticky id — do not attach a lookalike from name search. First call without confirmed to show the exact proposed names and ask for approval. Only call again with confirmed=true after Yahoska, Katy, or Carolina explicitly approves that exact client and list.", {
         type: "object",
         properties: {
-          contactQuery: { type: "string", description: "Client name, phone fragment, or email fragment." },
-          contactId: { type: "string", description: "Exact GHL contact id when already known." },
+          contactQuery: { type: "string", description: "Client name, phone fragment, or email fragment. Omit when a this-chat / Active CRM contact id exists for that person." },
+          contactId: { type: "string", description: "Sticky Active CRM / this-chat contact id. Required after create or resolve in this thread — wins over name search." },
           doctors: { type: "array", items: { type: "string" }, description: "Doctor or provider names to associate." },
           medications: { type: "array", items: { type: "string" }, description: "Medication or Rx names to associate." },
           confirmed: { type: "boolean", description: "True only after the user approves this exact proposal in chat." }
@@ -330,11 +331,11 @@ export function grokTools(environment = process.env) {
         required: ["action", "tags"],
         additionalProperties: false
       }),
-      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. Reuse the Active CRM task contact id, last-4, and drafted note. After they say yes, call again with confirmed=true on that same draft — do not drop it or re-ask for identifiers. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. After create or resolve, reuse the sticky Active CRM / this-chat contact id for that person — do not re-search by name and never ask the user to paste an id Igor just created. After they say yes, call again with confirmed=true on that same draft and sticky id. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
-          contactId: { type: "string" },
-          contactQuery: { type: "string", description: "Name, phone, or last-4. Phone/last-4 wins if the stored first name differs." },
+          contactId: { type: "string", description: "Sticky Active CRM / this-chat contact id. Wins over name search after create or resolve." },
+          contactQuery: { type: "string", description: "Name, phone, or last-4 only when no this-chat contact id exists for that person. Phone/last-4 wins if the stored first name differs." },
           phone: { type: "string", description: "Full phone or last-4 so a first-name mismatch still finds the contact." },
           body: { type: "string" },
           title: { type: "string" },
@@ -906,9 +907,10 @@ export async function executeTool(name, rawArgs, {
   store,
   pendingAttachment,
   transporter,
-  userText
+  userText,
+  activeCrmTask
 } = {}) {
-  const args = parseArgs(rawArgs);
+  const args = bindStickyContactArgs(activeCrmTask, name, parseArgs(rawArgs), userText);
   if (CALENDAR_WRITE_TOOLS.has(name) && blocksCalendarWrite(userText ?? senderProfile?.currentText)) {
     return calendarWriteBlockedResult(name);
   }
@@ -1310,10 +1312,11 @@ export async function executeTool(name, rawArgs, {
           ...blocked,
           proposed: {
             contact: plan.contact.name,
+            contactId: plan.contact.id,
             doctors: plan.values.doctors,
             medications: plan.values.medications
           },
-          hint: "Show this exact client and list in chat. After Yahoska, Katy, or Carolina says yes, call again with confirmed=true."
+          hint: "Show this exact client and list in chat. After Yahoska, Katy, or Carolina says yes, call again with confirmed=true on this same sticky contact id. Do not re-search by name."
         };
       }
       return ghlApplyClinicalUpdate(request);

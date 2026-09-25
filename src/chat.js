@@ -1,5 +1,6 @@
 import {
   applyCrmToolResult,
+  bindStickyContactArgs,
   explicitlyReturnsToCrm,
   formatActiveCrmTask,
   maybeContinueCrmTask,
@@ -454,12 +455,6 @@ export async function handleTelegramChat({
     scratch = mergeThreadIdentifiers(scratch, history, inbound.text);
   }
 
-  const persistScratch = async (next) => {
-    scratch = next;
-    if (next && typeof store.saveChatScratch === "function") {
-      await store.saveChatScratch(message.chatId, "crm", next);
-    }
-  };
   const persistMailScratch = async (next) => {
     mailScratch = next;
     if (next && typeof store.saveChatScratch === "function") {
@@ -481,15 +476,24 @@ export async function handleTelegramChat({
     senderProfile,
     store,
     pendingAttachment: inbound.attachment,
-    userText: inbound.text
+    userText: inbound.text,
+    activeCrmTask: scratch
+  };
+  const persistScratch = async (next) => {
+    scratch = next;
+    toolContext.activeCrmTask = next;
+    if (next && typeof store.saveChatScratch === "function") {
+      await store.saveChatScratch(message.chatId, "crm", next);
+    }
   };
   const toolRunner = async (name, args) => {
-    const result = await executeTool(name, args, toolContext);
-    const next = applyCrmToolResult(scratch, name, args, result);
+    const bound = bindStickyContactArgs(scratch, name, args, inbound.text);
+    const result = await executeTool(name, bound, toolContext);
+    const next = applyCrmToolResult(scratch, name, bound, result);
     if (next) await persistScratch(next);
-    const nextMail = applyMailToolResult(mailScratch, name, args, result);
+    const nextMail = applyMailToolResult(mailScratch, name, bound, result);
     if (nextMail) await persistMailScratch(nextMail);
-    const nextAction = applyActionToolResult(actionScratch, name, args, result);
+    const nextAction = applyActionToolResult(actionScratch, name, bound, result);
     if (nextAction) await persistActionScratch(nextAction);
     return result;
   };
