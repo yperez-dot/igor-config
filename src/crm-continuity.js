@@ -16,6 +16,7 @@ const CRM_TOOLS = new Set([
   "ghl_send_soa_message",
   "ghl_send_message",
   "ghl_recent_client_messages",
+  "ghl_get_clinical_profile",
   "ghl_update_clinical_profile"
 ]);
 
@@ -156,6 +157,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_move_opportunity_stage") next.goal = "move_pipeline_stage";
   if (name === "ghl_send_message") next.goal = "send_client_message";
   if (name === "ghl_send_soa_message") next.goal = "send_soa";
+  if (name === "ghl_get_clinical_profile") next.goal = "review_plans";
 
   if (name === "ghl_add_contact_note") {
     if (result.needsConfirmation && result.proposed?.body) {

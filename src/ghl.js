@@ -1705,6 +1705,127 @@ async function ghlLinkedRecordIds({ token, locationId, associationId, contactId,
   return ids;
 }
 
+async function ghlClinicalRecordName({ token, object, recordId, fetchImpl = fetch }) {
+  const body = await ghlJson(
+    `${GHL_API}/objects/${encodeURIComponent(object.key)}/records/${encodeURIComponent(recordId)}`,
+    { token, fetchImpl, version: GHL_V3 }
+  );
+  const record = body.record ?? body;
+  const key = primaryPropertyKey(object);
+  const fullKey = String(object?.primaryDisplayProperty ?? "");
+  return normalizedName(record?.properties?.[key] ?? record?.properties?.[fullKey]);
+}
+
+async function ghlClinicalNamesForKind({
+  token,
+  locationId,
+  contactId,
+  object,
+  fetchImpl = fetch
+}) {
+  if (!object?.key) return { names: [], unavailable: true };
+  const associations = await ghlAssociationsForObject({
+    token,
+    locationId,
+    objectKey: object.key,
+    fetchImpl
+  });
+  const association = contactAssociation(associations, object.key);
+  if (!association?.id) return { names: [], unavailable: true };
+  const recordIds = await ghlLinkedRecordIds({
+    token,
+    locationId,
+    associationId: association.id,
+    contactId,
+    fetchImpl
+  });
+  const records = await Promise.allSettled([...recordIds].map((recordId) => ghlClinicalRecordName({
+    token,
+    object,
+    recordId,
+    fetchImpl
+  })));
+  return {
+    names: [...new Set(records
+      .filter((result) => result.status === "fulfilled")
+      .map((result) => result.value)
+      .filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    unavailable: records.some((result) => result.status === "rejected")
+  };
+}
+
+function maskedClinicalContactFallback(contactQuery) {
+  const text = normalizedName(contactQuery);
+  return /^[\p{L}'’ -]+$/u.test(text) ? maskName(text) : "Client";
+}
+
+export async function ghlGetClinicalProfile({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  environment = {},
+  fetchImpl = fetch
+}) {
+  let contact;
+  try {
+    contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  } catch {
+    return {
+      contact: maskedClinicalContactFallback(contactQuery),
+      providers: [],
+      medications: [],
+      clinicalDataUnavailable: true,
+      internalNote: "CRM clinical data couldn’t be loaded. The review email should still use the empty-file version."
+    };
+  }
+  if (contact.error) return contact;
+
+  try {
+    const objects = await ghlClinicalObjects({ token, locationId, environment, fetchImpl });
+    const [providersResult, medicationsResult] = await Promise.allSettled([
+      ghlClinicalNamesForKind({
+        token,
+        locationId,
+        contactId: contact.id,
+        object: objects.doctors,
+        fetchImpl
+      }),
+      ghlClinicalNamesForKind({
+        token,
+        locationId,
+        contactId: contact.id,
+        object: objects.medications,
+        fetchImpl
+      })
+    ]);
+    const providers = providersResult.status === "fulfilled" ? providersResult.value : { names: [], unavailable: true };
+    const medications = medicationsResult.status === "fulfilled" ? medicationsResult.value : { names: [], unavailable: true };
+    const clinicalDataUnavailable = providers.unavailable || medications.unavailable;
+    return {
+      contact: contact.name,
+      contactId: contact.id,
+      providers: providers.names,
+      medications: medications.names,
+      ...(clinicalDataUnavailable
+        ? {
+            clinicalDataUnavailable: true,
+            internalNote: "Some CRM clinical data couldn’t be loaded. Draft with the available lists and use the empty-file wording for anything missing."
+          }
+        : {})
+    };
+  } catch {
+    return {
+      contact: contact.name,
+      contactId: contact.id,
+      providers: [],
+      medications: [],
+      clinicalDataUnavailable: true,
+      internalNote: "CRM clinical data couldn’t be loaded. The review email should still use the empty-file version."
+    };
+  }
+}
+
 export async function ghlApplyClinicalUpdate(options) {
   const plan = await ghlPrepareClinicalUpdate(options);
   if (plan.error) return plan;
