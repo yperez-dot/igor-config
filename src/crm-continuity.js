@@ -19,6 +19,22 @@ const CRM_TOOLS = new Set([
   "ghl_update_clinical_profile"
 ]);
 
+export const STICKY_CONTACT_TOOLS = new Set([
+  "ghl_search_contacts",
+  "ghl_check_open_leads",
+  "ghl_add_contact_note",
+  "ghl_update_contact",
+  "ghl_manage_contact_tags",
+  "ghl_create_contact_task",
+  "ghl_move_opportunity_stage",
+  "ghl_create_appointment",
+  "ghl_create_contract",
+  "ghl_send_soa_message",
+  "ghl_send_message",
+  "ghl_recent_client_messages",
+  "ghl_update_clinical_profile"
+]);
+
 const AFFIRM_RE = /^(?:yes|yep|yeah|yup|si|sí|ok|okay|do it|go ahead|save(?: it)?|hazlo|dale|correcto|confirmo)(?:\s*(?:please|pls|igor|do it|save it|thanks|thank you))?[.!\s]*$/i;
 const DECLINE_RE = /^(?:no|nope|cancel|never mind|nevermind|don['’]?t|do not|no lo (?:hagas|env[ií]es|mandes)|cancela)(?:\s*(?:it|please|por favor))?[.!\s]*$/i;
 const LOOK_UP_RE = /\blook(?:\s+it)?\s+up\b|\blook(?:\s+her|\s+him|\s+them)?\s+up\b|\bb[uú]sca(?:lo|la|le)?\b|\bfind (?:her|him|them|it)\b/i;
@@ -95,6 +111,16 @@ function last4FromValue(value) {
   return digits.length >= 4 ? digits.slice(-4) : "";
 }
 
+function spokenNameFromArgs(args = {}, fallback = "") {
+  return nameQueryWithoutPhone(
+    args.contactQuery
+    || args.query
+    || args.name
+    || [args.firstName, args.lastName].filter(Boolean).join(" ")
+    || fallback
+  );
+}
+
 function contactFromResult(args = {}, result = {}) {
   if (!result || result.error) {
     return args.contactId ? { contactId: String(args.contactId) } : {};
@@ -137,6 +163,13 @@ function contactFromResult(args = {}, result = {}) {
 export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (!CRM_TOOLS.has(name)) return scratch ?? null;
   const next = { ...(scratch || {}) };
+  if (Array.isArray(scratch?.contacts)) {
+    next.contacts = scratch.contacts.map((entry) => ({ ...entry }));
+  }
+
+  const missingId = result?.notFound ? (result.contactId || args.contactId) : "";
+  if (missingId) return clearStickyContact(next, missingId);
+
   const found = contactFromResult(args, result);
   if (found.contactId) next.contactId = found.contactId;
   if (found.storedName) next.storedName = found.storedName;
@@ -145,8 +178,19 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
 
   const last4 = last4FromValue(args.phone) || last4FromValue(args.contactQuery) || last4FromValue(args.query);
   if (last4) next.phoneLast4 = last4;
-  const spoken = nameQueryWithoutPhone(args.contactQuery || args.query || args.name || args.firstName);
+  const spoken = spokenNameFromArgs(args);
   if (spoken) next.spokenName = spoken;
+
+  if (found.contactId && !result?.error) {
+    upsertHouseholdContact(next, {
+      contactId: found.contactId,
+      spokenName: spoken || next.spokenName || null,
+      storedName: found.storedName || next.storedName || null,
+      firstName: args.firstName || String(spoken || next.spokenName || "").split(/\s+/)[0] || null,
+      role: args.firstName || String(spoken || next.spokenName || "").split(/\s+/)[0] || null,
+      phoneLast4: found.phoneLast4 || next.phoneLast4 || null
+    });
+  }
 
   if (name === "ghl_check_open_leads") next.goal = "open_leads";
   if (name === "ghl_add_contact_note") next.goal = "add_note";
@@ -156,6 +200,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_move_opportunity_stage") next.goal = "move_pipeline_stage";
   if (name === "ghl_send_message") next.goal = "send_client_message";
   if (name === "ghl_send_soa_message") next.goal = "send_soa";
+  if (name === "ghl_update_clinical_profile") next.goal = next.goal || "clinical";
 
   if (name === "ghl_add_contact_note") {
     if (result.needsConfirmation && result.proposed?.body) {
@@ -274,6 +319,22 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
     }
   }
 
+  if (name === "ghl_update_clinical_profile") {
+    if (result.needsConfirmation && (result.proposed?.doctors || result.proposed?.medications)) {
+      next.pending = {
+        tool: "ghl_update_clinical_profile",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          contactId: result.proposed.contactId || next.contactId || args.contactId,
+          doctors: result.proposed.doctors ?? args.doctors ?? [],
+          medications: result.proposed.medications ?? args.medications ?? []
+        }
+      };
+    } else if (result.updated) {
+      next.pending = null;
+    }
+  }
+
   return next;
 }
 
@@ -302,18 +363,28 @@ export function lookupArgsFromScratch(scratch) {
 }
 
 export function formatActiveCrmTask(scratch) {
-  if (!scratch || (!scratch.contactId && !scratch.phoneLast4 && !scratch.pending && !scratch.spokenName)) {
+  const roster = householdContacts(scratch);
+  if (!scratch || (!scratch.contactId && !scratch.phoneLast4 && !scratch.pending && !scratch.spokenName && !roster.length)) {
     return "";
   }
   const lines = [
     "## Active CRM task (this Telegram chat)",
     "Follow this job. Do not reset. Do not re-ask for a GHL contact id or last-4 already listed here.",
+    "This-chat / Active CRM contact ids win over name search after create or any successful resolve. Never ask the user to paste an id Igor just created in this thread.",
     `- Contact id: ${scratch.contactId || "(none yet — use last-4 or the latest tool result)"}`,
     `- Spoken name: ${scratch.spokenName || "(not set)"}`,
     `- Stored name: ${scratch.storedName || "(not set)"}`,
     `- Last-4: ${scratch.phoneLast4 || "(not given)"}`,
     `- Goal: ${scratch.goal || "crm"}`
   ];
+  if (roster.length) {
+    lines.push("- Sticky this-chat contacts (keyed by name/role; use these ids, do not re-search by name):");
+    for (const entry of roster) {
+      const label = entry.storedName || entry.spokenName || entry.role || "contact";
+      const role = entry.role && entry.role !== label ? ` / ${entry.role}` : "";
+      lines.push(`  - ${label}${role}: ${entry.contactId}`);
+    }
+  }
   if (scratch.nameMismatch) {
     lines.push("- Latest search: nameMismatch on a unique phone hit. Use this contact id, rename if needed, then continue.");
   }
@@ -351,7 +422,18 @@ export function formatActiveCrmTask(scratch) {
     lines.push(`- Pending SOA: ${scratch.pending.args?.snippetName || "approved snippet"} (waiting for yes/sí).`);
     lines.push("Never say sent unless the result has sent=true and messageId.");
   }
-  lines.push("Look it up = use this contact id, then last-4, then name. Never ask them to paste a GHL contact id when any of those exist.");
+  if (scratch.pending?.tool === "ghl_update_clinical_profile") {
+    const args = scratch.pending.args || {};
+    const doctors = (args.doctors ?? []).join(", ") || "(none)";
+    const medications = (args.medications ?? []).join(", ") || "(none)";
+    lines.push(`- Pending clinical write (${scratch.pending.approved ? "already approved — save it" : "previewed, waiting for yes"}):`);
+    lines.push(`  doctors: ${doctors}`);
+    lines.push(`  medications: ${medications}`);
+    lines.push("If they say yes/sí/ok/do it, CALL ghl_update_clinical_profile with confirmed=true on this same draft and the sticky contact id. Do not re-search by name.");
+  }
+  lines.push("Look it up = use this-chat sticky contact id(s), then last-4, then name. Never ask them to paste a GHL contact id created or resolved in this chat.");
+  lines.push("Clinical writes and contact notes MUST pass the sticky contactId for that person. Do not re-search by name when a this-chat id exists. On write failure, retry that same id — never attach a lookalike from name search.");
+  lines.push("If a sticky id GET is 404, that entry is cleared — ask once which contact, and never invent a different one.");
   lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
   lines.push("A name correction updates this contact (ghl_update_contact), then finishes the pending note or Open Leads check.");
   lines.push("CRM notes stay in GHL. Never say NOTION UPDATED for a contact note.");
@@ -398,6 +480,109 @@ function namesOverlap(left, right) {
   const aLast = aParts.slice(1).join(" ");
   const bLast = bParts.slice(1).join(" ");
   return aLast === bLast || aLast[0] === bLast[0];
+}
+
+export function householdContacts(scratch) {
+  const list = Array.isArray(scratch?.contacts)
+    ? scratch.contacts.filter((entry) => entry?.contactId)
+    : [];
+  if (list.length) return list.map((entry) => ({ ...entry }));
+  if (scratch?.contactId) {
+    return [{
+      contactId: scratch.contactId,
+      spokenName: scratch.spokenName || null,
+      storedName: scratch.storedName || null,
+      firstName: String(scratch.spokenName || "").split(/\s+/)[0] || null,
+      role: String(scratch.spokenName || "").split(/\s+/)[0] || null,
+      phoneLast4: scratch.phoneLast4 || null
+    }];
+  }
+  return [];
+}
+
+export function upsertHouseholdContact(scratch, entry) {
+  if (!scratch || !entry?.contactId) return scratch;
+  const roster = householdContacts(scratch);
+  let idx = roster.findIndex((item) => item.contactId === entry.contactId);
+  if (idx < 0 && (entry.spokenName || entry.storedName || entry.role)) {
+    const hint = entry.spokenName || entry.storedName || entry.role;
+    const hits = roster
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) =>
+        namesOverlap(hint, item.spokenName)
+        || namesOverlap(hint, item.storedName)
+        || namesOverlap(hint, item.role)
+      );
+    if (hits.length === 1) idx = hits[0].index;
+  }
+  const previous = idx >= 0 ? roster[idx] : {};
+  const merged = {
+    contactId: entry.contactId,
+    spokenName: entry.spokenName || previous.spokenName || null,
+    storedName: entry.storedName || previous.storedName || null,
+    firstName: entry.firstName || previous.firstName || null,
+    role: entry.role || entry.firstName || previous.role || previous.firstName || null,
+    phoneLast4: entry.phoneLast4 || previous.phoneLast4 || null
+  };
+  if (idx >= 0) roster[idx] = { ...previous, ...merged };
+  else roster.push(merged);
+  scratch.contacts = roster;
+  return scratch;
+}
+
+export function clearStickyContact(scratch, contactId) {
+  const id = String(contactId ?? "").trim();
+  const next = { ...(scratch || {}) };
+  const roster = householdContacts(next).filter((entry) => entry.contactId !== id);
+  next.contacts = roster;
+  if (next.contactId === id) {
+    const remaining = roster[0];
+    next.contactId = remaining?.contactId ?? null;
+    next.storedName = remaining?.storedName ?? null;
+    next.spokenName = remaining?.spokenName ?? null;
+    next.phoneLast4 = remaining?.phoneLast4 ?? null;
+  }
+  if (next.pending?.args?.contactId === id) {
+    next.pending = null;
+  }
+  next.stickyCleared = id;
+  return next;
+}
+
+export function stickyContactFor(scratch, args = {}, userText = "") {
+  const roster = householdContacts(scratch);
+  if (!roster.length) return null;
+  const explicitId = String(args.contactId ?? "").trim();
+  if (explicitId) {
+    return roster.find((entry) => entry.contactId === explicitId) || { contactId: explicitId };
+  }
+  const hint = spokenNameFromArgs(args) || extractNamedContact(userText);
+  if (hint) {
+    const hits = roster.filter((entry) =>
+      namesOverlap(hint, entry.spokenName)
+      || namesOverlap(hint, entry.storedName)
+      || namesOverlap(hint, entry.role)
+      || namesOverlap(hint, entry.firstName)
+    );
+    if (hits.length === 1) return hits[0];
+    return null;
+  }
+  if (roster.length === 1) return roster[0];
+  if (isThreadContactReference(userText) && scratch?.contactId) {
+    return roster.find((entry) => entry.contactId === scratch.contactId) || { contactId: scratch.contactId };
+  }
+  return null;
+}
+
+export function bindStickyContactArgs(scratch, toolName, args = {}, userText = "") {
+  const next = { ...(args || {}) };
+  if (!STICKY_CONTACT_TOOLS.has(toolName)) return next;
+  const sticky = stickyContactFor(scratch, next, userText);
+  if (!sticky?.contactId) return next;
+  next.contactId = sticky.contactId;
+  delete next.contactQuery;
+  delete next.query;
+  return next;
 }
 
 const NON_NAME_FOLLOW_WORD_RE = /^(?:due|tomorrow|today|tonight|at|on|for|with|please|pls)$/i;
@@ -531,6 +716,17 @@ function noteWriteArgs(scratch) {
   };
 }
 
+function clinicalWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_update_clinical_profile") return null;
+  const sticky = stickyContactFor(scratch, pending.args || {});
+  return {
+    ...pending.args,
+    contactId: sticky?.contactId || scratch.contactId || pending.args?.contactId,
+    confirmed: true
+  };
+}
+
 function contactWriteArgs(scratch) {
   const pending = scratch?.pending;
   if (pending?.tool !== "ghl_create_contact") return null;
@@ -564,10 +760,25 @@ function toolError(result) {
 }
 
 async function savePendingNote(scratch, executeTool) {
-  const args = noteWriteArgs(scratch);
+  const args = bindStickyContactArgs(scratch, "ghl_add_contact_note", noteWriteArgs(scratch) || {});
   if (!args?.body) return { scratch, result: null };
   const result = await executeTool("ghl_add_contact_note", args);
   const next = applyCrmToolResult({ ...scratch, pending: { ...scratch.pending, approved: true } }, "ghl_add_contact_note", args, result);
+  return { scratch: next, result };
+}
+
+async function savePendingClinical(scratch, executeTool) {
+  const args = bindStickyContactArgs(scratch, "ghl_update_clinical_profile", clinicalWriteArgs(scratch) || {});
+  if (!args?.contactId || (!(args.doctors ?? []).length && !(args.medications ?? []).length)) {
+    return { scratch, result: null };
+  }
+  const result = await executeTool("ghl_update_clinical_profile", args);
+  const next = applyCrmToolResult(
+    { ...scratch, pending: { ...scratch.pending, approved: true } },
+    "ghl_update_clinical_profile",
+    args,
+    result
+  );
   return { scratch: next, result };
 }
 
@@ -657,13 +868,13 @@ export async function maybeContinueCrmTask({
 
   const correction = parseNameCorrection(text);
   if (correction && (merged.contactId || merged.phoneLast4)) {
-    const renameArgs = {
+    const renameArgs = bindStickyContactArgs(merged, "ghl_update_contact", {
       contactId: merged.contactId,
       phone: merged.phoneLast4,
       firstName: correction.firstName,
       ...(correction.lastName ? { lastName: correction.lastName } : {}),
       confirmed: true
-    };
+    });
     const renamed = await executeTool("ghl_update_contact", renameArgs);
     let next = applyCrmToolResult(merged, "ghl_update_contact", renameArgs, renamed);
     if (renamed?.error) {
@@ -697,11 +908,11 @@ export async function maybeContinueCrmTask({
 
   if (isLookItUp(text) && lookupArgsFromScratch(merged)) {
     const args = lookupArgsFromScratch(merged);
-    const searchArgs = {
+    const searchArgs = bindStickyContactArgs(merged, "ghl_search_contacts", {
       ...(args.contactId ? { contactId: args.contactId } : {}),
       ...(args.phone ? { phone: args.phone } : {}),
       ...(args.query ? { query: args.query } : {})
-    };
+    });
     const found = await executeTool("ghl_search_contacts", searchArgs);
     let next = applyCrmToolResult(merged, "ghl_search_contacts", searchArgs, found);
     const hit = found?.contacts?.[0];
@@ -716,11 +927,11 @@ export async function maybeContinueCrmTask({
     }
     let openLine = "";
     if (next.goal === "open_leads" || /open leads/i.test(String(text))) {
-      const check = await executeTool("ghl_check_open_leads", {
+      const check = await executeTool("ghl_check_open_leads", bindStickyContactArgs(next, "ghl_check_open_leads", {
         contactId: next.contactId,
         phone: next.phoneLast4,
         contactQuery: next.spokenName
-      });
+      }));
       next = applyCrmToolResult(next, "ghl_check_open_leads", args, check);
       if (check?.status === "on_list") openLine = " They’re on Open Leads.";
       else if (check?.status === "not_on_list") openLine = " They’re not on Open Leads.";
@@ -740,6 +951,30 @@ export async function maybeContinueCrmTask({
     return {
       scratch: next,
       reply: "No GHL match on the contact id / last-4 already in this chat. I’m not going to ask you to paste a contact id — I’ll keep the draft and retry with the identifiers we already have."
+    };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_update_clinical_profile") {
+    const nextApproved = {
+      ...merged,
+      pending: { ...merged.pending, approved: true }
+    };
+    const saved = await savePendingClinical(nextApproved, executeTool);
+    if (saved.result?.updated) {
+      return {
+        scratch: saved.scratch,
+        reply: `Saved the approved doctors and medications on ${displayName(saved.scratch)} in GHL.`
+      };
+    }
+    if (saved.result?.notFound) {
+      return {
+        scratch: saved.scratch,
+        reply: `That this-chat GHL contact id is gone (404). I cleared it and will not attach this to a different person. Tell me which contact to use — I will not invent another Pablo from name search.`
+      };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: `Couldn’t save that clinical update — ${toolError(saved.result)}. I’ll retry the sticky this-chat contact id and will not search lookalikes by name. I don’t need you to paste a GHL id.`
     };
   }
 
@@ -875,7 +1110,7 @@ export async function maybeContinueCrmTask({
       };
     }
     if (previewPlan.args) {
-      const args = previewPlan.args;
+      const args = bindStickyContactArgs(merged, "ghl_create_contact_task", previewPlan.args, text);
       const preview = await executeTool("ghl_create_contact_task", args);
       const next = applyCrmToolResult(merged, "ghl_create_contact_task", args, preview);
       if (preview?.needsConfirmation && preview.proposed?.title) {
