@@ -68,6 +68,7 @@ function fixture(calls = []) {
     if (target.includes("/proposals/templates?")) return json({ data: [{ id: "template-1", name: "Agent Contract", type: "proposal" }] });
     if (target.endsWith("/contacts/contact-1/tags")) return json({ tags: ["lead", "contract-sent"] }, 201);
     if (target.endsWith("/contacts/contact-1/notes")) return json({ note: { id: "note-1" } }, 201);
+    if (target.endsWith("/contacts/contact-new/notes")) return json({ note: { id: "note-new" } }, 201);
     if (target.endsWith("/contacts/contact-1/tasks")) return json({ task: { id: "task-1" } }, 201);
     if (target.includes("/calendars/?")) return json({ calendars: [{ id: "calendar-1", name: "Jane's Personal Calendar", calendarType: "personal", slotDuration: 30, teamMembers: [{ userId: "user-1" }] }] });
     if (target.endsWith("/calendars/events/appointments")) return json({ id: "appointment-1" });
@@ -142,6 +143,38 @@ test("confirmed GHL contact create writes Michelle and returns the new id", asyn
     assignedTo: DEFAULT_GHL_OWNER_IDS.yahoska
   });
   assert.equal(looksLikeGhlUserId(write.body.assignedTo), true);
+});
+
+test("one approval creates a new lead and its requested note", async () => {
+  const calls = [];
+  const args = { name: "Maria Arce", phone: "+13055556993", assignedTo: "Katy", noteBody: "Called and left voicemail" };
+  const preview = await executeTool("ghl_create_contact", args, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(preview.needsConfirmation, true);
+  assert.deepEqual(preview.proposed.note, { body: "Called and left voicemail" });
+  assert.equal(calls.some((call) => call.method === "POST" && call.target.includes("/contacts/")), false);
+
+  const result = await executeTool("ghl_create_contact", { ...args, confirmed: true }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+  assert.equal(result.created, true);
+  assert.equal(result.noteCreated, true);
+  assert.equal(result.noteId, "note-new");
+  assert.equal(calls.filter((call) => call.method === "POST" && call.target.endsWith("/contacts/")).length, 1);
+  assert.deepEqual(calls.find((call) => call.target.endsWith("/contacts/contact-new/notes")).body, { body: "Called and left voicemail" });
+});
+
+test("a note failure reports partial success without creating another contact", async () => {
+  const calls = [];
+  const normal = fixture(calls);
+  const result = await executeTool("ghl_create_contact", {
+    name: "Maria Arce", noteBody: "Called and left voicemail", confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: async (url, options) => {
+    if (String(url).endsWith("/contacts/contact-new/notes")) throw new Error("GHL unavailable");
+    return normal(url, options);
+  } });
+  assert.equal(result.created, true);
+  assert.equal(result.contactId, "contact-new");
+  assert.equal(result.noteCreated, false);
+  assert.match(result.noteError, /not confirm/i);
+  assert.equal(calls.filter((call) => call.method === "POST" && call.target.endsWith("/contacts/")).length, 1);
 });
 
 test("GHL contact create normalizes active prospect aliases onto Open Leads", async () => {
