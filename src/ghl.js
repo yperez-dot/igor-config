@@ -1074,6 +1074,8 @@ export async function ghlPrepareCreateContact({
   phone,
   email,
   tags,
+  noteBody,
+  noteTitle,
   assignedTo,
   owner,
   ownerIds,
@@ -1084,6 +1086,9 @@ export async function ghlPrepareCreateContact({
   const cleanEmail = String(email ?? "").trim();
   if (cleanEmail && !cleanEmail.includes("@")) return { error: "That email does not look valid." };
   const cleanPhone = String(phone ?? "").trim();
+  const cleanNote = String(noteBody ?? "").trim();
+  if (cleanNote.length > 5_000) return { error: "The note is too long. Keep it under 5,000 characters." };
+  const cleanNoteTitle = String(noteTitle ?? "").trim().slice(0, 160);
   const ids = ownerIds ?? ghlOwnerIds();
   const resolved = await resolveGhlAssignedTo({
     assignedTo,
@@ -1112,6 +1117,7 @@ export async function ghlPrepareCreateContact({
   return {
     contact,
     payload,
+    note: cleanNote ? { body: cleanNote, ...(cleanNoteTitle ? { title: cleanNoteTitle } : {}) } : null,
     preview: {
       name: maskName(displayName),
       firstName: contact.firstName,
@@ -1119,6 +1125,7 @@ export async function ghlPrepareCreateContact({
       phoneLast4: last4(cleanPhone),
       emailDomain: emailDomain(cleanEmail),
       tags: normalizedTags,
+      ...(cleanNote ? { note: { body: cleanNote, ...(cleanNoteTitle ? { title: cleanNoteTitle } : {}) } } : {}),
       assignedTo: assignee,
       ownerName: resolved.ownerName ?? null,
       ...(resolved.defaulted ? { ownerDefaulted: true } : {}),
@@ -1138,10 +1145,28 @@ export async function ghlCreateContact(options) {
     body: plan.payload
   });
   const created = result.contact ?? result;
+  let noteResult = {};
+  if (created.id && plan.note) {
+    try {
+      const saved = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(created.id)}/notes`, {
+        token: options.token,
+        fetchImpl: options.fetchImpl,
+        version: GHL_V3,
+        method: "POST",
+        body: plan.note
+      });
+      noteResult = saved.note?.id
+        ? { noteCreated: true, noteId: saved.note.id }
+        : { noteCreated: false, noteError: "GHL did not return a note confirmation." };
+    } catch {
+      noteResult = { noteCreated: false, noteError: "GHL did not confirm the note. Check the contact before retrying to avoid a duplicate note." };
+    }
+  }
   return {
     created: Boolean(created.id),
     contactId: created.id ?? null,
     contact: maskName(contactDisplayName(created) || plan.contact.name),
+    ...noteResult,
     assignedTo: created.assignedTo ?? plan.payload.assignedTo ?? null,
     tags: created.tags ?? plan.payload.tags ?? []
   };
