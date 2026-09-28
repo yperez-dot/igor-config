@@ -188,6 +188,8 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
           ...(args.name ? { name: args.name } : {}),
           ...(args.phone ? { phone: args.phone } : {}),
           ...(args.email ? { email: args.email } : {}),
+          ...(args.noteBody ? { noteBody: args.noteBody } : {}),
+          ...(args.noteTitle ? { noteTitle: args.noteTitle } : {}),
           ...(Array.isArray(args.tags) ? { tags: args.tags } : {}),
           ...(result.proposed?.assignedTo || args.assignedTo
             ? { assignedTo: result.proposed?.assignedTo || args.assignedTo }
@@ -196,7 +198,9 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
         }
       };
     } else if (result.created) {
-      next.pending = null;
+      next.pending = args.noteBody && result.noteCreated === false
+        ? { tool: "ghl_add_contact_note", approved: true, args: { contactId: result.contactId, body: args.noteBody, ...(args.noteTitle ? { title: args.noteTitle } : {}) } }
+        : null;
     }
   }
 
@@ -334,6 +338,7 @@ export function formatActiveCrmTask(scratch) {
     const args = scratch.pending.args || {};
     const name = args.name || [args.firstName, args.lastName].filter(Boolean).join(" ") || scratch.spokenName || "the new contact";
     lines.push(`- Pending contact (${scratch.pending.approved ? "already approved — create it" : "previewed, waiting for yes"}): ${name}`);
+    if (args.noteBody) lines.push(`  note: ${String(args.noteBody).slice(0, 5_000)}`);
     lines.push("If they say yes/sí/ok/do it, CALL ghl_create_contact once with confirmed=true using this exact saved draft. Do not reconstruct it from chat and do not create a second contact.");
   }
   if (scratch.pending?.tool === "ghl_move_opportunity_stage") {
@@ -770,9 +775,17 @@ export async function maybeContinueCrmTask({
     };
     const saved = await savePendingContact(nextApproved, executeTool);
     if (saved.result?.created) {
+      if (saved.result.noteCreated === false) {
+        return {
+          scratch: saved.scratch,
+          reply: `Created ${displayName(saved.scratch, "the contact")} in GHL, but the note was not confirmed. I kept the approved note draft on this contact for a safe follow-up. ${saved.result.noteError || "Check the contact before retrying."}`
+        };
+      }
       return {
         scratch: saved.scratch,
-        reply: `Created ${displayName(saved.scratch, "the contact")} in GHL. I saved the contact id, so the intake can continue without starting over. Send me the enrollment/referral note next; after that I can check Open Leads and offer the SOA.`
+        reply: saved.result.noteCreated
+          ? `Created ${displayName(saved.scratch, "the contact")} in GHL and saved the note. I saved the contact id, so the intake can continue without starting over.`
+          : `Created ${displayName(saved.scratch, "the contact")} in GHL. I saved the contact id, so the intake can continue without starting over. Send me the enrollment/referral note next; after that I can check Open Leads and offer the SOA.`
       };
     }
     return {
