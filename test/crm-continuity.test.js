@@ -626,6 +626,38 @@ test("contact preview survives to a later sí and creates only the saved draft",
   assert.match(result.reply, /note next/i);
 });
 
+test("contact plus note survives approval as one intake with no second prompt", async () => {
+  const draft = applyCrmToolResult(null, "ghl_create_contact", {
+    name: "Maria Arce", phone: "3055556993", noteBody: "Called and left voicemail", assignedTo: "Katy"
+  }, { needsConfirmation: true, proposed: { firstName: "Maria", note: { body: "Called and left voicemail" } } });
+  assert.match(formatActiveCrmTask(draft), /Called and left voicemail/);
+  const saved = await maybeContinueCrmTask({
+    text: "yes", scratch: draft, speaker: yahoska,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_create_contact");
+      assert.equal(args.noteBody, "Called and left voicemail");
+      assert.equal(args.confirmed, true);
+      return { created: true, contactId: "contact-maria", contact: "Maria A.", noteCreated: true };
+    }
+  });
+  assert.match(saved.reply, /saved the note/i);
+  assert.equal(saved.scratch.pending, null);
+});
+
+test("partial contact success retains the already approved note on the new id", async () => {
+  const draft = applyCrmToolResult(null, "ghl_create_contact", {
+    name: "Maria Arce", noteBody: "Called and left voicemail"
+  }, { needsConfirmation: true, proposed: { firstName: "Maria" } });
+  const saved = await maybeContinueCrmTask({
+    text: "yes", scratch: draft, speaker: yahoska,
+    executeTool: async () => ({ created: true, contactId: "contact-maria", contact: "Maria A.", noteCreated: false })
+  });
+  assert.match(saved.reply, /note was not confirmed/i);
+  assert.equal(saved.scratch.pending.tool, "ghl_add_contact_note");
+  assert.equal(saved.scratch.pending.args.contactId, "contact-maria");
+  assert.equal(saved.scratch.pending.approved, true);
+});
+
 test("client message preview declines without send", async () => {
   const preview = applyCrmToolResult(null, "ghl_send_message", {}, {
     needsConfirmation: true,

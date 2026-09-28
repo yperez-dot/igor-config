@@ -259,7 +259,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_create_contact", "Create a new GHL contact. First call previews the exact name, optional phone/email, tags, and owner; write only after Yahoska, Katy, or Carolina confirms. Returns the new contact id. Open Leads is the GHL smart list for tag active_prospect (underscore). New AEP/prospect creates default to active_prospect and prospect; never use 'active prospect' (space) or active-prospect.", {
+      functionTool("ghl_create_contact", "Create a new GHL contact, including its note when the user supplied one in the same intake. Pass noteBody with the contact; preview both together and one approval saves both. Do not ask for a second approval for the requested note. Returns the new contact id and noteCreated when applicable. If noteCreated is false, report the partial result clearly; never create the contact again. Open Leads is the GHL smart list for tag active_prospect (underscore). New AEP/prospect creates default to active_prospect and prospect; never use 'active prospect' (space) or active-prospect.", {
         type: "object",
         properties: {
           firstName: { type: "string", description: "Given name. Required unless name is provided." },
@@ -267,6 +267,8 @@ export function grokTools(environment = process.env) {
           name: { type: "string", description: "Full name when first/last are not split. A first name like Michelle is enough." },
           phone: { type: "string", description: "Optional phone number." },
           email: { type: "string", description: "Optional email address." },
+          noteBody: { type: "string", description: "Complete GHL note requested as part of creating this contact. Include it in the same approval." },
+          noteTitle: { type: "string", description: "Optional note title." },
           tags: { type: "array", items: { type: "string" }, description: "GHL tags. Open Leads uses active_prospect (underscore). Aliases like 'active prospect' or active-prospect normalize to active_prospect. New AEP/prospect creates default to active_prospect and prospect." },
           assignedTo: { type: "string", description: "Optional owner. Accepts a GHL user id, email, or name (Yahoska, Katy, Carolina, YP). Names and emails resolve to user ids. Defaults to Yahoska." },
           owner: { type: "string", description: "Alias for assignedTo. Display names are resolved to GHL user ids; never sent raw." },
@@ -1226,6 +1228,8 @@ export async function executeTool(name, rawArgs, {
         name: args.name,
         phone: args.phone,
         email: args.email,
+        noteBody: args.noteBody,
+        noteTitle: args.noteTitle,
         tags: args.tags,
         assignedTo: args.assignedTo,
         owner: args.owner,
