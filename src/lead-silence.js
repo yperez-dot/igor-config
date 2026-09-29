@@ -6,6 +6,16 @@ const CLOSED_STATES = new Set(["completed", "enrolled", "not_interested", "close
 const MAX_NAMED_LEADS = 5;
 const PRIORITY = { overdue: 0, due_today: 1, unscheduled: 2, scheduled: 3 };
 const LEDGER_ADVANCING_RE = /\b(called|spoke(?: with)?|talked(?: with| to)?|texted|emailed|left (?:a )?(?:note|voicemail|message)|added (?:a )?note|updated?(?: (?:them|her|him|it|the (?:lead|note)) )?(?:in )?ghl|logged|reached|no answer|enrolled|not interested|remind me|still waiting|select(?:ed)? a plan)\b/i;
+const NON_NAME_LEAD_WORDS = new Set(["add", "call", "client", "contact", "do", "follow", "ghl", "how", "lead", "please", "remind", "report", "reports", "seo", "this", "use", "what", "wife", "you"]);
+
+export function isCheckinPersonLabel(subject) {
+  const raw = String(subject ?? "").trim();
+  if (!raw || raw.length > 80 || /[?\d:]/.test(raw)) return false;
+  const words = raw.split(/\s+/);
+  return words.length <= 4 && words.every((word) =>
+    /^[\p{L}][\p{L}'’.-]*$/u.test(word) && !NON_NAME_LEAD_WORDS.has(word.toLowerCase().replace(/[.'’]/g, ""))
+  );
+}
 
 function compactLeadField(value, maxLength) {
   const text = String(value ?? "")
@@ -110,7 +120,7 @@ export function selectUntouchedLeads(leads = [], {
   const wanted = Array.isArray(subjects) && subjects.length
     ? leads.filter((lead) => subjects.some((subject) => mentionsLead(lead.subject, subject) || mentionsLead(subject, lead.subject)))
     : leads;
-  const untouched = wanted.filter((lead) => isLeadUntouched(lead, { since, ghlLeads, chatTurns }));
+  const untouched = wanted.filter((lead) => isCheckinPersonLabel(lead.subject) && isLeadUntouched(lead, { since, ghlLeads, chatTurns }));
   const sorted = [...untouched].sort((a, b) => {
     const priority = PRIORITY[leadTimingBucket(a, now)] - PRIORITY[leadTimingBucket(b, now)];
     if (priority) return priority;
