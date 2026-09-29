@@ -203,6 +203,32 @@ test("create GHL task strips calendar writes and forces the CRM task tool", asyn
   assert.match(reply, /Previewing the GHL task/);
 });
 
+test("quoted Open Leads check-in reaches read-only assistant without calendar booking", async () => {
+  const store = memoryStore();
+  const calls = [];
+  let request;
+  const messageText = "Igor how are these open leads?? JUST CHECKING IN\nI don't see updates yet on these open leads: Tomas — follow up. Has anything happened? Reply with an update (or ‘still waiting / remind me Friday 10’) and I'll keep the ledger current.";
+  const reply = await handleTelegramChat({
+    store,
+    environment: { TELEGRAM_YAHOSKA_USER_ID: "8882265752" },
+    message: { chatId: 1, senderId: "8882265752", text: messageText },
+    askGrok: async (input) => { request = input; return "I have no new confirmed update for Tomas yet."; },
+    tools: [
+      { type: "function", function: { name: "ghl_list_personal_open_leads" } },
+      { type: "function", function: { name: "calendar_create_event" } }
+    ],
+    executeTool: async (name) => { calls.push(name); throw new Error("No write was requested"); },
+    sendTelegramMessage: async () => {},
+    botToken: "token", apiKey: "xai", model: "grok-4.6",
+    isPlanRecommendationRequest, recommendationRefusal,
+    unavailableMessage: () => "offline"
+  });
+  assert.deepEqual(calls, []);
+  assert.deepEqual(request.tools.map((tool) => tool.function.name), ["ghl_list_personal_open_leads"]);
+  assert.match(request.systemPrompt, /quoted 'remind me Friday 10'/i);
+  assert.match(reply, /no new confirmed update/i);
+});
+
 test("add a task for me tomorrow books that person's calendar, not a GHL task", async () => {
   const store = memoryStore();
   const toolCalls = [];
