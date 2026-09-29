@@ -65,6 +65,16 @@ function ledgerStore() {
   };
 }
 
+test("quoted lead check-in does not turn example reminder text into a scheduled job", async () => {
+  const store = ledgerStore();
+  const text = "Igor how are these open leads?? JUST CHECKING IN\nTomas — follow up. Has anything happened? Reply with an update (or ‘still waiting / remind me Friday 10’) and I'll keep the ledger current.";
+  assert.equal(isLeadReminderRequest(text), false);
+  const result = await maybeScheduleLeadReminder({ text, store, chatId: "1", senderId: "1" });
+  assert.equal(result, null);
+  assert.equal(store.tasks.length, 0);
+  assert.equal(store.memories.length, 0);
+});
+
 test("parses tomorrow at 11 in Eastern time", () => {
   const now = new Date("2026-09-09T21:00:00Z");
   assert.equal(parseReminderRunAt("remind me tomorrow at 11 am", { now }).toISOString(), "2026-09-10T15:00:00.000Z");

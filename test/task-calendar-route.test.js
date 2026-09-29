@@ -127,6 +127,20 @@ test("personal reminder tool choice forces calendar_create_event", () => {
   assert.match(taskCalendarRoutingPrompt(text), /personal reminder/i);
 });
 
+test("a quoted Open Leads check-in asks for status without creating a calendar hold", () => {
+  const text = "Igor how are these open leads?? JUST CHECKING IN\nI don't see updates yet on these open leads: Tomas — follow up. Has anything happened? Reply with an update (or ‘still waiting / remind me Friday 10’) and I'll keep the ledger current.";
+  const tools = [
+    { type: "function", function: { name: "ghl_list_personal_open_leads" } },
+    { type: "function", function: { name: "calendar_create_event" } }
+  ];
+  assert.equal(isPersonalReminderRequest(text), false);
+  assert.equal(isPersonalOpsReminderRequest(text), false);
+  assert.equal(blocksCalendarWrite(text), true);
+  assert.deepEqual(toolsForUserRequest(tools, text).map((tool) => tool.function.name), ["ghl_list_personal_open_leads"]);
+  assert.equal(toolChoiceForUserRequest(text, tools), "auto");
+  assert.match(taskCalendarRoutingPrompt(text), /quoted 'remind me Friday 10'/i);
+});
+
 test("calendar write tools are stripped and GHL task is forced for create-task turns", () => {
   const tools = [
     { type: "function", function: { name: "ghl_create_contact_task" } },

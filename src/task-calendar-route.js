@@ -11,6 +11,16 @@ const SMOKE_LEAD_RE = /\b(?:smoke\s*test|test\s+contact|qa\s+test|dummy\s+(?:con
 const FOLLOWUP_TIMING_RE = /\b(?:today|tomorrow|tonight|next\s+week|sunday|monday|tuesday|wednesday|thursday|friday|saturday|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 const GHL_PIPELINE_MOVE_RE = /\b(?:move|advance|update)\b.{0,80}\b(?:pipeline|stage|to)\b|\b(?:mueve|mover|actualiza|cambia)\b.{0,80}\b(?:pipeline|etapa|a)\b|\b(?:enrolled|enrolled|no answer)\b.{0,40}\b(?:pipeline|stage|update)\b/i;
 
+// The lead-check-in template includes “remind me Friday 10” as an example
+// response. When someone quotes that template to ask for status, it is not a
+// request to create a personal reminder.
+export function isQuotedLeadCheckinStatusRequest(text) {
+  const raw = String(text ?? "");
+  return /\b(?:how are these open leads|just checking in)\b/i.test(raw)
+    && /\bopen leads\b/i.test(raw)
+    && /\breply with an update\b/i.test(raw);
+}
+
 export const CALENDAR_WRITE_TOOLS = new Set([
   "calendar_create_event",
   "calendar_update_event",
@@ -24,6 +34,7 @@ export function hasGhlContactTaskQualifier(text) {
 export function isPersonalReminderRequest(text) {
   const raw = String(text ?? "");
   if (!raw.trim()) return false;
+  if (isQuotedLeadCheckinStatusRequest(raw)) return false;
   if (PERSONAL_FOR_ME_RE.test(raw)) return true;
   return PERSONAL_REMIND_RE.test(raw);
 }
@@ -84,6 +95,7 @@ export function resolveTaskCalendarRoute(text) {
 
 export function blocksCalendarWrite(text) {
   const raw = String(text ?? "");
+  if (isQuotedLeadCheckinStatusRequest(raw)) return true;
   if (GHL_APPOINTMENT_RE.test(raw)) return true;
   const route = resolveTaskCalendarRoute(raw);
   return route === "ghl_task" || route === "ghl_task_prefer";
@@ -96,6 +108,7 @@ export function toolsForUserRequest(tools, text) {
 
 export function toolChoiceForUserRequest(text, tools = []) {
   const names = (tools ?? []).map((tool) => tool?.function?.name ?? tool?.name);
+  if (isQuotedLeadCheckinStatusRequest(text)) return "auto";
   if (isGhlPipelineMoveRequest(text) && names.includes("ghl_move_opportunity_stage")) {
     return { type: "function", function: { name: "ghl_move_opportunity_stage" } };
   }
@@ -110,6 +123,15 @@ export function toolChoiceForUserRequest(text, tools = []) {
 }
 
 export function taskCalendarRoutingPrompt(text) {
+  if (isQuotedLeadCheckinStatusRequest(text)) {
+    return [
+      "## Hard routing for this turn",
+      "The user quoted Igor's Open Leads check-in and is asking for a status update.",
+      "The quoted 'remind me Friday 10' is an example reply, not a calendar request.",
+      "Check available lead records read-only. Distinguish the reminder ledger from GHL and do not invent new activity.",
+      "Do not create a calendar event, personal reminder, GHL task, or new lead."
+    ].join("\n");
+  }
   if (isGhlPipelineMoveRequest(text)) {
     return [
       "## Hard routing for this turn",

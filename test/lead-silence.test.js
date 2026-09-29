@@ -9,6 +9,7 @@ import { LEAD_LIVE_SCHEDULE_IDS, LIVE_SCHEDULE_IDS, legacySchedules } from "../s
 import {
   afternoonSilenceText,
   easternDayStart,
+  isCheckinPersonLabel,
   isLeadUntouched,
   leadCheckinPhase,
   previousEasternDayKey,
@@ -79,19 +80,34 @@ test("afternoon copy names quiet leads, caps at five, and skips empty lists", ()
   assert.doesNotMatch(single, /from this morning/);
   assert.doesNotMatch(single, /didn['’]t (?:reply|answer)/i);
 
+  const names = ["Alice", "Betty", "Carlos", "Diana", "Elena", "Frank", "Gina"];
   const many = Array.from({ length: 7 }, (_, index) => lead({
-    subject: `Client ${index + 1}`,
+    subject: names[index],
     followUpAt: index < 2 ? "2026-09-13T15:00:00.000Z" : index < 4 ? "2026-09-14T18:00:00.000Z" : null
   }));
   const selected = selectUntouchedLeads(many, { since, now });
   assert.equal(selected.leads.length, 5);
   assert.equal(selected.overflow, 2);
-  assert.equal(selected.leads[0].subject, "Client 1");
+  assert.equal(selected.leads[0].subject, "Alice");
   const text = afternoonSilenceText(selected);
   assert.match(text, /I don’t see updates yet on these open leads/);
-  assert.match(text, /Client 1 — follow up/);
+  assert.match(text, /Alice — follow up/);
   assert.match(text, /\+2 more/);
-  assert.doesNotMatch(text, /Client 6/);
+  assert.doesNotMatch(text, /Frank/);
+});
+
+test("check-ins omit instructions, addresses, and questions stored as lead subjects", () => {
+  assert.equal(isCheckinPersonLabel("Marilyn Butler"), true);
+  assert.equal(isCheckinPersonLabel("Tomás"), true);
+  const selected = selectUntouchedLeads([
+    lead({ subject: "Marilyn Butler" }),
+    lead({ subject: "Tomás" }),
+    lead({ subject: "add this client in GHL shes wife of angus butler Marilyn Butler" }),
+    lead({ subject: "12055 Bastille Circle So" }),
+    lead({ subject: "what do u use to do ur seo reports?" })
+  ], { since, now });
+  assert.deepEqual(selected.leads.map((row) => row.subject), ["Marilyn Butler", "Tomás"]);
+  assert.equal(selected.total, 2);
 });
 
 test("next-morning still-quiet section only names leads that stayed untouched", () => {

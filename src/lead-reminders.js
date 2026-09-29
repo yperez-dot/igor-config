@@ -12,7 +12,7 @@ import {
   spokenLeadNameHint,
   updateLeadState
 } from "./lead-ledger.js";
-import { isAmbiguousLeadFollowUpRequest, isGhlContactTaskRequest, isPersonalOpsReminderRequest } from "./task-calendar-route.js";
+import { isAmbiguousLeadFollowUpRequest, isGhlContactTaskRequest, isPersonalOpsReminderRequest, isQuotedLeadCheckinStatusRequest } from "./task-calendar-route.js";
 import { looksLikeReferralThankYouRequest } from "./referral-thankyous.js";
 
 const TZ = "America/New_York";
@@ -157,6 +157,7 @@ function recentReminderContext(history = []) {
 export function isLeadReminderRequest(text, history = []) {
   const raw = sanitizeReminderInput(text);
   if (!raw) return false;
+  if (isQuotedLeadCheckinStatusRequest(raw)) return false;
   if (looksLikeReferralThankYouRequest(raw)) return false;
   if (isGhlContactTaskRequest(raw)) return false;
   if (isPersonalOpsReminderRequest(raw)) return false;
@@ -268,6 +269,7 @@ async function resolveExistingLead(store, { ownerSenderId, text, history = [] } 
 
 export async function maybeScheduleLeadReminder({ text, subjectText, history = [], store, chatId, senderId, ownerRole, now = new Date(), timeZone = TZ }) {
   const raw = sanitizeReminderInput(text);
+  if (isQuotedLeadCheckinStatusRequest(raw)) return null;
   const spanish = isSpanishOpsText(raw);
   if (!raw || !store?.createTask || !chatId) return null;
   if (looksLikeReferralThankYouRequest(raw)) return null;
