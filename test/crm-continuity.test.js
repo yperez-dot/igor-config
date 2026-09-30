@@ -803,7 +803,7 @@ test("couple create keeps both sticky this-chat contact ids keyed by name", () =
   assert.match(packed, /Never ask the user to paste an id Igor just created/i);
 });
 
-test("clinical and notes bind the sticky id and strip name search when a this-chat id exists", () => {
+test("clinical writes strip name search while note previews keep stale-id recovery hints", () => {
   const scratch = householdAfterCreates();
   const clinical = bindStickyContactArgs(scratch, "ghl_update_clinical_profile", {
     contactQuery: "Pablo",
@@ -818,7 +818,9 @@ test("clinical and notes bind the sticky id and strip name search when a this-ch
     body: "Concern: wants a callback about the doctors."
   });
   assert.equal(note.contactId, "contact-miriam-1");
-  assert.equal(Object.hasOwn(note, "contactQuery"), false);
+  assert.equal(note.contactQuery, "Miriam Muskat");
+  const confirmed = bindStickyContactArgs(scratch, "ghl_add_contact_note", { ...note, confirmed: true });
+  assert.equal(Object.hasOwn(confirmed, "contactQuery"), false);
   assert.equal(stickyContactFor(scratch, { contactQuery: "Pablo" }).contactId, "contact-pablo-1");
   assert.equal(stickyContactFor(scratch, { query: "a different Pablo" }), null);
 });

@@ -336,6 +336,7 @@ export function grokTools(environment = process.env) {
         properties: {
           contactId: { type: "string" },
           contactQuery: { type: "string" },
+          phone: { type: "string", description: "Full phone or last-4 for resolving a new preview, including recovery from a stale saved id." },
           action: { type: "string", enum: ["add", "remove"] },
           tags: { type: "array", items: { type: "string" } },
           confirmed: { type: "boolean" }
@@ -1375,11 +1376,11 @@ export async function executeTool(name, rawArgs, {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
       const config = ghlConfig(environment);
-      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, phone: args.phone, action: args.action, tags: args.tags, expectedContactId: args.expectedContactId, expectedContactName: args.expectedContactName, expectedPhoneLast4: args.expectedPhoneLast4, fetchImpl };
+      const request = { ...config, contactId: args.contactId, contactQuery: args.contactQuery, phone: args.phone, action: args.action, tags: args.tags, expectedContactId: args.expectedContactId, expectedContactName: args.expectedContactName, expectedPhoneLast4: args.expectedPhoneLast4, recoverStaleId: args.confirmed !== true, fetchImpl };
       if (blocked) {
         const plan = await ghlPrepareTagChange(request);
         if (plan.error) return plan;
-        return { ...blocked, proposed: { contactId: plan.contact.id, contact: plan.contact.name, phoneLast4: plan.contact.phoneLast4, action: plan.action, tags: plan.tags } };
+        return { ...blocked, ...(plan.contact.staleContactId ? { staleContactId: plan.contact.staleContactId } : {}), proposed: { contactId: plan.contact.id, contact: plan.contact.name, phoneLast4: plan.contact.phoneLast4, action: plan.action, tags: plan.tags } };
       }
       return ghlApplyTagChange(request);
     }
@@ -1399,6 +1400,7 @@ export async function executeTool(name, rawArgs, {
         expectedContactId: args.expectedContactId,
         expectedContactName: args.expectedContactName,
         expectedPhoneLast4: args.expectedPhoneLast4,
+        recoverStaleId: args.confirmed !== true,
         userId: args.userId,
         fetchImpl
       };
@@ -1407,6 +1409,7 @@ export async function executeTool(name, rawArgs, {
         if (plan.error) return plan;
         return {
           ...blocked,
+          ...(plan.contact.staleContactId ? { staleContactId: plan.contact.staleContactId } : {}),
           proposed: {
             contact: plan.contact.name,
             contactId: plan.contact.id,

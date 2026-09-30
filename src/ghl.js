@@ -835,10 +835,11 @@ export async function ghlResolveWriteContact({
   contactId,
   contactQuery,
   phone,
+  recoverStaleId = false,
   fetchImpl = fetch
 }) {
   const pinnedId = String(contactId ?? "").trim();
-  return ghlResolveContact({
+  const resolved = await ghlResolveContact({
     token,
     locationId,
     contactId: pinnedId || undefined,
@@ -847,6 +848,9 @@ export async function ghlResolveWriteContact({
     pinnedOnly: Boolean(pinnedId),
     fetchImpl
   });
+  if (!pinnedId || !resolved.notFound || !recoverStaleId || (!contactQuery && !phone)) return resolved;
+  const recovered = await ghlResolveContact({ token, locationId, query: contactQuery, phone, fetchImpl });
+  return { ...recovered, staleContactId: pinnedId };
 }
 
 function assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 } = {}) {
@@ -1310,8 +1314,8 @@ export async function ghlUpdateContact(options) {
   };
 }
 
-export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, phone, tags, action = "add", expectedContactId, expectedContactName, expectedPhoneLast4, fetchImpl = fetch }) {
-  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, fetchImpl });
+export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, phone, tags, action = "add", expectedContactId, expectedContactName, expectedPhoneLast4, recoverStaleId = false, fetchImpl = fetch }) {
+  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, recoverStaleId: recoverStaleId && !expectedContactId, fetchImpl });
   if (contact.error) return contact;
   const mismatch = assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 });
   if (mismatch) return mismatch;
@@ -1342,8 +1346,8 @@ export async function ghlApplyTagChange(options) {
   };
 }
 
-export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, phone, body, title, pinned = false, expectedContactId, expectedContactName, expectedPhoneLast4, fetchImpl = fetch }) {
-  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, fetchImpl });
+export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, phone, body, title, pinned = false, expectedContactId, expectedContactName, expectedPhoneLast4, recoverStaleId = false, fetchImpl = fetch }) {
+  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, recoverStaleId: recoverStaleId && !expectedContactId, fetchImpl });
   if (contact.error) return contact;
   const mismatch = assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 });
   if (mismatch) return mismatch;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { executeTool, grokTools } from "../src/tools.js";
 import { DEFAULT_GHL_OWNER_IDS, looksLikeGhlUserId } from "../src/ghl.js";
+import { applyCrmToolResult, householdContacts, maybeContinueCrmTask } from "../src/crm-continuity.js";
 
 const environment = { GHL_API_TOKEN: "test", GHL_LOCATION_ID: "location" };
 const speaker = { firstName: "Yahoska" };
@@ -492,6 +493,55 @@ test("approved Laverne preview aborts a changed id target before note or tag wri
     assert.equal(calls.filter(({ target }) => target.includes("/contacts/search") || target.includes("/contacts/?")).length, 0);
     assert.equal(calls.filter(({ target }) => /\/contacts\/contact-1\/(notes|tags)$/.test(target)).length, 0);
   }
+});
+
+test("stale sticky id recovers Laverne by 7089 for preview; Yes never searches or writes Tomas", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options = {}) => {
+    const target = String(url);
+    const method = options.method || "GET";
+    const body = options.body ? JSON.parse(options.body) : null;
+    calls.push({ target, method, body });
+    if (target.endsWith("/contacts/stale-id")) return json({ message: "Not found" }, 404);
+    if (target.endsWith("/contacts/search")) {
+      assert.match(JSON.stringify(body), /7089/);
+      return json({ contacts: [{ id: "laverne-id", firstName: "Laverne", lastName: "Perez", phone: "+13055557089" }] });
+    }
+    if (target.endsWith("/contacts/laverne-id")) return json({ contact: { id: "laverne-id", firstName: "Laverne", lastName: "Perez", phone: "+13055557089" } });
+    if (target.endsWith("/contacts/laverne-id/notes")) return json({ note: { id: "note-1" } });
+    if (target.endsWith("/contacts/laverne-id/tags")) return json({ tags: ["AEP-analysis"] });
+    throw new Error(`Unexpected request: ${target}`);
+  };
+  const context = { environment, senderProfile: speaker, fetchImpl, userText: "Laverne P phone ending 7089" };
+  let scratch = { contactId: "stale-id", storedName: "Laverne P.", phoneLast4: "7089" };
+  const noteArgs = { contactQuery: "Laverne P", phone: "7089", body: "Reached out because she wants me to review her benefits." };
+  const notePreview = await executeTool("ghl_add_contact_note", noteArgs, { ...context, activeCrmTask: scratch });
+  assert.equal(notePreview.needsConfirmation, true);
+  assert.equal(notePreview.staleContactId, "stale-id");
+  assert.equal(notePreview.proposed.contactId, "laverne-id");
+  scratch = applyCrmToolResult(scratch, "ghl_add_contact_note", noteArgs, notePreview);
+  assert.equal(householdContacts(scratch).some(({ contactId }) => contactId === "stale-id"), false);
+  const tagArgs = { contactQuery: "Laverne P", phone: "7089", action: "add", tags: ["AEP-analysis"] };
+  const tagPreview = await executeTool("ghl_manage_contact_tags", tagArgs, { ...context, activeCrmTask: scratch });
+  scratch = applyCrmToolResult(scratch, "ghl_manage_contact_tags", tagArgs, tagPreview);
+  assert.equal(calls.some(({ target }) => /\/(notes|tags)$/.test(target)), false);
+  scratch = { ...scratch, contactId: "tomas-id", storedName: "Tomas D.", phoneLast4: "4455" };
+  const beforeYes = calls.length;
+  const saved = await maybeContinueCrmTask({ text: "Yes", scratch, speaker: { role: "yahoska" }, executeTool: (name, args) => executeTool(name, args, { ...context, activeCrmTask: scratch }) });
+  assert.match(saved.reply, /Laverne P/);
+  assert.equal(calls.slice(beforeYes).some(({ target }) => /search|\?/.test(target)), false);
+  const writes = calls.filter(({ target, method }) => method === "POST" && /\/(notes|tags)$/.test(target));
+  assert.equal(writes.length, 2);
+  assert.equal(writes.every(({ target }) => target.includes("/contacts/laverne-id/")), true);
+});
+
+test("approved preview id 404 never recovers to another contact on Yes", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_add_contact_note", { contactId: "stale-id", contactQuery: "Laverne P", phone: "7089", expectedContactId: "stale-id", body: "Call back", confirmed: true }, {
+    environment, senderProfile: speaker, fetchImpl: async (url) => { calls.push(String(url)); return json({ message: "Not found" }, 404); }
+  });
+  assert.equal(result.notFound, true);
+  assert.equal(calls.length, 1);
 });
 
 test("contact tag add normalizes Open Leads aliases before writing", async () => {
