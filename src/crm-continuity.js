@@ -163,6 +163,7 @@ function contactFromResult(args = {}, result = {}) {
 
 export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (!CRM_TOOLS.has(name)) return scratch ?? null;
+  if (result.staleContactId) scratch = clearStickyContact(scratch, result.staleContactId);
   const next = { ...(scratch || {}) };
   if (Array.isArray(scratch?.contacts)) {
     next.contacts = scratch.contacts.map((entry) => ({ ...entry }));
@@ -171,7 +172,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   const missingId = result?.notFound ? (result.contactId || args.contactId) : "";
   if (missingId) return clearStickyContact(next, missingId);
 
-  const found = contactFromResult(args, result);
+  const found = contactFromResult(result.staleContactId ? { ...args, contactId: undefined } : args, result);
   if (found.contactId) next.contactId = found.contactId;
   if (found.storedName) next.storedName = found.storedName;
   if (found.phoneLast4) next.phoneLast4 = found.phoneLast4;
@@ -470,7 +471,7 @@ export function formatActiveCrmTask(scratch) {
   }
   lines.push("Look it up = use this-chat sticky contact id(s), then last-4, then name. Never ask them to paste a GHL contact id created or resolved in this chat.");
   lines.push("Clinical writes and contact notes MUST pass the sticky contactId for that person. Do not re-search by name when a this-chat id exists. On write failure, retry that same id — never attach a lookalike from name search.");
-  lines.push("If a sticky id GET is 404, that entry is cleared — ask once which contact, and never invent a different one.");
+  lines.push("Before a new note/tag preview, a sticky id 404 clears that entry and retries the supplied phone last-4 first, then name. A unique last-4/name match is enough; do not ask for a full phone. After approval, never replace the preview id; a 404 needs a fresh preview before any write.");
   lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
   lines.push("A name correction updates this contact (ghl_update_contact), then finishes the pending note or Open Leads check.");
   lines.push("CRM notes stay in GHL. Never say NOTION UPDATED for a contact note.");
@@ -617,6 +618,11 @@ export function bindStickyContactArgs(scratch, toolName, args = {}, userText = "
   const sticky = stickyContactFor(scratch, next, userText);
   if (!sticky?.contactId) return next;
   next.contactId = sticky.contactId;
+  if (["ghl_add_contact_note", "ghl_manage_contact_tags"].includes(toolName) && next.confirmed !== true && !next.expectedContactId) {
+    next.contactQuery ||= sticky.spokenName || sticky.storedName;
+    next.phone ||= extractLast4FromText(userText) || sticky.phoneLast4;
+    return next;
+  }
   delete next.contactQuery;
   delete next.query;
   return next;
