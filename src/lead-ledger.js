@@ -6,6 +6,8 @@ const LEAD_TAG = "lead-ledger";
 const CLOSED_STATES = new Set(["completed", "enrolled", "not_interested", "closed"]);
 const GENERIC_ACTIONS = new Set(["follow up", "follow-up", "follow up again", "call", "contact"]);
 const JUNK_LEAD_PREFIX_RE = /^(?:(?:for\s+)?me\s+to\b|(?:to\s+)?call\s+(?:him|her|them|this|that)\b|(?:him|her|them|he|she|they|me|this person|that person|that lead|this lead)\b)/i;
+const INSTRUCTION_BLOB_RE = /^(?:(?:please|pls)\s+)?(?:add|create|put|move|update)\s+(?:this|that|the)?\s*(?:client|contact|lead)?\s*(?:in|into|to|on)\s+(?:ghl|crm|go\s*high\s*level)\b/i;
+const NON_PERSON_QUESTION_RE = /\b(?:what|how|why|where|when|which)\b[^?]{0,120}\b(?:seo|reports?|software|tool|system)\b|\bseo\s+reports?\b/i;
 const NON_NAME_TOKENS = new Set([
   "me", "my", "to", "for", "call", "contact", "complete", "remind", "set",
   "please", "pls", "the", "a", "an", "this", "that", "him", "her", "them",
@@ -38,8 +40,60 @@ export function isPersonLeadSubject(value) {
   if (!raw) return false;
   if (isSmokeOrMetaLeadSubject(raw)) return false;
   if (JUNK_LEAD_PREFIX_RE.test(raw)) return false;
+  if (INSTRUCTION_BLOB_RE.test(raw)) return false;
+  if (NON_PERSON_QUESTION_RE.test(raw)) return false;
   const tokens = normalize(raw).split(" ").filter(Boolean);
   return tokens.some((token) => token.length >= 2 && !NON_NAME_TOKENS.has(token));
+}
+
+function zonedParts(value, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(value);
+  return Object.fromEntries(parts.map((part) => [part.type, Number(part.value)]));
+}
+
+function timeZoneOffsetMinutes(value, timeZone) {
+  const label = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" })
+    .formatToParts(value)
+    .find((part) => part.type === "timeZoneName")?.value ?? "GMT";
+  const match = label.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/);
+  if (!match) return 0;
+  const minutes = Number(match[2]) * 60 + Number(match[3] ?? 0);
+  return match[1] === "-" ? -minutes : minutes;
+}
+
+function zonedDateToUtc(parts, timeZone) {
+  const guess = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second));
+  return new Date(guess.getTime() - timeZoneOffsetMinutes(guess, timeZone) * 60_000);
+}
+
+export function normalizeLeadFollowUpAt(value, { now = new Date(), timeZone = "America/New_York" } = {}) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Lead follow-up date is invalid.");
+  const candidate = zonedParts(date, timeZone);
+  const current = zonedParts(now, timeZone);
+  if (candidate.year >= current.year) return date.toISOString();
+
+  // Legacy imports occasionally carried the original calendar year (for
+  // example Oct 1, 2024) into a current reminder. Keep the month/day/time and
+  // move only past-year values to their next occurrence. Same-year overdue
+  // reminders remain overdue and are never silently moved.
+  for (let year = current.year; year <= current.year + 8; year += 1) {
+    const projected = zonedDateToUtc({ ...candidate, year }, timeZone);
+    const projectedParts = zonedParts(projected, timeZone);
+    if (projectedParts.month !== candidate.month || projectedParts.day !== candidate.day) continue;
+    if (projected.getTime() > now.getTime()) return projected.toISOString();
+  }
+  throw new Error("Lead follow-up date could not be moved to a valid future year.");
 }
 
 function personSubjectOrNull(value) {
@@ -141,7 +195,8 @@ export async function saveLeadSnapshot({
   ghlStatus = "unknown",
   state = "open",
   reminderTaskId,
-  source = "telegram"
+  source = "telegram",
+  now = new Date()
 }) {
   if (!store?.saveAgentMemory) return null;
   const cleanedSubject = canonicalLeadSubject(subject);
@@ -158,11 +213,11 @@ export async function saveLeadSnapshot({
     ownerRole: ownerRole || null,
     subject: cleanedSubject,
     nextAction: compactWhitespace(nextAction ?? "follow up"),
-    followUpAt: followUpAt ? new Date(followUpAt).toISOString() : null,
+    followUpAt: normalizeLeadFollowUpAt(followUpAt, { now }),
     ghlStatus,
     state,
     reminderTaskId: reminderTaskId || null,
-    updatedAt: new Date().toISOString()
+    updatedAt: now.toISOString()
   };
   await store.saveAgentMemory({
     content: JSON.stringify(snapshot),
@@ -172,7 +227,7 @@ export async function saveLeadSnapshot({
   return snapshot;
 }
 
-export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = false, limit = 500 } = {}) {
+export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = false, limit = 500, now = new Date() } = {}) {
   if (!store?.listAgentMemories) return [];
   const rows = await store.listAgentMemories({ limit });
   const latestById = new Map();
@@ -201,9 +256,26 @@ export async function listLeadSnapshots(store, { ownerSenderId, includeClosed = 
     canonical.set(identity, mergeDuplicateLead(canonical.get(identity), cleaned));
   }
 
-  return [...canonical.values()]
-    .filter((lead) => includeClosed || !CLOSED_STATES.has(lead.state))
-    .sort((a, b) => String(a.followUpAt ?? "9999").localeCompare(String(b.followUpAt ?? "9999")));
+  const leads = [...canonical.values()]
+    .filter((lead) => includeClosed || !CLOSED_STATES.has(lead.state));
+
+  for (const lead of leads) {
+    if (!lead.followUpAt || CLOSED_STATES.has(lead.state)) continue;
+    const original = new Date(lead.followUpAt).toISOString();
+    const repaired = normalizeLeadFollowUpAt(lead.followUpAt, { now });
+    if (repaired === original) continue;
+    lead.followUpAt = repaired;
+    if (store?.saveAgentMemory) {
+      try {
+        await saveLeadSnapshot({ ...lead, store, followUpAt: repaired, source: "migration:lead-follow-up-year", now });
+      } catch {
+        // Returning the repaired value keeps briefs correct even if the
+        // one-time persistence write has a transient failure.
+      }
+    }
+  }
+
+  return leads.sort((a, b) => String(a.followUpAt ?? "9999").localeCompare(String(b.followUpAt ?? "9999")));
 }
 
 export function spokenLeadNameHint(text) {

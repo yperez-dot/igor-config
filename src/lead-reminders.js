@@ -8,6 +8,7 @@ import {
   isPersonLeadSubject,
   latestLeadReminderSubject,
   leadOutcome,
+  normalizeLeadFollowUpAt,
   saveLeadSnapshot,
   spokenLeadNameHint,
   updateLeadState
@@ -24,6 +25,12 @@ const TIMING_HINT_RE = /\b(tomorrow|tonight|next\s+week|in\s+(?:a|one|two|three|
 const ATTACHMENT_INSTRUCTION_RE = /(?:User sent a photo\.|The image is attached for THIS turn only\.|Do not say the photo never arrived\.|Later turns without an attached image are not looking at this photo\.|User sent a video:|Grok cannot watch raw video|User sent a Telegram file:|The image is attached for you to see\.|Do not say the file never arrived\.)/gi;
 const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const NUMBER_WORDS = new Map([["a", 1], ["one", 1], ["two", 2], ["three", 3]]);
+const MONTHS = new Map([
+  ["jan", 1], ["january", 1], ["feb", 2], ["february", 2], ["mar", 3], ["march", 3],
+  ["apr", 4], ["april", 4], ["may", 5], ["jun", 6], ["june", 6], ["jul", 7], ["july", 7],
+  ["aug", 8], ["august", 8], ["sep", 9], ["sept", 9], ["september", 9], ["oct", 10],
+  ["october", 10], ["nov", 11], ["november", 11], ["dec", 12], ["december", 12]
+]);
 
 function sameMinute(a, b) {
   const left = a ? new Date(a).getTime() : NaN;
@@ -120,13 +127,30 @@ export function parseReminderRunAt(text, { now = new Date(), timeZone = TZ, fall
       if (md) {
         const year = md[3] ? (Number(md[3]) < 100 ? 2000 + Number(md[3]) : Number(md[3])) : Number(p.year);
         dateParts = { year, month: Number(md[1]), day: Number(md[2]) };
+        if (!md[3]) {
+          const tentative = localDateToUtc({ ...dateParts, ...parseClock(raw, fallbackHour) }, timeZone);
+          if (tentative <= now) dateParts.year += 1;
+        }
+      } else {
+        const named = raw.match(/\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,?\s+(\d{4}))?\b/i);
+        if (named) {
+          const explicitYear = named[3] ? Number(named[3]) : null;
+          dateParts = { year: explicitYear ?? Number(p.year), month: MONTHS.get(named[1].toLowerCase()), day: Number(named[2]) };
+          if (!explicitYear) {
+            const tentative = localDateToUtc({ ...dateParts, ...parseClock(raw, fallbackHour) }, timeZone);
+            if (tentative <= now) dateParts.year += 1;
+          }
+        }
       }
     }
   }
   if (!dateParts) return null;
   const clock = parseClock(raw, /tonight/i.test(raw) ? 18 : fallbackHour);
   if (!clock) return null;
-  const runAt = localDateToUtc({ ...dateParts, ...clock }, timeZone);
+  let runAt = localDateToUtc({ ...dateParts, ...clock }, timeZone);
+  if (runAt <= now && Number(dateParts.year) < Number(p.year)) {
+    runAt = new Date(normalizeLeadFollowUpAt(runAt, { now, timeZone }));
+  }
   if (runAt <= now && /today|tonight/i.test(raw)) return new Date(runAt.getTime() + 24 * 3_600_000);
   return runAt;
 }
@@ -143,6 +167,7 @@ export function reminderSubject(text) {
     .replace(/\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/gi, " ")
     .replace(/\bat\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/gi, " ")
     .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, " ")
+    .replace(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}(?:,?\s+\d{4})?\b/gi, " ")
     .replace(/^\s*(?:to\s+)?follow[- ]?up\s+(?:with|w)\s+/i, "")
     .replace(/^\s*call\s+/i, "")
     .replace(/\s+/g, " ").trim().replace(/^[,.-]+|[,.-]+$/g, "");
@@ -304,13 +329,33 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   }
 
   const explicitCrmRemoval = /\b(?:from|in)\s+(?:ghl|crm|go\s*high\s*level|xclusive)\b|\b(?:ghl|crm|go\s*high\s*level|xclusive)\s+(?:contact|record)\b/i.test(raw);
-  const removalRequest = /\b(remove|delete|forget|elimina|eliminar|remueve|remover|borra|borrar)\b/i.test(raw)
-    && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget)\b/i.test(raw)
+  const removalRequest = /\b(remove|delete|forget|dismiss|junk|elimina|eliminar|remueve|remover|borra|borrar)\b/i.test(raw)
+    || /\b(?:don['’]?t|do not|never)\s+(?:show|list|surface|remind me about)\b/i.test(raw);
+  const allowedRemovalRequest = removalRequest
+    && !/\b(don['’]?t|do not|never)\s+(remove|delete|forget|dismiss)\b/i.test(raw)
     && !explicitCrmRemoval;
-  if (removalRequest) {
+  if (allowedRemovalRequest) {
     const nameHint = spokenLeadNameHint(raw);
     const spokenMatches = await findLeadsBySpokenName(store, { ownerSenderId: senderId, text: raw, includeClosed: false });
     const usableMatches = spokenMatches.filter((lead) => isPersonLeadSubject(lead.subject));
+    const bulkRemoval = /\b(?:this|these|those)\s+(?:junk|items?|entries|leads?)\b|\b(?:remove|delete|dismiss)\s+(?:all|both)\b|\bdon['’]?t\s+show\s+(?:these|those|them)\s+again\b/i.test(raw);
+    if (usableMatches.length > 1 && bulkRemoval && store.removeLead) {
+      try {
+        let cancelled = 0;
+        for (const match of usableMatches) {
+          const result = await store.removeLead({ ownerSenderId: senderId, subject: match.subject });
+          cancelled += result.taskIds.length;
+        }
+        const names = usableMatches.map((lead) => lead.subject).join(", ");
+        return { task: null, reply: spanish
+          ? `Eliminé ${names} de tu registro personal de leads y cancelé ${cancelled} recordatorio(s) pendiente(s).`
+          : `Removed ${names} from your lead ledger and cancelled ${cancelled} pending reminder(s). They won’t appear in the next brief.` };
+      } catch {
+        return { task: null, reply: spanish
+          ? "No pude confirmar que todos se eliminaron del registro. No los marqué como eliminados."
+          : "I couldn’t confirm that every item was removed from the lead ledger, so I’m not claiming they were dismissed." };
+      }
+    }
     if (usableMatches.length > 1) {
       const names = usableMatches.map((lead) => lead.subject).join(" or ");
       return { task: null, reply: spanish ? `¿Qué lead debo eliminar: ${names}?` : `Which lead should I remove — ${names}?` };
@@ -414,7 +459,7 @@ export async function maybeScheduleLeadReminder({ text, subjectText, history = [
   const task = await store.createTask({ id: crypto.randomUUID(), type: "lead_management", payload: { workflow: "telegram_reminder", chatId: String(chatId), ownerSenderId: String(senderId ?? ""), leadId, text: reminderText, subject, source: "lead_followup" }, runAt });
   const resolvedOwnerRole = ownerRole || (typeof store.getTelegramSpeaker === "function" ? await store.getTelegramSpeaker(senderId) : null);
   try {
-    await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: matchedBySubject?.nextAction ?? "follow up", followUpAt: runAt, ghlStatus: matchedBySubject?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created" });
+    await saveLeadSnapshot({ store, leadId, ownerSenderId: senderId, ownerRole: resolvedOwnerRole, subject, nextAction: matchedBySubject?.nextAction ?? "follow up", followUpAt: runAt, ghlStatus: matchedBySubject?.ghlStatus ?? "unknown", state: "open", reminderTaskId: task?.id, source: "telegram:reminder-created", now });
   } catch (error) {
     if (/removed/i.test(String(error?.message ?? ""))) {
       return { task: null, reply: "That lead was removed. I have not reopened it or scheduled another reminder." };

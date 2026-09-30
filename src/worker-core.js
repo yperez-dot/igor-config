@@ -341,7 +341,7 @@ export async function processTask(task, {
         let leads = [];
         if (store?.listAgentMemories) {
           try {
-            leads = await listLeadSnapshots(store, { ownerSenderId: chatId });
+            leads = await listLeadSnapshots(store, { ownerSenderId: chatId, now });
           } catch {
             leads = [];
           }
@@ -390,7 +390,7 @@ export async function processTask(task, {
 
       if (store?.listAgentMemories) {
         try {
-          const leads = await listLeadSnapshots(store, { ownerSenderId: chatId });
+          const leads = await listLeadSnapshots(store, { ownerSenderId: chatId, now });
           let stillQuiet;
           if (phase === "morning" && store?.latestEvent) {
             const silence = await store.latestEvent("lead_silence.afternoon", String(chatId));
