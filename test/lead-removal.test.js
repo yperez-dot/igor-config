@@ -221,3 +221,33 @@ test("natural lead follow-up asks whether to use GHL, a personal reminder, or bo
   assert.equal((await store.listActiveTelegramReminders({ chatId: "owner", ownerSenderId: "owner" })).length, 0);
   await pool.end();
 });
+
+test("remove this junk durably removes every named brief item", async () => {
+  const { Pool } = newDb().adapters.createPg();
+  const pool = new Pool();
+  const store = createStore({ pool });
+  await store.ready;
+  for (const [leadId, subject] of [["marilyn", "Marilyn Butler"], ["tomas", "Tomas Delgado"], ["seo", "Sonia Evans"]]) {
+    await saveLeadSnapshot({ store, leadId, ownerSenderId: "owner", subject });
+    await store.createTask({
+      id: `${leadId}-reminder`,
+      type: "lead_management",
+      payload: { workflow: "telegram_reminder", ownerSenderId: "owner", chatId: "owner", leadId, subject, text: `Lead follow-up: ${subject}.` }
+    });
+  }
+
+  const result = await maybeScheduleLeadReminder({
+    store,
+    chatId: "owner",
+    senderId: "owner",
+    text: "pls remove this junk: Marilyn Butler, Tomas Delgado, and Sonia Evans. don't show these again"
+  });
+  assert.match(result.reply, /They won.t appear in the next brief/i);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "owner" });
+  assert.equal(leads.length, 0);
+  assert.doesNotMatch(leadBriefText("morning", leads), /Marilyn|Tomas|Sonia/i);
+  for (const leadId of ["marilyn", "tomas", "seo"]) {
+    assert.equal((await store.getTask(`${leadId}-reminder`)).status, "cancelled");
+  }
+  await pool.end();
+});

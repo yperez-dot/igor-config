@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { isLeadReminderRequest, maybeScheduleLeadReminder, parseReminderRunAt, reminderSubject } from "../src/lead-reminders.js";
 import { isPersonalOpsReminderRequest } from "../src/task-calendar-route.js";
 import { listLeadSnapshots, saveLeadSnapshot } from "../src/lead-ledger.js";
+import { leadBriefText } from "../src/worker-core.js";
 
 function ledgerStore() {
   const memories = [];
@@ -434,4 +435,28 @@ test("no-answer reply can reschedule the same lead for Friday", async () => {
   const leads = await listLeadSnapshots(store, { ownerSenderId: "222" });
   assert.equal(leads.length, 1);
   assert.equal(leads[0].state, "open");
+});
+
+test("month/day without a year rolls to the next occurrence", async () => {
+  const store = ledgerStore();
+  const now = new Date("2026-09-30T16:00:00.000Z");
+  const result = await maybeScheduleLeadReminder({
+    text: "Marilyn Butler remind me Oct 1 at 9 am",
+    store,
+    chatId: "222",
+    senderId: "222",
+    now
+  });
+  assert.equal(result.task.runAt.toISOString(), "2026-10-01T13:00:00.000Z");
+  assert.match(result.reply, /Thu, Oct 1, 9:00 AM/i);
+  const leads = await listLeadSnapshots(store, { ownerSenderId: "222", now });
+  const brief = leadBriefText("morning", leads, now);
+  assert.match(brief, /scheduled — Thu, Oct 1, 9:00 AM/i);
+  assert.doesNotMatch(brief, /OVERDUE/i);
+});
+
+test("explicit stale year is rolled forward before creating the reminder task", async () => {
+  const now = new Date("2026-09-30T16:00:00.000Z");
+  const runAt = parseReminderRunAt("Marilyn Butler remind me Oct 1, 2024 at 9 am", { now });
+  assert.equal(runAt.toISOString(), "2026-10-01T13:00:00.000Z");
 });

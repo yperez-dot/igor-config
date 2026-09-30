@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canonicalLeadSubject, listLeadSnapshots, saveLeadSnapshot, spokenLeadNameHint } from "../src/lead-ledger.js";
+import { canonicalLeadSubject, isPersonLeadSubject, listLeadSnapshots, saveLeadSnapshot, spokenLeadNameHint } from "../src/lead-ledger.js";
 
 function memory(snapshot, createdAt) {
   return {
@@ -138,4 +138,37 @@ test("listLeadSnapshots drops reminder-phrase subjects and saveLeadSnapshot refu
   });
   assert.equal(refused, null);
   assert.equal((await listLeadSnapshots(store, { ownerSenderId })).length, 1);
+});
+
+test("junk instruction and SEO-question subjects are rejected", () => {
+  assert.equal(isPersonLeadSubject("add this client in GHL Marilyn Butler tomorrow"), false);
+  assert.equal(isPersonLeadSubject("what do u use to do ur seo reports?"), false);
+  assert.equal(canonicalLeadSubject("add this client in GHL Marilyn Butler tomorrow"), null);
+  assert.equal(canonicalLeadSubject("what do u use to do ur seo reports?"), null);
+  assert.equal(isPersonLeadSubject("Marilyn Butler"), true);
+});
+
+test("legacy past-year open due is rolled forward and durably migrated", async () => {
+  const ownerSenderId = "111";
+  const rows = [memory({
+    leadId: "marilyn",
+    ownerSenderId,
+    subject: "Marilyn Butler",
+    nextAction: "follow up",
+    followUpAt: "2024-10-01T13:00:00.000Z",
+    state: "open",
+    updatedAt: "2024-09-30T12:00:00.000Z"
+  }, "2024-09-30T12:00:00.000Z")];
+  const writes = [];
+  const store = {
+    async listAgentMemories() { return rows; },
+    async saveAgentMemory(value) { writes.push(value); }
+  };
+  const leads = await listLeadSnapshots(store, {
+    ownerSenderId,
+    now: new Date("2026-09-30T16:00:00.000Z")
+  });
+  assert.equal(leads[0].followUpAt, "2026-10-01T13:00:00.000Z");
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].source, "migration:lead-follow-up-year");
 });

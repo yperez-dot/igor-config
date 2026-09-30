@@ -63,3 +63,15 @@ test("morning brief can append a still-quiet chase without markdown", () => {
   assert.match(text, /🔁 Still quiet since yesterday/);
   assert.doesNotMatch(text, /\*\*/);
 });
+
+test("Oct 1 reminder created Sep 30 2026 is scheduled on Thursday, not overdue", () => {
+  const now = new Date("2026-09-30T16:00:00.000Z");
+  const text = leadBriefText("morning", [{
+    subject: "Marilyn Butler",
+    nextAction: "follow up",
+    followUpAt: "2026-10-01T13:00:00.000Z",
+    state: "open"
+  }], now);
+  assert.match(text, /scheduled — Thu, Oct 1, 9:00 AM/i);
+  assert.doesNotMatch(text, /OVERDUE/i);
+});
