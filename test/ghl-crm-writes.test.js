@@ -475,6 +475,25 @@ test("confirmed contact note writes through the GHL notes endpoint", async () =>
   assert.deepEqual(write.body, { body: "Client requested a call Friday.", pinned: false });
 });
 
+test("approved Laverne preview aborts a changed id target before note or tag writes", async () => {
+  for (const tool of ["ghl_add_contact_note", "ghl_manage_contact_tags"]) {
+    const calls = [];
+    const args = {
+      contactId: "contact-1",
+      contactQuery: "Tomas D",
+      expectedContactId: "contact-1",
+      expectedContactName: "Laverne P.",
+      expectedPhoneLast4: "7089",
+      confirmed: true,
+      ...(tool === "ghl_add_contact_note" ? { body: "Review benefits" } : { action: "add", tags: ["AEP-analysis"] })
+    };
+    const result = await executeTool(tool, args, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
+    assert.equal(result.targetMismatch, true);
+    assert.equal(calls.filter(({ target }) => target.includes("/contacts/search") || target.includes("/contacts/?")).length, 0);
+    assert.equal(calls.filter(({ target }) => /\/contacts\/contact-1\/(notes|tags)$/.test(target)).length, 0);
+  }
+});
+
 test("contact tag add normalizes Open Leads aliases before writing", async () => {
   const calls = [];
   const result = await executeTool("ghl_manage_contact_tags", {
@@ -491,7 +510,7 @@ test("contact tag changes preview before writing", async () => {
     contactQuery: "Jane Doe", action: "add", tags: ["contract-sent"]
   }, { environment, senderProfile: speaker, fetchImpl: fixture(calls) });
   assert.equal(result.needsConfirmation, true);
-  assert.deepEqual(result.proposed, { contact: "Jane D.", action: "add", tags: ["contract-sent"] });
+  assert.deepEqual(result.proposed, { contactId: "contact-1", contact: "Jane D.", phoneLast4: "0123", action: "add", tags: ["contract-sent"] });
   assert.equal(calls.some((call) => call.target.endsWith("/tags")), false);
 });
 
