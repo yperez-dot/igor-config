@@ -213,7 +213,9 @@ async function ghlJson(url, { token, fetchImpl = fetch, version = GHL_VERSION, m
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message || payload.error || `GHL request failed with HTTP ${response.status}`);
+    const error = new Error(payload.message || payload.error || `GHL request failed with HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }
@@ -423,11 +425,13 @@ function withSearchNameMeta(contact, query) {
 }
 
 export async function ghlSearchContacts({ token, locationId, query, contactId, phone, limit = 20, fetchImpl = fetch }) {
-  const idCandidate = String(contactId ?? "").trim()
+  const explicitId = String(contactId ?? "").trim();
+  const idCandidate = explicitId
     || (looksLikeGhlContactId(query) ? String(query).trim() : "");
   if (idCandidate) {
-    const byId = await ghlFetchContactById({ token, contactId: idCandidate, fetchImpl });
-    if (byId) {
+    const lookup = await ghlLookupContactById({ token, contactId: idCandidate, fetchImpl });
+    if (lookup.contact) {
+      const byId = toResolvedContact(lookup.contact, idCandidate, "contactId");
       return [maskSearchedContact({
         id: byId.id,
         firstName: byId.firstName,
@@ -439,6 +443,9 @@ export async function ghlSearchContacts({ token, locationId, query, contactId, p
         dateUpdated: byId.lastActivity,
         tags: byId.tags
       })];
+    }
+    if (explicitId || looksLikeGhlContactId(query)) {
+      return [];
     }
   }
 
@@ -691,9 +698,9 @@ function pickUniqueContact(contacts, { query, phone } = {}) {
   };
 }
 
-async function ghlFetchRawContactById({ token, contactId, fetchImpl = fetch }) {
+async function ghlLookupContactById({ token, contactId, fetchImpl = fetch }) {
   const id = String(contactId ?? "").trim();
-  if (!id) return null;
+  if (!id) return { contact: null, status: 0 };
   try {
     const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(id)}`, {
       token,
@@ -701,11 +708,20 @@ async function ghlFetchRawContactById({ token, contactId, fetchImpl = fetch }) {
       version: GHL_V3
     });
     const contact = body.contact ?? body;
-    if (!isUsableGhlContact(contact)) return null;
-    return contact;
-  } catch {
-    return null;
+    if (!isUsableGhlContact(contact)) return { contact: null, status: 200 };
+    return { contact, status: 200 };
+  } catch (error) {
+    return {
+      contact: null,
+      status: error.status ?? 0,
+      notFound: error.status === 404
+    };
   }
+}
+
+async function ghlFetchRawContactById({ token, contactId, fetchImpl = fetch }) {
+  const lookup = await ghlLookupContactById({ token, contactId, fetchImpl });
+  return lookup.contact;
 }
 
 export async function hydrateContactsWithPhone({ token, contacts, fetchImpl = fetch }) {
@@ -741,6 +757,7 @@ export async function ghlResolveContact({
   contactId,
   query,
   phone,
+  pinnedOnly = false,
   fetchImpl = fetch
 }) {
   const tried = [];
@@ -754,11 +771,14 @@ export async function ghlResolveContact({
 
   if (idCandidate) {
     tried.push("contactId");
-    const byId = await ghlFetchContactById({ token, contactId: idCandidate, fetchImpl });
-    if (byId) return byId;
-    if (explicitId && !phoneHint && !nameHint) {
+    const lookup = await ghlLookupContactById({ token, contactId: idCandidate, fetchImpl });
+    if (lookup.contact) return toResolvedContact(lookup.contact, idCandidate, "contactId");
+    const idOnlyMiss = pinnedOnly || (explicitId && !phoneHint && !nameHint);
+    if (idOnlyMiss) {
       return {
         error: "Couldn't load that GHL contact by id. I did not search other contacts by name.",
+        notFound: lookup.notFound === true,
+        contactId: idCandidate,
         tried
       };
     }
@@ -807,6 +827,41 @@ export async function ghlResolveContact({
     error: "No GHL contact matched after id, name, and phone lookup.",
     tried
   };
+}
+
+export async function ghlResolveWriteContact({
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  phone,
+  fetchImpl = fetch
+}) {
+  const pinnedId = String(contactId ?? "").trim();
+  return ghlResolveContact({
+    token,
+    locationId,
+    contactId: pinnedId || undefined,
+    query: pinnedId ? "" : contactQuery,
+    phone: pinnedId ? undefined : phone,
+    pinnedOnly: Boolean(pinnedId),
+    fetchImpl
+  });
+}
+
+function assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 } = {}) {
+  const expectedId = String(expectedContactId ?? "").trim();
+  const expectedName = String(expectedContactName ?? "").trim();
+  const expectedLast4 = String(expectedPhoneLast4 ?? "").replace(/\D/g, "").slice(-4);
+  const nameKey = (value) => String(value ?? "").toLowerCase().replace(/[^a-z\s]/g, "").trim().split(/\s+/).filter(Boolean);
+  const wanted = nameKey(expectedName);
+  const actual = nameKey(contact.name);
+  if ((expectedId && contact.id !== expectedId)
+    || (expectedLast4 && contact.phoneLast4 !== expectedLast4)
+    || (wanted.length && (wanted[0] !== actual[0] || (wanted[1] && wanted[1][0] !== actual[1]?.[0])))) {
+    return { error: "The contact no longer matches the approved preview. No CRM write was made.", targetMismatch: true, contactId: expectedId || contact.id };
+  }
+  return null;
 }
 
 export function hasOpenLeadsTag(tags) {
@@ -1167,6 +1222,8 @@ export async function ghlCreateContact(options) {
     contactId: created.id ?? null,
     contact: maskName(contactDisplayName(created) || plan.contact.name),
     ...noteResult,
+    firstName: created.firstName ?? plan.contact.firstName ?? null,
+    lastName: created.lastName ?? plan.contact.lastName ?? null,
     assignedTo: created.assignedTo ?? plan.payload.assignedTo ?? null,
     tags: created.tags ?? plan.payload.tags ?? []
   };
@@ -1253,9 +1310,11 @@ export async function ghlUpdateContact(options) {
   };
 }
 
-export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, phone, tags, action = "add", fetchImpl = fetch }) {
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, phone, fetchImpl });
+export async function ghlPrepareTagChange({ token, locationId, contactId, contactQuery, phone, tags, action = "add", expectedContactId, expectedContactName, expectedPhoneLast4, fetchImpl = fetch }) {
+  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, fetchImpl });
   if (contact.error) return contact;
+  const mismatch = assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 });
+  if (mismatch) return mismatch;
   const normalizedTags = cleanTags(tags);
   if (!normalizedTags.length) return { error: "At least one tag is required." };
   if (!['add', 'remove'].includes(action)) return { error: "Tag action must be add or remove." };
@@ -1274,16 +1333,20 @@ export async function ghlApplyTagChange(options) {
   });
   return {
     updated: true,
+    contactId: plan.contact.id,
     contact: plan.contact.name,
+    phoneLast4: plan.contact.phoneLast4,
     action: plan.action,
     tags: plan.tags,
     currentTags: body.tags ?? []
   };
 }
 
-export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, phone, body, title, pinned = false, fetchImpl = fetch }) {
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, phone, fetchImpl });
+export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, phone, body, title, pinned = false, expectedContactId, expectedContactName, expectedPhoneLast4, fetchImpl = fetch }) {
+  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, fetchImpl });
   if (contact.error) return contact;
+  const mismatch = assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 });
+  if (mismatch) return mismatch;
   const noteBody = String(body ?? "").trim();
   if (!noteBody) return { error: "The note cannot be empty." };
   if (noteBody.length > 5_000) return { error: "The note is too long. Keep it under 5,000 characters." };
@@ -1661,7 +1724,7 @@ export async function ghlPrepareClinicalUpdate({
   if (!clean.doctors.length && !clean.medications.length) {
     return { error: "No doctors or medications were provided." };
   }
-  const contact = await ghlResolveContact({ token, locationId, contactId, query: contactQuery, fetchImpl });
+  const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, fetchImpl });
   if (contact.error) return contact;
   const objects = await ghlClinicalObjects({ token, locationId, environment, fetchImpl });
   for (const kind of ["doctors", "medications"]) {
@@ -1900,7 +1963,7 @@ export async function ghlApplyClinicalUpdate(options) {
       });
     }
   }
-  return { updated: true, ...result };
+  return { updated: true, contactId: plan.contact.id, ...result };
 }
 
 export function taskDueAt(task) {
