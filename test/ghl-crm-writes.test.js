@@ -794,22 +794,27 @@ test("valid note bodies do not invent formatting or empty API errors", async () 
 });
 
 test("real GHL note API errors are still surfaced", async () => {
-  const result = await executeTool("ghl_add_contact_note", {
-    contactId: "tomas-id",
-    body: ASCII_NOTE,
-    confirmed: true
-  }, {
-    environment,
-    senderProfile: speaker,
-    fetchImpl: async (url) => {
-      if (String(url).endsWith("/contacts/tomas-id")) {
-        return json({ contact: { id: "tomas-id", firstName: "Tomas", lastName: "Diaz", phone: "+13055555970" } });
+  await assert.rejects(
+    () => executeTool("ghl_add_contact_note", {
+      contactId: "tomas-id",
+      body: ASCII_NOTE,
+      confirmed: true
+    }, {
+      environment,
+      senderProfile: speaker,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith("/contacts/tomas-id")) {
+          return json({ contact: { id: "tomas-id", firstName: "Tomas", lastName: "Diaz", phone: "+13055555970" } });
+        }
+        return json({ message: "GHL notes storage is unavailable" }, 503);
       }
-      return json({ message: "GHL notes storage is unavailable" }, 503);
+    }),
+    (error) => {
+      assert.match(String(error?.message ?? error), /GHL notes storage is unavailable/);
+      assert.doesNotMatch(String(error?.message ?? error), /cannot be empty|formatting/i);
+      return true;
     }
-  });
-  assert.match(result.error, /GHL notes storage is unavailable/);
-  assert.doesNotMatch(result.error, /cannot be empty|formatting/i);
+  );
 });
 
 test("note tool schema tells the model to keep quotes and skip invented empty errors", () => {
