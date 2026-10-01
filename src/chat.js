@@ -3,7 +3,9 @@ import {
   bindStickyContactArgs,
   explicitlyReturnsToCrm,
   formatActiveCrmTask,
+  inventsFabricatedNoteFailure,
   maybeContinueCrmTask,
+  maybePreviewStickyNote,
   mergeThreadIdentifiers,
   switchesAwayFromCrm
 } from "./crm-continuity.js";
@@ -570,7 +572,18 @@ export async function handleTelegramChat({
         conversationId: message.chatId
       })
       : unavailableMessage(userText);
-  const safeReply = stripInternalHandoff(blockYahoskaOnlyRefusal(reply, speaker));
+  let safeReply = stripInternalHandoff(blockYahoskaOnlyRefusal(reply, speaker));
+  if (inventsFabricatedNoteFailure(safeReply) && (scratch?.contactId || scratch?.phoneLast4)) {
+    const recovered = await maybePreviewStickyNote({ text: inbound.text, scratch, executeTool: toolRunner });
+    if (recovered?.reply) {
+      if (recovered.scratch) await persistScratch(recovered.scratch);
+      safeReply = recovered.reply;
+    } else {
+      const who = scratch.storedName || scratch.spokenName || "that contact";
+      const last4 = scratch.phoneLast4 ? ` and last-4 ${scratch.phoneLast4}` : "";
+      safeReply = `I still have ${who}${last4}. I am not doing a fresh lookup. Send the note again and I’ll preview it on this same contact.`;
+    }
+  }
 
   await sendTelegramMessage({ botToken, chatId: message.chatId, text: safeReply });
   await store.appendChatTurn({

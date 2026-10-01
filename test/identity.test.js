@@ -85,6 +85,9 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /confirmed=true/);
   assert.match(SYSTEM_PROMPT, /CRM note text is exact/);
   assert.match(SYSTEM_PROMPT, /curly quotes/);
+  assert.match(SYSTEM_PROMPT, /wrote back saying "ok gracias"/);
+  assert.match(SYSTEM_PROMPT, /Never claim empty\/formatting unless that exact error is in a tool result from this turn/);
+  assert.match(SYSTEM_PROMPT, /If this chat already has a contact id or last-4, never start a fresh name\/last-4 lookup/);
   assert.match(SYSTEM_PROMPT, /Never rewrite, strip quotes, or invent a CRM\/GHL formatting or empty-note error/);
   assert.match(SYSTEM_PROMPT, /Do not re-preview, ask for the phone, or start a fresh name\/last-4 lookup on confirmation/);
   assert.match(SYSTEM_PROMPT, /Corrections continue the job/);

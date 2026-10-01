@@ -6,8 +6,10 @@ import {
   extractNoteBodyFromUserText,
   ghlPrepareContactNote,
   isBlankContactNote,
+  isCrmNoteAddRequest,
   looksLikeGhlUserId,
-  normalizeContactNoteBody
+  normalizeContactNoteBody,
+  resolveContactNoteBody
 } from "../src/ghl.js";
 import { applyCrmToolResult, bindStickyContactArgs, formatActiveCrmTask, householdContacts, maybeContinueCrmTask } from "../src/crm-continuity.js";
 
@@ -727,6 +729,14 @@ test("user text can recover a quoted note when the model body is empty", () => {
     ASCII_NOTE
   );
   assert.equal(extractNoteBodyFromUserText("yes"), "");
+});
+
+test("quote-only wrote-back smoke is a note body without add-to-notes phrasing", () => {
+  const smoke = 'Tomas wrote back saying "ok gracias"';
+  assert.equal(extractNoteBodyFromUserText(smoke), smoke);
+  assert.equal(resolveContactNoteBody({ body: "", userText: smoke }), smoke);
+  assert.equal(isCrmNoteAddRequest(smoke), true);
+  assert.equal(isCrmNoteAddRequest("yes"), false);
 });
 
 test("preview+Yes writes the exact Tomas/5970 note once on the pinned id", async () => {

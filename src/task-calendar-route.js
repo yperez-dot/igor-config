@@ -109,6 +109,9 @@ export function toolsForUserRequest(tools, text) {
 export function toolChoiceForUserRequest(text, tools = []) {
   const names = (tools ?? []).map((tool) => tool?.function?.name ?? tool?.name);
   if (isQuotedLeadCheckinStatusRequest(text)) return "auto";
+  if (/\bwrote back saying\b|\badd(?:\s+that)?\s+to\s+(?:his|her|their).{0,24}notes\b/i.test(String(text ?? "")) && names.includes("ghl_add_contact_note")) {
+    return { type: "function", function: { name: "ghl_add_contact_note" } };
+  }
   if (isGhlPipelineMoveRequest(text) && names.includes("ghl_move_opportunity_stage")) {
     return { type: "function", function: { name: "ghl_move_opportunity_stage" } };
   }

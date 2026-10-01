@@ -15,7 +15,9 @@ import {
   isLookItUp,
   isThreadContactReference,
   lookupArgsFromScratch,
+  inventsFabricatedNoteFailure,
   maybeContinueCrmTask,
+  maybePreviewStickyNote,
   mergeThreadIdentifiers,
   parseGhlTaskDraft,
   stickyContactFor,
@@ -160,6 +162,108 @@ test("note preview result sticks the contact id and draft on the scratchpad", ()
   assert.equal(next.phoneLast4, "2363");
   assert.equal(next.pending.tool, "ghl_add_contact_note");
   assert.equal(next.pending.args.body, "Alexa’s grandma referred her.");
+});
+
+test("sticky Tomas/5970 previews Tomas wrote back saying ok gracias without a fresh lookup", async () => {
+  const smoke = 'Tomas wrote back saying "ok gracias"';
+  const scratch = {
+    contactId: "tomas-id",
+    spokenName: "Tomas",
+    storedName: "Tomas D.",
+    phoneLast4: "5970",
+    goal: "add_note"
+  };
+  const toolCalls = [];
+  const result = await maybeContinueCrmTask({
+    text: smoke,
+    scratch,
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      assert.equal(name, "ghl_add_contact_note");
+      assert.notEqual(args.confirmed, true);
+      assert.equal(args.contactId, "tomas-id");
+      assert.equal(args.body, smoke);
+      return {
+        needsConfirmation: true,
+        proposed: { contactId: "tomas-id", contact: "Tomas D.", phoneLast4: "5970", body: smoke }
+      };
+    }
+  });
+  assert.equal(toolCalls.length, 1);
+  assert.equal(result.scratch.pending.args.body, smoke);
+  assert.equal(result.scratch.pending.args.contactId, "tomas-id");
+  assert.match(result.reply, /ok gracias/);
+  assert.match(result.reply, /5970/);
+  assert.doesNotMatch(result.reply, /empty|formatting|fresh|look(?:\s+it)?\s+up/i);
+  assert.match(formatActiveCrmTask(scratch), /Never start a fresh name\/last-4 lookup while this contact id or last-4 is present/);
+});
+
+test("Telegram smoke Tomas wrote back saying ok gracias never asks Grok or looks up 5970", async () => {
+  const smoke = 'Tomas wrote back saying "ok gracias"';
+  const store = memoryStore({
+    contactId: "tomas-id",
+    spokenName: "Tomas",
+    storedName: "Tomas D.",
+    phoneLast4: "5970"
+  });
+  const { reply, grokCalled, toolCalls } = await chatTurn({
+    store,
+    text: smoke,
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_add_contact_note");
+      assert.equal(args.body, smoke);
+      assert.equal(args.contactId, "tomas-id");
+      assert.notEqual(args.confirmed, true);
+      return {
+        needsConfirmation: true,
+        proposed: { contactId: "tomas-id", contact: "Tomas D.", phoneLast4: "5970", body: smoke }
+      };
+    },
+    askGrok: async () => "GHL rejected the note again as empty. I need a fresh Tomas lookup by phone ending 5970."
+  });
+  assert.equal(grokCalled, false);
+  assert.equal(toolCalls.length, 1);
+  assert.equal(toolCalls[0].args.body, smoke);
+  assert.match(reply, /ok gracias/);
+  assert.doesNotMatch(reply, /empty|fresh|look(?:\s+it)?\s+up/i);
+});
+
+test("fabricated empty speech is replaced by a sticky preview when Tomas/5970 is pinned", async () => {
+  const smoke = 'Tomas wrote back saying "ok gracias"';
+  const preview = await maybePreviewStickyNote({
+    text: smoke,
+    scratch: { contactId: "tomas-id", storedName: "Tomas D.", phoneLast4: "5970" },
+    executeTool: async (name, args) => {
+      assert.equal(name, "ghl_add_contact_note");
+      assert.equal(args.body, smoke);
+      return {
+        needsConfirmation: true,
+        proposed: { contactId: "tomas-id", contact: "Tomas D.", phoneLast4: "5970", body: smoke }
+      };
+    }
+  });
+  assert.equal(preview.scratch.pending.args.body, smoke);
+  assert.equal(inventsFabricatedNoteFailure("GHL rejected the note again as empty. I need a fresh GHL lookup for Tomas by phone ending 5970."), true);
+  assert.equal(inventsFabricatedNoteFailure("I’ll add this to Tomas D. ending 5970 notes."), false);
+});
+
+test("invented empty+lookup speech is blocked when Tomas/5970 is pinned", async () => {
+  const store = memoryStore({
+    contactId: "tomas-id",
+    spokenName: "Tomas",
+    storedName: "Tomas D.",
+    phoneLast4: "5970"
+  });
+  const { reply, grokCalled } = await chatTurn({
+    store,
+    text: "what happened with that note",
+    askGrok: async () => "GHL rejected the note again as empty. I need a fresh Tomas lookup by phone ending 5970."
+  });
+  assert.equal(grokCalled, true);
+  assert.match(reply, /5970/);
+  assert.match(reply, /not doing a fresh lookup/i);
+  assert.doesNotMatch(reply, /rejected|empty note|phone ending 5970/i);
 });
 
 test("Yes writes the exact quoted Tomas note once on the pinned 5970 contact", async () => {
