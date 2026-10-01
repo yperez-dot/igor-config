@@ -52,7 +52,8 @@ import {
   ghlStaleLeads,
   ghlPrepareUpdateContact,
   ghlUpdateContact
-  ,ghlSendSoaMessage
+  ,ghlSendSoaMessage,
+  resolveContactNoteBody
 } from "./ghl.js";
 import { personalOpenLeadsForChat } from "./ghl-personal.js";
 import { formatReviewPlansDraft } from "./review-plans.js";
@@ -268,7 +269,7 @@ export function grokTools(environment = process.env) {
           name: { type: "string", description: "Full name when first/last are not split. A first name like Michelle is enough." },
           phone: { type: "string", description: "Optional phone number." },
           email: { type: "string", description: "Optional email address." },
-          noteBody: { type: "string", description: "Complete GHL note requested as part of creating this contact. Include it in the same approval." },
+          noteBody: { type: "string", description: "Complete GHL note requested as part of creating this contact. Include it in the same approval. Preserve the exact wording, including quotes, apostrophes, punctuation, Unicode, and line breaks." },
           noteTitle: { type: "string", description: "Optional note title." },
           tags: { type: "array", items: { type: "string" }, description: "GHL tags. Open Leads uses active_prospect (underscore). Aliases like 'active prospect' or active-prospect normalize to active_prospect. New AEP/prospect creates default to active_prospect and prospect." },
           assignedTo: { type: "string", description: "Optional owner. Accepts a GHL user id, email, or name (Yahoska, Katy, Carolina, YP). Names and emails resolve to user ids. Defaults to Yahoska." },
@@ -344,13 +345,13 @@ export function grokTools(environment = process.env) {
         required: ["action", "tags"],
         additionalProperties: false
       }),
-      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. After create or resolve, reuse the sticky Active CRM / this-chat contact id for that person — do not re-search by name and never ask the user to paste an id Igor just created. After they say yes, call again with confirmed=true on that same draft and sticky id. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. Pass the user's exact wording in body. ASCII quotes, curly quotes, apostrophes, punctuation, Unicode, and line breaks are valid and must be preserved — do not rewrite, strip quotes, or invent a formatting/empty GHL error. The tool rejects a note only when it is empty or whitespace-only after trim. After create or resolve, reuse the sticky Active CRM / this-chat contact id for that person — do not re-search by name and never ask the user to paste an id Igor just created. After they say yes, call again with confirmed=true on that same draft, exact approved body, and sticky id. Do not re-preview, ask for the phone, or start a fresh name/last-4 lookup on confirmation. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
         type: "object",
         properties: {
           contactId: { type: "string", description: "Sticky Active CRM / this-chat contact id. Wins over name search after create or resolve." },
           contactQuery: { type: "string", description: "Name, phone, or last-4 only when no this-chat contact id exists for that person. Phone/last-4 wins if the stored first name differs." },
           phone: { type: "string", description: "Full phone or last-4 so a first-name mismatch still finds the contact." },
-          body: { type: "string" },
+          body: { type: "string", description: "Exact note text. Keep ASCII/curly quotes, apostrophes, punctuation, Unicode, and line breaks unchanged. Do not clean or rewrite." },
           title: { type: "string" },
           pinned: { type: "boolean" },
           userId: { type: "string", description: "Optional GHL note-author user id." },
@@ -822,10 +823,67 @@ export function grokTools(environment = process.env) {
   return tools;
 }
 
-function parseArgs(raw) {
+function unescapeLooseJsonString(inner) {
+  return String(inner ?? "")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+function parseLooseJsonValue(raw) {
+  const value = String(raw ?? "").trim().replace(/,\s*$/, "");
+  if (!value) return "";
+  if (value === "true") return true;
+  if (value === "false") return false;
+  if (value === "null") return null;
+  if ((value.startsWith("{") && value.endsWith("}")) || (value.startsWith("[") && value.endsWith("]"))) {
+    try { return JSON.parse(value); } catch { /* keep loose string recovery below */ }
+  }
+  if (value.startsWith('"')) {
+    const inner = value.endsWith('"') ? value.slice(1, -1) : value.slice(1);
+    return unescapeLooseJsonString(inner);
+  }
+  if (/^-?\d+(?:\.\d+)?$/.test(value)) return Number(value);
+  return unescapeLooseJsonString(value);
+}
+
+function recoverBrokenToolArgs(text) {
+  const source = String(text ?? "").trim();
+  if (!source.startsWith("{")) return {};
+  const keys = [];
+  const keyRe = /"((?:\\.|[^"\\])*)"\s*:/g;
+  let match;
+  while ((match = keyRe.exec(source))) {
+    keys.push({
+      key: unescapeLooseJsonString(match[1]),
+      colonEnd: match.index + match[0].length,
+      keyStart: match.index
+    });
+  }
+  const closing = source.lastIndexOf("}");
+  const out = {};
+  for (let index = 0; index < keys.length; index++) {
+    const end = index + 1 < keys.length ? keys[index + 1].keyStart : (closing >= 0 ? closing : source.length);
+    out[keys[index].key] = parseLooseJsonValue(source.slice(keys[index].colonEnd, end));
+  }
+  return out;
+}
+
+export function parseToolArgs(raw) {
   if (!raw) return {};
-  if (typeof raw === "object") return raw;
-  return JSON.parse(raw);
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw;
+  try {
+    const parsed = JSON.parse(String(raw));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return recoverBrokenToolArgs(String(raw));
+  }
+}
+
+function parseArgs(raw) {
+  return parseToolArgs(raw);
 }
 
 function calendarRequest({ environment, senderId, senderProfile, whose }) {
@@ -1389,12 +1447,18 @@ export async function executeTool(name, rawArgs, {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
       const config = ghlConfig(environment);
+      const pendingNote = activeCrmTask?.pending?.tool === "ghl_add_contact_note" ? activeCrmTask.pending.args : null;
       const request = {
         ...config,
         contactId: args.contactId,
         contactQuery: args.contactQuery,
         phone: args.phone,
-        body: args.body,
+        body: resolveContactNoteBody({
+          body: args.body,
+          userText,
+          pendingBody: pendingNote?.body,
+          confirmed: args.confirmed === true
+        }),
         title: args.title,
         pinned: args.pinned === true,
         expectedContactId: args.expectedContactId,

@@ -162,6 +162,49 @@ test("note preview result sticks the contact id and draft on the scratchpad", ()
   assert.equal(next.pending.args.body, "Alexa’s grandma referred her.");
 });
 
+test("Yes writes the exact quoted Tomas note once on the pinned 5970 contact", async () => {
+  const body = 'Tomas wrote back saying "okay thank you"';
+  const scratch = {
+    contactId: "tomas-id",
+    spokenName: "Tomas",
+    storedName: "Tomas D.",
+    phoneLast4: "5970",
+    goal: "add_note",
+    pending: {
+      tool: "ghl_add_contact_note",
+      approved: false,
+      args: {
+        contactId: "tomas-id",
+        expectedContactId: "tomas-id",
+        expectedContactName: "Tomas D.",
+        expectedPhoneLast4: "5970",
+        body
+      }
+    }
+  };
+  const toolCalls = [];
+  const result = await maybeContinueCrmTask({
+    text: "Yes",
+    scratch,
+    speaker: yahoska,
+    executeTool: async (name, args) => {
+      toolCalls.push({ name, args });
+      assert.equal(name, "ghl_add_contact_note");
+      assert.equal(args.confirmed, true);
+      assert.equal(args.contactId, "tomas-id");
+      assert.equal(args.expectedContactId, "tomas-id");
+      assert.equal(args.body, body);
+      assert.equal(Object.hasOwn(args, "contactQuery"), false);
+      assert.equal(Object.hasOwn(args, "phone"), false);
+      return { created: true, contactId: "tomas-id", contact: "Tomas D.", body };
+    }
+  });
+  assert.equal(toolCalls.length, 1);
+  assert.match(result.reply, /Saved the note/);
+  assert.doesNotMatch(result.reply, /empty|formatting|look(?:\s+it)?\s+up|phone ending|last-4/i);
+  assert.equal(result.scratch.pending, null);
+});
+
 test("after draft + Yes, confirmed write is attempted on the same note", async () => {
   const result = await maybeContinueCrmTask({
     text: "Yes",
