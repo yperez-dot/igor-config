@@ -280,3 +280,43 @@ test("maps an AbortSignal timeout to a Pulse retry message", async () => {
     /timed out scanning theiagentpulse or drafting with Grok/
   );
 });
+
+test("should aggregate EN+ES recipientCounts in production bilingual mode", async () => {
+  const delivered = [];
+  let callCount = 0;
+
+  const result = await runAgentPulseWeekly({
+    environment: {
+      XAI_API_KEY: "token",
+      AGENT_PULSE_MODE: "send",
+      // AGENT_PULSE_LANG is deliberately unset (bilingual production mode)
+      PULSE_IMAP_PASS: "pulse-pass",
+      AGENT_PULSE_RECIPIENTS: "en1@example.com,en2@example.com",  // 2 EN recipients
+      INDUSTRY_PULSE_RECIPIENTS_ES: "es1@example.com",  // 1 ES recipient
+      FROM_EMAIL: "info@healthexps.com",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "secret"
+    },
+    now: new Date("2026-08-31T14:00:00.000Z"),
+    scanInbox: async () => [],
+    askModel: async () => INSIDER_JSON,
+    fetchImpl: noLogoFetch,
+    publishHub: async () => ({ status: "published" }),
+    deliver: async (payload) => {
+      delivered.push(payload);
+      callCount += 1;
+      return { messageId: `message-${callCount}` };
+    }
+  });
+
+  // Verify bilingual mode executed: 2 calls to deliver (EN + ES)
+  assert.equal(delivered.length, 2);
+  assert.equal(delivered[0].to, "en1@example.com");
+  assert.equal(delivered[1].to, "es1@example.com");
+
+  // Verify aggregated result
+  assert.equal(result.status, "sent");
+  assert.equal(result.recipientCount, 3);  // 2 EN + 1 ES
+  assert.deepEqual(result.recipientCounts, { en: 2, es: 1 });
+});
