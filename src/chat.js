@@ -525,7 +525,7 @@ export async function handleTelegramChat({
     return continuedAction.reply;
   }
 
-  const continued = typeof executeTool === "function" && !nonCrmTopic
+  const continued = typeof executeTool === "function" && !nonCrmTopic && !inbound.media?.length
     ? await maybeContinueCrmTask({
       text: inbound.text,
       history,
@@ -534,6 +534,7 @@ export async function handleTelegramChat({
       executeTool: toolRunner
     })
     : null;
+  if (scratch && typeof store.saveChatScratch === "function") await persistScratch(scratch);
   if (continued?.reply) {
     if (continued.scratch) await persistScratch(continued.scratch);
     await sendTelegramMessage({ botToken, chatId: message.chatId, text: continued.reply });
@@ -573,7 +574,7 @@ export async function handleTelegramChat({
       })
       : unavailableMessage(userText);
   let safeReply = stripInternalHandoff(blockYahoskaOnlyRefusal(reply, speaker));
-  if (inventsFabricatedNoteFailure(safeReply) && (scratch?.contactId || scratch?.phoneLast4)) {
+  if (inventsFabricatedNoteFailure(safeReply) && !inbound.media?.length && (scratch?.contactId || scratch?.phoneLast4)) {
     const recovered = await maybePreviewStickyNote({ text: inbound.text, scratch, executeTool: toolRunner });
     if (recovered?.reply) {
       if (recovered.scratch) await persistScratch(recovered.scratch);

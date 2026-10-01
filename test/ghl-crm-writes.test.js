@@ -834,3 +834,15 @@ test("note tool schema tells the model to keep quotes and skip invented empty er
   assert.match(noteTool.function.description, /fresh name\/last-4 lookup on confirmation/i);
   assert.match(noteTool.function.parameters.properties.body.description, /Keep ASCII\/curly quotes/);
 });
+
+
+test("screenshot instructions are never extracted as a note body", () => {
+  assert.equal(extractNoteBodyFromUserText("Review this text I sent to my client gaspar padron. Pls add to his notes that I messaged him."), "");
+});
+
+test("pinned preview rejects a conflicting supplied phone before mutation", async () => {
+  const calls = [];
+  const result = await ghlPrepareContactNote({ token: "test", locationId: "location", contactId: "contact-1", phone: "2329", body: "Messaged client", fetchImpl: fixture(calls) });
+  assert.equal(result.identityMismatch, true);
+  assert.equal(calls.some(call => call.method !== "GET"), false);
+});

@@ -73,13 +73,13 @@ function memoryStore(seedScratch = null) {
   };
 }
 
-async function chatTurn({ store, text, executeTool, askGrok }) {
+async function chatTurn({ store, text, executeTool, askGrok, photo, downloadTelegramFile }) {
   let grokCalled = false;
   const toolCalls = [];
   const sent = [];
   const reply = await handleTelegramChat({
     store,
-    message: { chatId: 99, senderId: "111", firstName: "Yahoska", text },
+    message: { chatId: 99, senderId: "111", firstName: "Yahoska", text, ...(photo ? { photo } : {}) },
     askGrok: async (request) => {
       grokCalled = true;
       return askGrok ? askGrok(request) : "should not run";
@@ -88,6 +88,7 @@ async function chatTurn({ store, text, executeTool, askGrok }) {
       toolCalls.push({ name, args });
       return executeTool ? executeTool(name, args, toolCalls) : { ok: true };
     },
+    downloadFile: downloadTelegramFile,
     sendTelegramMessage: async (payload) => { sent.push(payload.text); },
     botToken: "token",
     apiKey: "xai",
@@ -196,7 +197,7 @@ test("sticky Tomas/5970 previews Tomas wrote back saying ok gracias without a fr
   assert.match(result.reply, /ok gracias/);
   assert.match(result.reply, /5970/);
   assert.doesNotMatch(result.reply, /empty|formatting|fresh|look(?:\s+it)?\s+up/i);
-  assert.match(formatActiveCrmTask(scratch), /Never start a fresh name\/last-4 lookup while this contact id or last-4 is present/);
+  assert.match(formatActiveCrmTask(scratch), /A different named person, phone, or email requires a fresh lookup/);
 });
 
 test("Telegram smoke Tomas wrote back saying ok gracias never asks Grok or looks up 5970", async () => {
@@ -1123,4 +1124,106 @@ test("Telegram follow-up after couple create injects Pablo’s sticky id and nev
   assert.equal(Object.hasOwn(toolCalls[0].args, "contactQuery"), false);
   assert.match(reply, /this-chat id/i);
   assert.doesNotMatch(reply, /paste/i);
+});
+
+const gasparRequest = "Review this text I sent to my client gaspar padron. Pls add to his notes that I messaged him. Tag him and wife Maria Gaspar as AEP-analysis";
+const oldTomas = { contactId: "tomas-id", storedName: "Tomas D.", spokenName: "Tomas", phoneLast4: "5970", pending: { tool: "ghl_add_contact_note", args: { contactId: "tomas-id", body: "Old note" } } };
+
+test("Gaspar screenshot request clears Tomas and keeps every requested action for vision", async () => {
+  const store = memoryStore(oldTomas);
+  const result = await chatTurn({ store, text: gasparRequest,
+    photo: { fileId: "photo", fileName: "client.jpeg", mimeType: "image/jpeg" },
+    downloadTelegramFile: async () => ({ buffer: Buffer.from("image"), fileSize: 5 }),
+    askGrok: async request => {
+      assert.equal(request.media.length, 1);
+      assert.match(request.text, /Maria Gaspar as AEP-analysis/);
+      assert.doesNotMatch(request.systemPrompt, /tomas-id|Old note/);
+      assert.match(request.systemPrompt, /gaspar padron/);
+      await request.executeTool("ghl_add_contact_note", { contactId: "tomas-id", body: "Messaged client about plan discontinuation." });
+      return "Gaspar and Maria need separate verified previews.";
+    },
+    executeTool: async (name, args) => {
+      assert.equal(args.contactId, undefined);
+      assert.equal(args.contactQuery, "gaspar padron");
+      assert.notEqual(args.confirmed, true);
+      return { error: "Need to resolve contact" };
+    }
+  });
+  assert.equal(result.grokCalled, true);
+  assert.equal(store.scratch.get("99:crm").pending, null);
+});
+
+test("new phone after Tomas preview clears old approval and uses the full phone", async () => {
+  const store = memoryStore(oldTomas);
+  await chatTurn({ store, text: "+1 (954) 643-2329", askGrok: async request => {
+    assert.doesNotMatch(request.systemPrompt, /tomas-id|Old note/);
+    await request.executeTool("ghl_search_contacts", { contactId: "tomas-id" });
+    return "Fresh phone lookup requested.";
+  }, executeTool: async (name, args) => {
+    assert.equal(args.contactId, undefined);
+    assert.equal(args.phone, "19546432329");
+    return { contacts: [] };
+  }});
+  assert.equal(store.scratch.get("99:crm").pending, null);
+});
+
+test("compound note and tags bypass the sticky note shortcut", async () => {
+  const calls = [];
+  assert.equal(await maybePreviewStickyNote({ text: gasparRequest, scratch: oldTomas, executeTool: (...args) => calls.push(args) }), null);
+  assert.equal(calls.length, 0);
+});
+
+test("separate household previews preserve note and both tag targets through Yes", async () => {
+  let scratch = applyCrmToolResult(null, "ghl_add_contact_note", {}, { needsConfirmation: true, proposed: { contactId: "gaspar-id", contact: "Gaspar P.", phoneLast4: "2329", body: "Messaged him." } });
+  for (const [contactId, contact] of [["gaspar-id", "Gaspar P."], ["maria-id", "Maria G."]]) {
+    scratch = applyCrmToolResult(scratch, "ghl_manage_contact_tags", {}, { needsConfirmation: true, proposed: { contactId, contact, action: "add", tags: ["AEP-analysis"] } });
+  }
+  assert.equal(scratch.pendingQueue.length, 2);
+  assert.match(formatActiveCrmTask(scratch), /Messaged him/);
+  assert.match(formatActiveCrmTask(scratch), /gaspar-id/);
+  const calls = [];
+  const result = await maybeContinueCrmTask({ text: "yes", scratch, speaker: yahoska, executeTool: async (tool, args) => {
+    calls.push({ tool, args });
+    assert.equal(args.confirmed, true);
+    assert.equal(args.expectedContactId, args.contactId);
+    return { created: tool === "ghl_add_contact_note", updated: tool === "ghl_manage_contact_tags", contact: args.expectedContactName, contactId: args.contactId };
+  }});
+  assert.deepEqual(calls.map(call => call.args.contactId), ["gaspar-id", "gaspar-id", "maria-id"]);
+  assert.match(result.reply, /Gaspar P/);
+  assert.match(result.reply, /Maria G/);
+  assert.equal(result.scratch.pending, null);
+});
+
+test("unresolved Maria does not discard Gaspar's preview", () => {
+  const scratch = applyCrmToolResult(null, "ghl_add_contact_note", {}, { needsConfirmation: true, proposed: { contactId: "gaspar-id", contact: "Gaspar P.", body: "Messaged him." } });
+  const next = applyCrmToolResult(scratch, "ghl_manage_contact_tags", { contactQuery: "Maria Gaspar" }, { error: "No contact matched" });
+  assert.equal(next.pending.args.contactId, "gaspar-id");
+  assert.equal(next.pending.args.body, "Messaged him.");
+});
+
+
+test("unavailable image reaches the model without previewing an instruction-only note", async () => {
+  const store = memoryStore(oldTomas);
+  const result = await chatTurn({ store, text: gasparRequest,
+    photo: { fileId: "missing", fileName: "client.jpeg", mimeType: "image/jpeg" },
+    downloadTelegramFile: async () => { throw new Error("Image unavailable"); },
+    askGrok: async request => {
+      assert.equal(request.media.length, 0);
+      assert.doesNotMatch(request.systemPrompt, /tomas-id/);
+      assert.match(request.systemPrompt, /If the image is unavailable/);
+      return "I couldn't read the image. Please send its text; I still have the note and both tags requested.";
+    },
+    executeTool: async () => { throw new Error("No preview without image content"); }
+  });
+  assert.equal(result.grokCalled, true);
+  assert.equal(result.toolCalls.length, 0);
+});
+
+
+test("old history cannot repopulate the contact after an explicit target switch", () => {
+  const switched = mergeThreadIdentifiers(oldTomas, [], gasparRequest);
+  const next = mergeThreadIdentifiers(switched, [{ role: "user", content: "Tomas ending 5970 contact AbCdEfGhIjKlMnOpQr12" }], gasparRequest);
+  assert.equal(next.contactId, undefined);
+  assert.equal(next.phoneLast4, null);
+  assert.equal(next.spokenName, "gaspar padron");
 });

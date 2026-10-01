@@ -196,7 +196,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
 
   const priorPending = result.needsConfirmation && ["ghl_add_contact_note", "ghl_manage_contact_tags"].includes(name)
     && ["ghl_add_contact_note", "ghl_manage_contact_tags"].includes(scratch?.pending?.tool)
-    && scratch.pending.tool !== name && scratch.pending.args?.contactId === (result.proposed?.contactId || found.contactId)
+    && (scratch.pending.tool !== name || scratch.pending.args?.contactId !== (result.proposed?.contactId || found.contactId))
     ? scratch.pending : null;
 
   if (name === "ghl_check_open_leads") next.goal = "open_leads";
@@ -214,7 +214,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
     if (result.needsConfirmation && result.proposed?.body) {
       next.pending = {
         tool: "ghl_add_contact_note",
-        approved: Boolean(next.pending?.approved),
+        approved: false,
         args: {
           contactId: result.proposed.contactId,
           expectedContactId: result.proposed.contactId,
@@ -372,10 +372,24 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
 }
 
 export function mergeThreadIdentifiers(scratch, history = [], userText = "") {
+  const override = parseNameCorrection(userText) ? null : explicitCrmContactOverride(userText, scratch || {});
+  if (override && scratch) {
+    // A new target invalidates all previous write approvals before any tool runs.
+    return {
+      spokenName: override.contactQuery || (scratch?.targetReset ? scratch.spokenName : null) || null,
+      phoneLast4: extractLast4FromText(userText) || null,
+      lookupPhone: override.phone || null,
+      contacts: [],
+      targetReset: true,
+      pending: null,
+      pendingQueue: [],
+      requestText: /\b(?:notes?|tags?|tag)\b/i.test(userText) ? userText : scratch?.requestText || null
+    };
+  }
   const next = { ...(scratch || {}) };
-  const last4 = extractLast4FromThread(history, userText);
+  const last4 = extractLast4FromText(userText) || next.phoneLast4 || (next.targetReset ? "" : extractLast4FromThread(history, userText));
   if (last4) next.phoneLast4 = last4;
-  const blob = [userText, ...history.map((turn) => turn?.content)].filter(Boolean).join("\n");
+  const blob = [userText, ...(next.targetReset ? [] : history.map((turn) => turn?.content))].filter(Boolean).join("\n");
   for (const token of blob.split(/[^\w-]+/)) {
     if (looksLikeGhlContactId(token) && !next.contactId) next.contactId = token;
   }
@@ -401,6 +415,7 @@ export function formatActiveCrmTask(scratch) {
     return "";
   }
   const lines = [
+    ...(scratch.requestText ? [`- Current requested actions (finish each, resolve people separately): ${scratch.requestText}`] : []),
     "## Active CRM task (this Telegram chat)",
     "Follow this job. Do not reset. Do not re-ask for a GHL contact id or last-4 already listed here.",
     "This-chat / Active CRM contact ids win over name search after create or any successful resolve. Never ask the user to paste an id Igor just created in this thread.",
@@ -425,7 +440,11 @@ export function formatActiveCrmTask(scratch) {
     lines.push(`- Pending note (${scratch.pending.approved ? "already approved — save it" : "draft, waiting for yes"}):`);
     lines.push(String(scratch.pending.args?.body ?? "").slice(0, 1_500));
     lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft, exact body, and contact id. Do not drop the draft. Do not rewrite the body. Do not invent a formatting or empty-note error. Do not re-preview, ask for the phone, or start a fresh name/last-4 lookup unless the write tool result failed.");
-    lines.push("If they send another note such as 'Tomas wrote back saying \"ok gracias\"', preview that exact body on this sticky contact. Never invent empty/formatting. Never start a fresh name/last-4 lookup while this contact id or last-4 is present.");
+    lines.push("If they send another note such as 'Tomas wrote back saying \"ok gracias\"', preview that exact body on this sticky contact. Never invent empty/formatting. Reuse this id only for the same person. A different named person, phone, or email requires a fresh lookup.");
+  }
+  for (const pending of scratch.pendingQueue || []) {
+    const args = pending.args || {};
+    lines.push(`- Also awaiting confirmation on ${args.expectedContactName || "contact"}, id ${args.contactId}: ${pending.tool === "ghl_add_contact_note" ? args.body : `${args.action || "add"} tags ${(args.tags || []).join(", ")}`}`);
   }
   if (scratch.pending?.tool === "ghl_manage_contact_tags") {
     const args = scratch.pending.args || {};
@@ -472,7 +491,7 @@ export function formatActiveCrmTask(scratch) {
   }
   lines.push("Look it up = use this-chat sticky contact id(s), then last-4, then name. Never ask them to paste a GHL contact id created or resolved in this chat.");
   if (scratch.contactId || scratch.phoneLast4) {
-    lines.push("This contact is already pinned. Never invent an empty/formatting note reject. Never start a fresh name/last-4 lookup while this contact id or last-4 is present.");
+    lines.push("This contact is already pinned. Never invent an empty/formatting note reject. Reuse this id only for the same person. A different named person, phone, or email requires a fresh lookup.");
   }
   lines.push("Clinical writes and contact notes MUST pass the sticky contactId for that person. Do not re-search by name when a this-chat id exists. On write failure, retry that same id — never attach a lookalike from name search.");
   lines.push("Before a new note/tag preview, a sticky id 404 clears that entry and retries the supplied phone last-4 first, then name. A unique last-4/name match is enough; do not ask for a full phone. After approval, never replace the preview id; a 404 needs a fresh preview before any write.");
@@ -619,6 +638,29 @@ export function stickyContactFor(scratch, args = {}, userText = "") {
 export function bindStickyContactArgs(scratch, toolName, args = {}, userText = "") {
   const next = { ...(args || {}) };
   if (!STICKY_CONTACT_TOOLS.has(toolName)) return next;
+  if (next.confirmed !== true) {
+    if (scratch?.targetReset && next.contactId && !householdContacts(scratch).some(entry => entry.contactId === next.contactId)) {
+      delete next.contactId;
+      next.contactQuery ||= scratch.spokenName;
+    }
+    const override = explicitCrmContactOverride(userText, scratch || {});
+    const argsOverride = explicitCrmContactOverride(
+      [next.contactQuery || next.query ? `for ${next.contactQuery || next.query}` : "", next.phone || ""].join(" "), scratch || {}
+    );
+    if ((scratch?.contactId || scratch?.phoneLast4 || scratch?.spokenName) && (override || argsOverride)) {
+      delete next.contactId;
+      const target = argsOverride || override;
+      next.contactQuery ||= target.contactQuery || scratch?.spokenName;
+      next.phone ||= target.phone;
+      return next;
+    }
+    if (scratch?.lookupPhone && !scratch.contactId) {
+      delete next.contactId;
+      next.phone = scratch.lookupPhone;
+      next.contactQuery ||= scratch.spokenName;
+      return next;
+    }
+  }
   const sticky = stickyContactFor(scratch, next, userText);
   if (!sticky?.contactId) return next;
   next.contactId = sticky.contactId;
@@ -640,6 +682,9 @@ const NON_NAME_FOLLOW_WORD_RE = /^(?:due|tomorrow|today|tonight|at|on|for|with|p
 
 export function extractNamedContact(text) {
   const raw = String(text ?? "");
+  const subject = raw.match(/\b(?:my\s+)?(?:client|cliente)\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]+)(?:\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]+))?/i)
+    || raw.match(/^\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]+)(?:\s+([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’-]+))?\s+wrote back\b/i);
+  if (subject) return [subject[1], subject[2]].filter(Boolean).join(" ");
   const match = raw.match(/\b(?:on|for)\s+([A-Za-z][A-Za-z'’-]+)(?:\s+([A-Za-z][A-Za-z'’-]+))?/i);
   if (!match) return "";
   const first = match[1];
@@ -663,7 +708,10 @@ export function explicitCrmContactOverride(text, scratch = {}) {
   );
   const threadLast4 = String(scratch.phoneLast4 ?? "").replace(/\D/g, "").slice(-4);
   const incomingLast4 = (phone.length >= 4 ? phone.slice(-4) : "") || last4;
-  const differentName = Boolean(named && !sameName);
+  const knownName = named && householdContacts(scratch).some(entry =>
+    namesOverlap(named, entry.spokenName) || namesOverlap(named, entry.storedName) || namesOverlap(named, entry.role)
+  );
+  const differentName = Boolean(named && !sameName && !knownName);
   const differentPhone = Boolean(
     incomingLast4
     && threadLast4
@@ -763,6 +811,7 @@ export function inventsFabricatedNoteFailure(text) {
 export async function maybePreviewStickyNote({ text, scratch, executeTool }) {
   if (typeof executeTool !== "function" || !isCrmNoteAddRequest(text)) return null;
   if (!scratch?.contactId && !scratch?.phoneLast4) return null;
+  if (explicitCrmContactOverride(text, scratch) || /\b(?:tag|tags|wife|husband|spouse|screenshot|photo|image|picture|review this text)\b/i.test(text)) return null;
   const body = extractNoteBodyFromUserText(text);
   if (!body) return null;
   const args = bindStickyContactArgs(scratch, "ghl_add_contact_note", {
@@ -860,7 +909,6 @@ async function savePendingContactWrites(scratch, executeTool) {
   const writes = [...(scratch.pendingQueue || []), scratch.pending];
   let next = { ...scratch, pendingQueue: [] };
   const completed = [];
-  let writtenName = "";
   for (let index = 0; index < writes.length; index++) {
     const pending = writes[index];
     next.pending = pending;
@@ -876,11 +924,10 @@ async function savePendingContactWrites(scratch, executeTool) {
         reply: `${completed.length ? `${completed.join(" and ")} saved. ` : ""}Couldn’t finish the approved contact writes — ${toolError(saved.result)}. No alternate contact was used.`
       };
     }
-    completed.push(pending.tool === "ghl_add_contact_note" ? "Note" : "Tags");
-    writtenName = saved.result.contact;
+    completed.push(`${pending.tool === "ghl_add_contact_note" ? "Note" : "Tags"} on ${saved.result.contact}`);
     next.pending = null;
   }
-  return { scratch: next, reply: `Saved ${completed.join(" and ").toLowerCase()} on ${writtenName} in GHL.` };
+  return { scratch: next, reply: `Saved ${completed.join(" and ")} in GHL.` };
 }
 
 async function savePendingClinical(scratch, executeTool) {

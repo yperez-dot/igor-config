@@ -848,6 +848,9 @@ export async function ghlResolveWriteContact({
     pinnedOnly: Boolean(pinnedId),
     fetchImpl
   });
+  if (pinnedId && !resolved.error && phone && !contactMatchesPhone({ phone: resolved.rawPhone }, phone)) {
+    return { error: "The saved contact does not match the supplied phone. Resolve the new phone and preview the correct contact before writing.", identityMismatch: true };
+  }
   if (!pinnedId || !resolved.notFound || !recoverStaleId || (!contactQuery && !phone)) return resolved;
   const recovered = await ghlResolveContact({ token, locationId, query: contactQuery, phone, fetchImpl });
   return { ...recovered, staleContactId: pinnedId };
@@ -1365,6 +1368,7 @@ export function isBlankContactNote(body) {
 export function extractNoteBodyFromUserText(text) {
   const raw = String(text ?? "").replace(/^\s+|\s+$/g, "");
   if (!raw) return "";
+  if (/\b(?:review this text|screenshot|photo|image|picture)\b/i.test(raw)) return "";
   const fromPlease = raw.replace(NOTE_ADD_TAIL_RE, "");
   if (fromPlease !== raw && fromPlease.trim()) return normalizeContactNoteBody(fromPlease);
   const fromAddThat = raw.replace(NOTE_ADD_THAT_RE, "");
