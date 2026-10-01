@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildExdates,
   buildRrule,
   calendarConfig,
   freeSlots,
@@ -9,8 +10,10 @@ import {
   proposedEvent,
   resetCalendarTokenCache,
   resolveCalendarRole,
+  resolveRecurrence,
   resolveReminders,
   resolveTransparency,
+  skipOccurrenceDates,
   toZonedDateTime,
   zonedUtcMs
 } from "../src/calendar.js";
@@ -118,6 +121,141 @@ test("weekly school pickup POSTs an RRULE on create", async () => {
     "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270630T235959Z"
   ]);
   assert.equal(buildRrule({ byDay: ["MO"], until: "2027-06-30" }), "RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20270630T235959Z");
+});
+
+test("weekly Thursday series with until builds RRULE only", () => {
+  const recurrence = resolveRecurrence({
+    start: "2026-10-01T18:00:00",
+    until: "2027-04-30",
+    byDay: ["TH"]
+  }, { timeZone: "America/New_York" });
+  assert.deepEqual(recurrence, ["RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z"]);
+  const proposed = proposedEvent({
+    summary: "Olivia cheer — Top Gun Miami",
+    start: "2026-10-01T18:00:00",
+    end: "2026-10-01T18:55:00",
+    until: "2027-04-30",
+    byDay: ["TH"],
+    location: "14990 SW 137th Street, Miami, FL 33196"
+  }, calendarConfig(calendarEnv));
+  assert.equal(proposed.start, "2026-10-01T18:00:00");
+  assert.equal(proposed.end, "2026-10-01T18:55:00");
+  assert.deepEqual(proposed.recurrence, ["RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z"]);
+});
+
+test("EXDATE skips a single class day at the event start local time", () => {
+  const recurrence = resolveRecurrence({
+    start: "2026-10-01T18:00:00",
+    until: "2027-04-30",
+    byDay: ["TH"],
+    skipDates: ["2026-10-29"]
+  }, { timeZone: "America/New_York" });
+  assert.deepEqual(recurrence, [
+    "RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z",
+    "EXDATE;TZID=America/New_York:20261029T180000"
+  ]);
+  assert.deepEqual(buildExdates({
+    dates: [{ year: 2026, month: 10, day: 29 }],
+    timeZone: "America/New_York",
+    hour: 18,
+    minute: 0,
+    second: 0
+  }), ["EXDATE;TZID=America/New_York:20261029T180000"]);
+});
+
+test("a single skip day that is not the class weekday does not invent an EXDATE", () => {
+  const skipped = skipOccurrenceDates({
+    skipDates: ["2026-10-31"],
+    byDay: ["TH"]
+  }, { timeZone: "America/New_York", byDay: ["TH"] });
+  assert.deepEqual(skipped, []);
+  const recurrence = resolveRecurrence({
+    start: "2026-10-01T18:00:00",
+    until: "2027-04-30",
+    byDay: ["TH"],
+    skipDates: ["2026-10-31"]
+  }, { timeZone: "America/New_York" });
+  assert.deepEqual(recurrence, ["RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z"]);
+});
+
+test("a closed skip range excludes only class weekdays inside it", () => {
+  const skipped = skipOccurrenceDates({
+    skipDates: ["2026-11-20/2026-11-28"],
+    byDay: ["TH"]
+  }, { timeZone: "America/New_York", byDay: ["TH"] });
+  assert.deepEqual(skipped.map((date) => `${date.year}-${String(date.month).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`), [
+    "2026-11-26"
+  ]);
+  const recurrence = resolveRecurrence({
+    start: "2026-10-01T18:00:00",
+    until: "2027-04-30",
+    byDay: ["TH"],
+    skipDates: ["2026-11-20 to 2026-11-28"]
+  }, { timeZone: "America/New_York" });
+  assert.deepEqual(recurrence, [
+    "RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z",
+    "EXDATE;TZID=America/New_York:20261126T180000"
+  ]);
+});
+
+test("createEvent POSTs RRULE plus EXDATE for flyer blackout days and ranges", async () => {
+  resetCalendarTokenCache();
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url: String(url), method: options?.method ?? "GET", body: options?.body });
+    if (String(url).includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "ya29.test", expires_in: 3600 });
+    }
+    if (String(url).includes("/freeBusy")) {
+      return jsonResponse({ calendars: { primary: { busy: [] } } });
+    }
+    if (String(url).includes("/events") && options?.method === "POST") {
+      return jsonResponse({
+        id: "evt-cheer",
+        summary: "Olivia cheer — Top Gun Miami",
+        start: { dateTime: "2026-10-01T18:00:00-04:00", timeZone: "America/New_York" },
+        end: { dateTime: "2026-10-01T18:55:00-04:00", timeZone: "America/New_York" },
+        location: "14990 SW 137th Street, Miami, FL 33196",
+        recurrence: [
+          "RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z",
+          "EXDATE;TZID=America/New_York:20261126T180000",
+          "EXDATE;TZID=America/New_York:20261224T180000",
+          "EXDATE;TZID=America/New_York:20261231T180000"
+        ]
+      });
+    }
+    return jsonResponse({ items: [] });
+  };
+  const booked = await executeTool("calendar_create_event", {
+    summary: "Olivia cheer — Top Gun Miami",
+    start: "2026-10-01T18:00:00",
+    durationMinutes: 55,
+    until: "2027-04-30",
+    byDay: ["TH"],
+    skipDates: ["2026-10-31", "2026-11-20/2026-11-28", "2026-12-21/2027-01-02"],
+    location: "14990 SW 137th Street, Miami, FL 33196",
+    whose: "yahoska",
+    confirmed: true,
+    force: true
+  }, { environment: calendarEnv, fetchImpl });
+  assert.equal(booked.booked, true);
+  assert.deepEqual(booked.event.recurrence, [
+    "RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z",
+    "EXDATE;TZID=America/New_York:20261126T180000",
+    "EXDATE;TZID=America/New_York:20261224T180000",
+    "EXDATE;TZID=America/New_York:20261231T180000"
+  ]);
+  const create = calls.find((call) => call.method === "POST" && call.url.includes("/events"));
+  const body = JSON.parse(create.body);
+  assert.deepEqual(body.recurrence, [
+    "RRULE:FREQ=WEEKLY;BYDAY=TH;UNTIL=20270430T235959Z",
+    "EXDATE;TZID=America/New_York:20261126T180000",
+    "EXDATE;TZID=America/New_York:20261224T180000",
+    "EXDATE;TZID=America/New_York:20261231T180000"
+  ]);
+  assert.equal(body.start.dateTime, "2026-10-01T18:00:00");
+  assert.equal(body.start.timeZone, "America/New_York");
+  assert.equal(body.location, "14990 SW 137th Street, Miami, FL 33196");
 });
 
 test("booking requires confirmed=true and then creates the event", async () => {

@@ -668,7 +668,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("calendar_create_event", "Add an event on a team Google Calendar when the user asks for an appointment, meeting, calendar hold, or a personal reminder (remind me, ping me, don't let me forget, set a reminder, add a task for me tomorrow, to-do for me). Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. Personal reminders: 15 min, free=true, popup reminders at event time and 10 minutes before; default 10:00 AM America/New_York when no time is given. Title is the action only. No-school days and holidays: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). Never use this for a GHL/CRM contact task, 'create a task on [contact]', or 'task due …' on a CRM contact — those must use ghl_create_contact_task. Do not claim it is on the calendar unless booked is true.", {
+      functionTool("calendar_create_event", "Add an event on a team Google Calendar when the user asks for an appointment, meeting, calendar hold, or a personal reminder (remind me, ping me, don't let me forget, set a reminder, add a task for me tomorrow, to-do for me). Default is the person in this chat (Katy’s, Carolina’s, or Yahoska’s). Husband books Yahoska unless whose is set. Requires confirmed=true after the person in this chat approves. Timed events: Florida local ISO without Z. Personal reminders: 15 min, free=true, popup reminders at event time and 10 minutes before; default 10:00 AM America/New_York when no time is given. Title is the action only. No-school days and holidays: allDay=true and free=true so they show as free. For school pickup or any repeating hold, pass until (YYYY-MM-DD) and byDay (MO,TU,…). For a season-long class or gym series (cheer, practice), pass until + byDay and every closed/blackout date from the flyer as skipDates or exDates — YYYY-MM-DD days or inclusive ranges YYYY-MM-DD/YYYY-MM-DD. A closed week skips every class weekday inside the range (Nov 20–28 skips the Thursday). The tool emits Google Calendar EXDATE in America/New_York. Do not invent a tool-rejected error, and do not drop exclusions. Never use this for a GHL/CRM contact task, 'create a task on [contact]', or 'task due …' on a CRM contact — those must use ghl_create_contact_task. Do not claim it is on the calendar unless booked is true.", {
         type: "object",
         properties: {
           summary: { type: "string", description: "Event title. Action only — strip remind me / add a task for me / dates." },
@@ -685,7 +685,30 @@ export function grokTools(environment = process.env) {
             description: "Weekdays for a repeating event. Olivia’s school pickup is [TU,TH,FR]. Weekdays are [MO,TU,WE,TH,FR]."
           },
           freq: { type: "string", enum: ["WEEKLY"], description: "Repeat frequency. Default WEEKLY when until is set." },
-          rrule: { type: "string", description: "Raw RRULE if until/byDay are not enough." },
+          rrule: { type: "string", description: "Raw RRULE if until/byDay are not enough. Skip dates still add EXDATE beside this rule." },
+          skipDates: {
+            type: "array",
+            items: { type: "string" },
+            description: "Blackout/skip dates for a weekly series. YYYY-MM-DD days or inclusive ranges YYYY-MM-DD/YYYY-MM-DD or 'YYYY-MM-DD to YYYY-MM-DD'. For a closed gym week, pass the full range — every class weekday inside it is excluded. Same as exDates."
+          },
+          exDates: {
+            type: "array",
+            items: { type: "string" },
+            description: "Alias of skipDates. Emitted as Google Calendar EXDATE;TZID=America/New_York at the event start local time."
+          },
+          skipRanges: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                start: { type: "string", description: "Inclusive range start (YYYY-MM-DD)." },
+                end: { type: "string", description: "Inclusive range end (YYYY-MM-DD)." }
+              },
+              required: ["start", "end"],
+              additionalProperties: false
+            },
+            description: "Closed blackout windows. Every occurrence weekday that falls in a range is skipped, even if the listed ends are not class days."
+          },
           location: { type: "string" },
           description: { type: "string" },
           attendees: {
