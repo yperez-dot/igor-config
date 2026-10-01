@@ -231,3 +231,10 @@ test("system prompt packs the active CRM task scratchpad", () => {
   assert.match(prompt, /Alexa’s grandma referred her/);
   assert.match(prompt, /confirmed=true/);
 });
+
+test("CRM note instructions preserve ordinary human text without fictional formatting failures", () => {
+  assert.match(SYSTEM_PROMPT, /Quotes, apostrophes \(straight or curly\), contractions, accents, punctuation, and line breaks are valid/);
+  assert.match(SYSTEM_PROMPT, /Preserve the user's wording verbatim/);
+  assert.match(SYSTEM_PROMPT, /execute the saved approved body unchanged/);
+  assert.match(SYSTEM_PROMPT, /Report an actual failure using the tool's returned error/);
+});

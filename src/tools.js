@@ -344,13 +344,13 @@ export function grokTools(environment = process.env) {
         required: ["action", "tags"],
         additionalProperties: false
       }),
-      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. After create or resolve, reuse the sticky Active CRM / this-chat contact id for that person — do not re-search by name and never ask the user to paste an id Igor just created. After they say yes, call again with confirmed=true on that same draft and sticky id. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms.", {
+      functionTool("ghl_add_contact_note", "Add a note to one exact GHL contact. Use this for contact notes, GHL notes, CRM notes, and phrases like add to Michelle's notes or Miriam's notes — never Notion. Never say NOTION UPDATED for a CRM note. After create or resolve, reuse the sticky Active CRM / this-chat contact id for that person — do not re-search by name and never ask the user to paste an id Igor just created. After they say yes, call again with confirmed=true on that same draft and sticky id. First call previews the exact contact and complete note; save only after Yahoska, Katy, or Carolina confirms. Preserve the user's wording, including quotes, apostrophes, curly punctuation, accents, and line breaks. Only trim surrounding whitespace; do not paraphrase or invent formatting errors. Confirmation executes the saved approved body unchanged; normal punctuation or harmless trimming never requires another Yes.", {
         type: "object",
         properties: {
           contactId: { type: "string", description: "Sticky Active CRM / this-chat contact id. Wins over name search after create or resolve." },
           contactQuery: { type: "string", description: "Name, phone, or last-4 only when no this-chat contact id exists for that person. Phone/last-4 wins if the stored first name differs." },
           phone: { type: "string", description: "Full phone or last-4 so a first-name mismatch still finds the contact." },
-          body: { type: "string" },
+          body: { type: "string", description: "Exact user note text. Ordinary quotes, apostrophes, Unicode punctuation, accents, and line breaks are valid. Preserve the wording; trim outer whitespace only. Nonempty, maximum 5,000 characters. Reuse the saved approved body on confirmation." },
           title: { type: "string" },
           pinned: { type: "boolean" },
           userId: { type: "string", description: "Optional GHL note-author user id." },
@@ -1418,7 +1418,8 @@ export async function executeTool(name, rawArgs, {
           }
         };
       }
-      return ghlCreateContactNote(request);
+      // Await here so a real API rejection reaches this tool's error handler.
+      return await ghlCreateContactNote(request);
     }
 
     if (name === "ghl_create_contact_task") {

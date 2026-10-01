@@ -887,3 +887,41 @@ test("Stop after a Humana mail alert persists dismissals without calling Grok", 
   assert.deepEqual(sent, [reply]);
   assert.ok(store.turns.some((turn) => turn.role === "suppression" && turn.content === "statement is ready"));
 });
+
+test('Telegram Yes saves the approved quoted note without Grok rewriting or a second preview', async () => {
+  const body = 'Tomas wrote back saying "okay thank you"\nTomas\'s daughter said, “I’ll call back.”';
+  let scratch = {
+    contactId: 'tomas-id', storedName: 'Tomas D.', phoneLast4: '5970',
+    pending: { tool: 'ghl_add_contact_note', approved: false, args: {
+      contactId: 'tomas-id', expectedContactId: 'tomas-id', expectedContactName: 'Tomas D.',
+      expectedPhoneLast4: '5970', body, pinned: false
+    } }
+  };
+  const store = memoryStore();
+  store.getChatScratch = async (_chatId, kind) => kind === 'crm' ? scratch : null;
+  store.saveChatScratch = async (_chatId, kind, value) => { if (kind === 'crm') scratch = value; };
+  const calls = [];
+  const sent = [];
+  const reply = await handleTelegramChat({
+    store, message: { chatId: 5970, senderId: 'owner', firstName: 'Yahoska', text: 'Yes' },
+    environment: {}, apiKey: 'test', model: 'test', botToken: 'test',
+    askGrok: async () => { assert.fail('confirmation must not reconstruct the note through Grok'); },
+    executeTool: async (name, args) => {
+      calls.push({ name, args });
+      return { created: true, contactId: 'tomas-id', contact: 'Tomas D.', phoneLast4: '5970', noteId: 'note-id' };
+    },
+    sendTelegramMessage: async ({ text }) => sent.push(text),
+    isPlanRecommendationRequest, recommendationRefusal, unavailableMessage: () => 'offline'
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'ghl_add_contact_note');
+  assert.equal(calls[0].args.body, body);
+  assert.equal(calls[0].args.contactId, 'tomas-id');
+  assert.equal(calls[0].args.expectedContactId, 'tomas-id');
+  assert.equal(calls[0].args.expectedPhoneLast4, '5970');
+  assert.equal(calls[0].args.confirmed, true);
+  assert.equal(scratch.pending, null);
+  assert.equal(sent.length, 1);
+  assert.match(reply, /Saved the note on Tomas D/);
+  assert.doesNotMatch(reply, /confirm|phone|say yes|format/i);
+});
