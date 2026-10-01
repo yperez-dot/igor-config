@@ -156,6 +156,17 @@ test("calendar write tools are stripped and GHL task is forced for create-task t
   assert.equal(toolChoiceForUserRequest("book 15 min on my calendar", tools), "auto");
 });
 
+test("wrote-back note forces ghl_add_contact_note", () => {
+  const tools = [
+    { type: "function", function: { name: "ghl_add_contact_note" } },
+    { type: "function", function: { name: "ghl_search_contacts" } }
+  ];
+  assert.deepEqual(toolChoiceForUserRequest('Tomas wrote back saying "ok gracias"', tools), {
+    type: "function",
+    function: { name: "ghl_add_contact_note" }
+  });
+});
+
 test("smoke-test and create-task meta subjects are not chase items", () => {
   assert.equal(isSmokeOrMetaLeadSubject("create a task on that contact"), true);
   assert.equal(isSmokeOrMetaLeadSubject("create a GHL task on Test Contact due tomorrow"), true);

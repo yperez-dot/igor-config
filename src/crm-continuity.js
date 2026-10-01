@@ -1,4 +1,4 @@
-import { looksLikeGhlContactId, nameQueryWithoutPhone, phoneDigitsFromQuery } from "./ghl.js";
+import { extractNoteBodyFromUserText, isCrmNoteAddRequest, looksLikeGhlContactId, nameQueryWithoutPhone, phoneDigitsFromQuery } from "./ghl.js";
 import { parseReminderRunAt } from "./lead-reminders.js";
 import { isGhlContactTaskRequest } from "./task-calendar-route.js";
 
@@ -425,6 +425,7 @@ export function formatActiveCrmTask(scratch) {
     lines.push(`- Pending note (${scratch.pending.approved ? "already approved — save it" : "draft, waiting for yes"}):`);
     lines.push(String(scratch.pending.args?.body ?? "").slice(0, 1_500));
     lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft, exact body, and contact id. Do not drop the draft. Do not rewrite the body. Do not invent a formatting or empty-note error. Do not re-preview, ask for the phone, or start a fresh name/last-4 lookup unless the write tool result failed.");
+    lines.push("If they send another note such as 'Tomas wrote back saying \"ok gracias\"', preview that exact body on this sticky contact. Never invent empty/formatting. Never start a fresh name/last-4 lookup while this contact id or last-4 is present.");
   }
   if (scratch.pending?.tool === "ghl_manage_contact_tags") {
     const args = scratch.pending.args || {};
@@ -470,6 +471,9 @@ export function formatActiveCrmTask(scratch) {
     lines.push("If they say yes/sí/ok/do it, CALL ghl_update_clinical_profile with confirmed=true on this same draft and the sticky contact id. Do not re-search by name.");
   }
   lines.push("Look it up = use this-chat sticky contact id(s), then last-4, then name. Never ask them to paste a GHL contact id created or resolved in this chat.");
+  if (scratch.contactId || scratch.phoneLast4) {
+    lines.push("This contact is already pinned. Never invent an empty/formatting note reject. Never start a fresh name/last-4 lookup while this contact id or last-4 is present.");
+  }
   lines.push("Clinical writes and contact notes MUST pass the sticky contactId for that person. Do not re-search by name when a this-chat id exists. On write failure, retry that same id — never attach a lookalike from name search.");
   lines.push("Before a new note/tag preview, a sticky id 404 clears that entry and retries the supplied phone last-4 first, then name. A unique last-4/name match is enough; do not ask for a full phone. After approval, never replace the preview id; a 404 needs a fresh preview before any write.");
   lines.push("“that contact” / “this contact” / “them” / “him” / “her” = this contact id. Fetch by id. Do not re-search by name unless they name a different person, phone, or email.");
@@ -752,6 +756,39 @@ function taskWriteArgs(scratch) {
   };
 }
 
+export function inventsFabricatedNoteFailure(text) {
+  return /(?:empty note|note cannot be empty|rejected.{0,80}empty|treated.{0,40}as empty|formatting (?:issue|reject)|fresh (?:GHL )?lookup|phone ending \d{4}.{0,40}before)/i.test(String(text ?? ""));
+}
+
+export async function maybePreviewStickyNote({ text, scratch, executeTool }) {
+  if (typeof executeTool !== "function" || !isCrmNoteAddRequest(text)) return null;
+  if (!scratch?.contactId && !scratch?.phoneLast4) return null;
+  const body = extractNoteBodyFromUserText(text);
+  if (!body) return null;
+  const args = bindStickyContactArgs(scratch, "ghl_add_contact_note", {
+    contactId: scratch.contactId,
+    phone: scratch.phoneLast4,
+    body
+  }, text);
+  const preview = await executeTool("ghl_add_contact_note", args);
+  const next = applyCrmToolResult(scratch, "ghl_add_contact_note", args, preview);
+  if (preview?.needsConfirmation && preview.proposed?.body) {
+    const who = preview.proposed.contact || displayName(next);
+    const last4 = preview.proposed.phoneLast4 || next.phoneLast4;
+    return {
+      scratch: next,
+      reply: `I’ll add this to ${who}${last4 ? ` ending ${last4}` : ""} notes:\n\n${preview.proposed.body}\n\nSay yes and I’ll save it in GHL.`
+    };
+  }
+  if (preview?.created) {
+    return { scratch: next, reply: `Saved the note on ${preview.contact} in GHL.` };
+  }
+  return {
+    scratch: next,
+    reply: `Couldn’t preview that note${preview?.error ? ` — ${toolError(preview)}` : ""}. I still have ${displayName(next)} and last-4 ${scratch.phoneLast4 || "on file"}. I am not doing a fresh lookup.`
+  };
+}
+
 function noteWriteArgs(scratch) {
   const pending = scratch?.pending;
   if (pending?.tool !== "ghl_add_contact_note") return null;
@@ -984,6 +1021,9 @@ export async function maybeContinueCrmTask({
       reply: `Updated the GHL name to ${displayName(next, correction.firstName)}. I’ll keep going on the same contact.`
     };
   }
+
+  const stickyNote = await maybePreviewStickyNote({ text, scratch: merged, executeTool });
+  if (stickyNote?.reply) return stickyNote;
 
   if (isLookItUp(text) && lookupArgsFromScratch(merged)) {
     const args = lookupArgsFromScratch(merged);

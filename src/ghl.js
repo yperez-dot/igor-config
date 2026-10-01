@@ -1350,6 +1350,9 @@ const NOTE_UNSAFE_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g
 const NOTE_ADD_TAIL_RE = /\s+(?:please|pls)\s+add(?:\s+that)?\s+to\s+(?:his|her|their|[A-Za-z][\s\S]*?)['’]?s?\s+notes?\b[\s\S]*$/i;
 const NOTE_ADD_THAT_RE = /\s+add(?:\s+that)?\s+to\s+(?:his|her|their)\s+notes?\b[\s\S]*$/i;
 const NOTE_ADD_PREFIX_RE = /^(?:please|pls)?\s*(?:add|save|put|write)\s+(?:this|that|the following)?\s*(?:to\s+)?(?:his|her|their|[A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)['’]?s?\s+notes?\s*[:\-]\s*/i;
+const NOTE_WROTE_BACK_RE = /\bwrote back saying\b/i;
+const NOTE_ADD_NOTES_RE = /\b(?:add|save|put|write)\b.{0,40}\bnotes?\b/i;
+const SHORT_AFFIRM_RE = /^(?:yes|yep|yeah|yup|si|sí|ok|okay|do it|go ahead|save(?: it)?)\b/i;
 
 export function normalizeContactNoteBody(body) {
   return String(body ?? "").replace(NOTE_UNSAFE_CONTROL_RE, "").replace(/^\s+|\s+$/g, "");
@@ -1370,7 +1373,15 @@ export function extractNoteBodyFromUserText(text) {
     const fromPrefix = raw.replace(NOTE_ADD_PREFIX_RE, "");
     if (fromPrefix.trim()) return normalizeContactNoteBody(fromPrefix);
   }
+  if (NOTE_WROTE_BACK_RE.test(raw)) return normalizeContactNoteBody(raw);
   return "";
+}
+
+export function isCrmNoteAddRequest(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return false;
+  if (SHORT_AFFIRM_RE.test(raw) && raw.length <= 60 && !NOTE_WROTE_BACK_RE.test(raw)) return false;
+  return Boolean(extractNoteBodyFromUserText(raw)) || NOTE_ADD_NOTES_RE.test(raw);
 }
 
 export function resolveContactNoteBody({ body, userText, pendingBody, confirmed = false } = {}) {
