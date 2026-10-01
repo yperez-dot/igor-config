@@ -977,3 +977,11 @@ test("Telegram follow-up after couple create injects Pablo’s sticky id and nev
   assert.match(reply, /this-chat id/i);
   assert.doesNotMatch(reply, /paste/i);
 });
+
+test('active CRM prompt keeps the full valid note draft, including quotes and line breaks', () => {
+  const body = 'Tomas wrote back saying "okay thank you"\n' + 'é'.repeat(2000) + ' — “I’ll call back.”';
+  const prompt = formatActiveCrmTask({ contactId: 'tomas-id', phoneLast4: '5970', pending: { tool: 'ghl_add_contact_note', args: { body } } });
+  assert.equal(prompt.includes(body), true);
+  assert.match(prompt, /Preserve this saved body exactly/);
+  assert.match(prompt, /Do not rewrite it or ask for another Yes\/phone/);
+});

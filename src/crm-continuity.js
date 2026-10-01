@@ -423,8 +423,8 @@ export function formatActiveCrmTask(scratch) {
   }
   if (scratch.pending?.tool === "ghl_add_contact_note") {
     lines.push(`- Pending note (${scratch.pending.approved ? "already approved — save it" : "draft, waiting for yes"}):`);
-    lines.push(String(scratch.pending.args?.body ?? "").slice(0, 1_500));
-    lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft and contact id. Do not drop the draft. Do not re-preview unless the write failed.");
+    lines.push(String(scratch.pending.args?.body ?? "").slice(0, 5_000));
+    lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft and contact id. Do not drop the draft. Do not re-preview unless the write failed. Preserve this saved body exactly, including quotes, apostrophes, Unicode, and line breaks. Ordinary punctuation is valid note text, not a formatting error. Do not rewrite it or ask for another Yes/phone because of punctuation or outer whitespace trimming. Report only the actual tool failure.");
   }
   if (scratch.pending?.tool === "ghl_manage_contact_tags") {
     const args = scratch.pending.args || {};

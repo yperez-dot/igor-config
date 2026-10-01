@@ -601,3 +601,105 @@ test("confirmed contract creation uses template and stays draft by default", asy
     contactId: "contact-1"
   });
 });
+
+const conversationalNotes = [
+  'Tomas wrote back saying "okay thank you"',
+  "Tomas's daughter said, “I’ll call back.”",
+  'José dijo: “sí, gracias.” — (llamar mañana)\nSecond line: café, ñ, and "quotes".'
+];
+
+function tomasNoteFixture(calls, failure = false) {
+  return async (url, options = {}) => {
+    const target = String(url);
+    const method = options.method || "GET";
+    const body = options.body ? JSON.parse(options.body) : undefined;
+    calls.push({ target, method, body });
+    if (target.endsWith('/contacts/tomas-id')) return json({ contact: { id: 'tomas-id', firstName: 'Tomas', lastName: 'Diaz', phone: '+13055555970' } });
+    if (target.endsWith('/contacts/tomas-id/notes') && method === 'POST') {
+      return failure ? json({ message: 'Upstream service unavailable' }, 503) : json({ note: { id: 'tomas-note' } });
+    }
+    throw new Error(`Unexpected request (no name search allowed): ${target}`);
+  };
+}
+
+for (const body of conversationalNotes) {
+  test(`contact note preview preserves conversational text: ${JSON.stringify(body)}`, async () => {
+    const calls = [];
+    const preview = await executeTool('ghl_add_contact_note', { body: `  ${body}\n ` }, {
+      environment, senderProfile: speaker, activeCrmTask: { contactId: 'tomas-id', storedName: 'Tomas D.', phoneLast4: '5970' },
+      fetchImpl: tomasNoteFixture(calls)
+    });
+    assert.equal(preview.error, undefined);
+    assert.equal(preview.needsConfirmation, true);
+    assert.equal(preview.proposed.body, body);
+    assert.equal(preview.proposed.contactId, 'tomas-id');
+    assert.equal(preview.proposed.phoneLast4, '5970');
+    assert.equal(calls.some(({ method }) => method === 'POST'), false);
+  });
+}
+
+for (const text of ['Yes', 'sí', 'ok', 'do it']) {
+  test(`${text} writes the exact saved quoted note once on Tomas / 5970`, async () => {
+    const calls = [];
+    const toolCalls = [];
+    let scratch = { contactId: 'tomas-id', storedName: 'Tomas D.', phoneLast4: '5970' };
+    const context = { environment, senderProfile: speaker, fetchImpl: tomasNoteFixture(calls) };
+    const args = { body: conversationalNotes[1] };
+    const preview = await executeTool('ghl_add_contact_note', args, { ...context, activeCrmTask: scratch });
+    scratch = applyCrmToolResult(scratch, 'ghl_add_contact_note', args, preview);
+    assert.equal(scratch.pending.args.body, args.body);
+    const beforeYes = calls.length;
+    const saved = await maybeContinueCrmTask({ text, scratch, speaker: { role: 'yahoska' }, executeTool: (name, approvedArgs) => {
+      toolCalls.push({ name, args: approvedArgs });
+      return executeTool(name, approvedArgs, { ...context, activeCrmTask: scratch });
+    } });
+    assert.equal(toolCalls.length, 1);
+    assert.equal(toolCalls[0].name, 'ghl_add_contact_note');
+    assert.equal(toolCalls[0].args.confirmed, true);
+    assert.equal(toolCalls[0].args.body, preview.proposed.body);
+    assert.equal(toolCalls[0].args.contactId, 'tomas-id');
+    assert.equal(toolCalls[0].args.expectedContactId, 'tomas-id');
+    assert.equal(toolCalls[0].args.expectedContactName, 'Tomas D.');
+    assert.equal(toolCalls[0].args.expectedPhoneLast4, '5970');
+    assert.equal(calls.slice(beforeYes).some(({ target }) => /search|\?/.test(target)), false);
+    const writes = calls.filter(({ method }) => method === 'POST');
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].target.endsWith('/contacts/tomas-id/notes'), true);
+    assert.equal(writes[0].body.body, preview.proposed.body);
+    assert.equal(saved.scratch.pending, null);
+    assert.match(saved.reply, /Saved the note on Tomas D/);
+    assert.doesNotMatch(saved.reply, /say yes|confirm|phone|format/i);
+  });
+}
+
+test('real note API failure retains the exact approved draft and reports the real error', async () => {
+  const calls = [];
+  const context = { environment, senderProfile: speaker, fetchImpl: tomasNoteFixture(calls, true) };
+  let scratch = { contactId: 'tomas-id', storedName: 'Tomas D.', phoneLast4: '5970' };
+  const args = { body: conversationalNotes[0] };
+  const preview = await executeTool('ghl_add_contact_note', args, { ...context, activeCrmTask: scratch });
+  scratch = applyCrmToolResult(scratch, 'ghl_add_contact_note', args, preview);
+  const saved = await maybeContinueCrmTask({ text: 'Yes', scratch, speaker: { role: 'yahoska' }, executeTool: (name, writeArgs) => executeTool(name, writeArgs, { ...context, activeCrmTask: scratch }) });
+  assert.match(saved.reply, /Upstream service unavailable/);
+  assert.doesNotMatch(saved.reply, /formatting|say yes/i);
+  assert.equal(saved.scratch.pending.args.body, args.body);
+  assert.equal(saved.scratch.pending.args.contactId, 'tomas-id');
+  assert.equal(saved.scratch.pending.approved, true);
+});
+
+test('note validation still rejects empty and oversized notes and accepts exactly 5,000 characters', async () => {
+  for (const [body, expected] of [[' \n ', /empty/], ['x'.repeat(5001), /too long/], ['x'.repeat(5000), null]]) {
+    const calls = [];
+    const preview = await executeTool('ghl_add_contact_note', { contactId: 'tomas-id', body }, { environment, senderProfile: speaker, fetchImpl: tomasNoteFixture(calls) });
+    if (expected) assert.match(preview.error, expected);
+    else assert.equal(preview.proposed.body, body);
+    assert.equal(calls.some(({ method }) => method === 'POST'), false);
+  }
+});
+
+test('note tool schema tells the model to preserve normal punctuation and reuse the saved body', () => {
+  const tool = grokTools(environment).find(({ function: fn }) => fn.name === 'ghl_add_contact_note');
+  assert.match(tool.function.description, /do not paraphrase or invent formatting errors/);
+  assert.match(tool.function.parameters.properties.body.description, /Ordinary quotes, apostrophes, Unicode punctuation, accents, and line breaks are valid/);
+  assert.match(tool.function.parameters.properties.body.description, /Reuse the saved approved body/);
+});
