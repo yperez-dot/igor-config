@@ -81,6 +81,8 @@ export async function personalOpenLeadsForChat({
 
 const GHL_API = "https://services.leadconnectorhq.com";
 const GHL_V3 = "v3";
+const NOTE_CHECK_LIMIT = 8;
+const STALE_NOTE_DAYS = 7;
 
 function headers(token, hasBody = false) {
   return {
@@ -103,6 +105,40 @@ async function ghlJson(url, { token, fetchImpl = fetch, method = "GET", body } =
     throw new Error(payload.message || payload.error || `GHL request failed with HTTP ${response.status}`);
   }
   return payload;
+}
+
+export async function auditOpenLeadNotes({ leads, token, now = new Date(), fetchImpl = fetch, limit = NOTE_CHECK_LIMIT, rotate = true }) {
+  // Contact updates include changes other than notes. Use them only to choose
+  // the audit order. Rotate the bounded sample daily so older unchanged leads
+  // do not starve every other contact indefinitely.
+  const ordered = [...leads].sort((a, b) => {
+    const aDate = Date.parse(a.dateUpdated ?? "");
+    const bDate = Date.parse(b.dateUpdated ?? "");
+    return (Number.isFinite(aDate) ? aDate : -Infinity) - (Number.isFinite(bDate) ? bDate : -Infinity);
+  });
+  const offset = rotate && ordered.length ? Math.floor(now.getTime() / 86_400_000) * limit % ordered.length : 0;
+  const chosen = [...ordered.slice(offset), ...ordered.slice(0, offset)].slice(0, limit);
+  const checked = await Promise.allSettled(chosen.map(async (lead) => {
+    const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(lead.id)}/notes`, { token, fetchImpl });
+    if (!Array.isArray(body.notes)) throw new Error("GHL notes returned an invalid response.");
+    const dated = body.notes.filter((note) => String(note?.body ?? "").trim())
+      .map((note) => Date.parse(note.dateAdded ?? note.dateUpdated ?? ""))
+      .filter(Number.isFinite);
+    const latest = dated.length ? Math.max(...dated) : null;
+    return {
+      id: lead.id,
+      noteStatus: !body.notes.length ? "none" : latest === null ? "unknown" :
+        now.getTime() - latest >= STALE_NOTE_DAYS * 86_400_000 ? "stale" : "recent",
+      lastNoteAt: latest === null ? null : new Date(latest).toISOString()
+    };
+  }));
+  const byId = new Map(checked.flatMap((result) => result.status === "fulfilled" ? [[result.value.id, result.value]] : []));
+  return {
+    leads: leads.map((lead) => ({ ...lead, ...(byId.get(lead.id) ?? {}) })),
+    checkedCount: checked.filter((result) => result.status === "fulfilled").length,
+    attemptedCount: chosen.length,
+    failedCount: checked.filter((result) => result.status === "rejected").length
+  };
 }
 
 export function ghlEmailForChat(environment = process.env, chatId) {
@@ -214,6 +250,7 @@ export async function personalGhlOpsSnapshotForChat({
   environment = process.env,
   chatId,
   now = new Date(),
+  checkNotes = false,
   fetchImpl = fetch,
   signal,
   store
@@ -276,14 +313,23 @@ export async function personalGhlOpsSnapshotForChat({
   const [tasksResult, appointmentsResult, leadsResult] = await Promise.allSettled([
     personalPendingTasks({ token: config.token, locationId: config.locationId, userId: user.id, fetchImpl }),
     personalUpcomingAppointments({ token: config.token, locationId: config.locationId, userId: user.id, now, fetchImpl }),
-    (async () => personalOpenLeads({ token: config.token, locationId: config.locationId, userId: user.id, fetchImpl, removals: store?.listLeadRemovals ? await store.listLeadRemovals(String(chatId)) : [] }))()
+    // GHL's assigned active_prospect list is authoritative for the morning
+    // check-in. Removing a personal ledger reminder must not hide a sale here.
+    personalOpenLeads({ token: config.token, locationId: config.locationId, userId: user.id, fetchImpl })
   ]);
   const tasks = tasksResult.status === "fulfilled" ? tasksResult.value : [];
   const appointments = appointmentsResult.status === "fulfilled" ? appointmentsResult.value : [];
+  const openLeads = leadsResult.status === "fulfilled" ? leadsResult.value.leads : [];
+  const noteAudit = checkNotes && openLeads.length
+    ? await auditOpenLeadNotes({ leads: openLeads, token: config.token, now, fetchImpl })
+    : { leads: openLeads, checkedCount: 0, attemptedCount: 0, failedCount: 0 };
 
   return {
     tasks,
-    openLeads: leadsResult.status === "fulfilled" ? leadsResult.value.leads : [],
+    openLeads: noteAudit.leads,
+    openLeadNotesChecked: noteAudit.checkedCount,
+    openLeadNotesAttempted: noteAudit.attemptedCount,
+    openLeadNotesFailed: noteAudit.failedCount,
     openLeadsTruncated: leadsResult.status === "fulfilled" && leadsResult.value.truncated,
     openLeadError: leadsResult.status === "rejected" ? leadsResult.reason?.message ?? "Open lead check failed" : null,
     appointments,

@@ -104,14 +104,16 @@ export async function processTask(task, options = {}) {
         ...options,
         now,
         environment: scopedCheckinEnvironment(environment, chatId),
+        agendaEnvironment: environment,
         sendTelegram: async (args) => {
           receipt = await (options.sendTelegram ?? sendLeadCheckinTelegram)(args);
           return receipt;
         },
-        runGhlOps: async ({ now: lookupNow = now } = {}) => boundedGhlLookup((signal) => (options.personalGhlLookup ?? personalGhlOpsSnapshotForChat)({
+        runGhlOps: async ({ now: lookupNow = now, checkNotes = false } = {}) => boundedGhlLookup((signal) => (options.personalGhlLookup ?? personalGhlOpsSnapshotForChat)({
           environment,
           chatId,
           now: lookupNow,
+          checkNotes,
           signal,
           store: options.store
         }), { timeoutMs: options.ghlTimeoutMs ?? GHL_LOOKUP_TIMEOUT_MS })
