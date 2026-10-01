@@ -108,6 +108,7 @@ test("publishes the Hub ticker before a live Agent Pulse send", async () => {
       HEARTBEAT_IMAP_PASS: "secret",
       PULSE_IMAP_PASS: "pulse-pass",
       AGENT_PULSE_RECIPIENTS: "agent@example.com",
+      AGENT_PULSE_RECIPIENTS_ES: "agent-es@example.com",
       FROM_EMAIL: "info@healthexps.com",
       SMTP_HOST: "smtp.gmail.com",
       SMTP_USER: "info@healthexps.com",
@@ -260,6 +261,56 @@ test("Spanish send uses the ES list and does not overwrite the English Hub", asy
   assert.match(result.subject, /Edición #11/);
   assert.match(delivered[0].html, /Qué significa esto para ti/);
   assert.equal(delivered[0].to, "es1@example.com");
+});
+
+test("send mode with no AGENT_PULSE_LANG delivers both EN and ES to their recipients", async () => {
+  const delivered = [];
+  const result = await runAgentPulseWeekly({
+    environment: {
+      XAI_API_KEY: "token",
+      AGENT_PULSE_MODE: "send",
+      PULSE_IMAP_PASS: "pulse-pass",
+      AGENT_PULSE_RECIPIENTS: "en1@example.com,en2@example.com",
+      AGENT_PULSE_RECIPIENTS_ES: "es1@example.com",
+      FROM_EMAIL: "info@healthexps.com",
+      SMTP_HOST: "smtp.gmail.com",
+      SMTP_USER: "info@healthexps.com",
+      SMTP_PASS: "secret"
+    },
+    now: new Date("2026-08-31T14:00:00.000Z"),
+    scanInbox: async () => [],
+    askModel: async (options) => {
+      if (options.systemPrompt.includes("ESPAÑOL")) {
+        return JSON.stringify({
+          preheader: "AEP",
+          intro: ["Feliz lunes, equipo! 👋", "CMS", "— Yahoska & Katy"],
+          items: [{ flag: "ACTION", beat: "CMS", headline: "Test ES", minutes: 2, body: "ES body", meaning: "meaning", source: "CMS" }],
+          sources: "CMS"
+        });
+      }
+      return JSON.stringify({
+        preheader: "Test",
+        intro: ["Happy Monday, team! 👋", "CMS", "— Yahoska & Katy"],
+        items: [{ flag: "ACTION", beat: "CMS", headline: "Test EN", minutes: 2, body: "EN body", meaning: "meaning", source: "CMS" }],
+        sources: "CMS"
+      });
+    },
+    fetchImpl: noLogoFetch,
+    publishHub: async () => ({ status: "published" }),
+    deliver: async (payload) => {
+      delivered.push(payload);
+      return { messageId: `msg-${delivered.length}` };
+    }
+  });
+  assert.equal(result.status, "sent");
+  assert.equal(result.lang, "dual");
+  assert.equal(result.enRecipientCount, 2);
+  assert.equal(result.esRecipientCount, 1);
+  assert.equal(delivered.length, 2);
+  assert.equal(delivered[0].to, "en1@example.com");
+  assert.match(delivered[0].html, /Test EN/);
+  assert.equal(delivered[1].to, "es1@example.com");
+  assert.match(delivered[1].html, /Test ES/);
 });
 
 test("maps an AbortSignal timeout to a Pulse retry message", async () => {
