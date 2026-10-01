@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { executeTool, grokTools } from "../src/tools.js";
-import { DEFAULT_GHL_OWNER_IDS, looksLikeGhlUserId } from "../src/ghl.js";
-import { applyCrmToolResult, householdContacts, maybeContinueCrmTask } from "../src/crm-continuity.js";
+import { executeTool, grokTools, parseToolArgs } from "../src/tools.js";
+import {
+  DEFAULT_GHL_OWNER_IDS,
+  extractNoteBodyFromUserText,
+  ghlPrepareContactNote,
+  isBlankContactNote,
+  looksLikeGhlUserId,
+  normalizeContactNoteBody
+} from "../src/ghl.js";
+import { applyCrmToolResult, bindStickyContactArgs, formatActiveCrmTask, householdContacts, maybeContinueCrmTask } from "../src/crm-continuity.js";
 
 const environment = { GHL_API_TOKEN: "test", GHL_LOCATION_ID: "location" };
 const speaker = { firstName: "Yahoska" };
@@ -600,4 +607,220 @@ test("confirmed contract creation uses template and stays draft by default", asy
     locationId: "location",
     contactId: "contact-1"
   });
+});
+
+const ASCII_NOTE = 'Tomas wrote back saying "okay thank you"';
+const CURLY_NOTE = "Tomas wrote back saying “okay thank you”";
+const APOSTROPHE_NOTE = "Tomas's daughter said, “I’ll call back.”";
+const UNICODE_NOTE = "Gracias — “sí”.\nLlamó otra vez.";
+
+function tomasFixture(calls = []) {
+  return async (url, options = {}) => {
+    const target = String(url);
+    const body = options.body ? JSON.parse(options.body) : undefined;
+    calls.push({ target, method: options.method ?? "GET", body });
+    if (target.includes("/contacts/search") && options.method === "POST") {
+      return json({ contacts: [{ id: "tomas-id", firstName: "Tomas", lastName: "Diaz", phone: "+13055555970" }] });
+    }
+    if (target.includes("/contacts/?") && (options.method ?? "GET") !== "POST") {
+      return json({ contacts: [{ id: "tomas-id", firstName: "Tomas", lastName: "Diaz", phone: "+13055555970" }] });
+    }
+    if (/\/contacts\/tomas-id$/.test(target)) {
+      return json({ contact: { id: "tomas-id", firstName: "Tomas", lastName: "Diaz", phone: "+13055555970" } });
+    }
+    if (target.endsWith("/contacts/tomas-id/notes")) return json({ note: { id: "note-tomas" } }, 201);
+    throw new Error(`Unexpected request: ${target}`);
+  };
+}
+
+test("note preview preserves ASCII quotes in proposed.body", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Tomas D",
+    phone: "5970",
+    body: ASCII_NOTE
+  }, { environment, senderProfile: speaker, fetchImpl: tomasFixture(calls) });
+  assert.equal(result.error, undefined);
+  assert.equal(result.needsConfirmation, true);
+  assert.equal(result.proposed.body, ASCII_NOTE);
+  assert.match(result.proposed.body, /"/);
+  assert.equal(calls.some((call) => call.target.endsWith("/notes")), false);
+});
+
+test("note preview preserves curly quotes and apostrophes", async () => {
+  for (const body of [CURLY_NOTE, APOSTROPHE_NOTE]) {
+    const result = await executeTool("ghl_add_contact_note", {
+      contactQuery: "Tomas D",
+      phone: "5970",
+      body
+    }, { environment, senderProfile: speaker, fetchImpl: tomasFixture() });
+    assert.equal(result.error, undefined);
+    assert.equal(result.proposed.body, body);
+  }
+});
+
+test("unicode, punctuation, and line breaks stay non-empty and exact", async () => {
+  const result = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Tomas D",
+    phone: "5970",
+    body: UNICODE_NOTE
+  }, { environment, senderProfile: speaker, fetchImpl: tomasFixture() });
+  assert.equal(result.error, undefined);
+  assert.equal(result.proposed.body, UNICODE_NOTE);
+  assert.equal(isBlankContactNote(UNICODE_NOTE), false);
+  assert.equal(normalizeContactNoteBody(` \n${UNICODE_NOTE}\n `), UNICODE_NOTE);
+});
+
+test("empty note check rejects only blank or whitespace-only bodies", async () => {
+  const contact = { token: "t", locationId: "location", contactId: "tomas-id", fetchImpl: tomasFixture() };
+  for (const body of ["", "   ", "\n\t  "]) {
+    const result = await ghlPrepareContactNote({ ...contact, body });
+    assert.equal(result.error, "The note cannot be empty.");
+    assert.equal(isBlankContactNote(body), true);
+  }
+  for (const body of ['"', "“”", "…", "—", "😊", "okay.", APOSTROPHE_NOTE]) {
+    const result = await ghlPrepareContactNote({ ...contact, body });
+    assert.equal(result.error, undefined);
+    assert.equal(result.note.body, body);
+    assert.equal(isBlankContactNote(body), false);
+  }
+});
+
+test("unsafe control characters are stripped while quotes and line breaks survive", () => {
+  assert.equal(normalizeContactNoteBody(`${ASCII_NOTE}\u0000`), ASCII_NOTE);
+  assert.equal(normalizeContactNoteBody("Line one\nLine two\tkept"), "Line one\nLine two\tkept");
+  assert.equal(isBlankContactNote("\u0000\u0007"), true);
+});
+
+test("broken tool JSON with unescaped quotes still recovers the exact note body", async () => {
+  const parsed = parseToolArgs('{"contactQuery":"Tomas D","phone":"5970","body":"Tomas wrote back saying "okay thank you""}');
+  assert.equal(parsed.body, ASCII_NOTE);
+  assert.equal(parsed.contactQuery, "Tomas D");
+  assert.equal(parsed.phone, "5970");
+  const result = await executeTool(
+    "ghl_add_contact_note",
+    '{"contactQuery":"Tomas D","phone":"5970","body":"Tomas wrote back saying "okay thank you""}',
+    { environment, senderProfile: speaker, fetchImpl: tomasFixture() }
+  );
+  assert.equal(result.error, undefined);
+  assert.equal(result.proposed.body, ASCII_NOTE);
+});
+
+test("empty model body recovers the quoted note from the user request", async () => {
+  const result = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Tomas D",
+    phone: "5970",
+    body: ""
+  }, {
+    environment,
+    senderProfile: speaker,
+    fetchImpl: tomasFixture(),
+    userText: `${ASCII_NOTE} pls add that to his notes in crm`
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.proposed.body, ASCII_NOTE);
+});
+
+test("user text can recover a quoted note when the model body is empty", () => {
+  assert.equal(
+    extractNoteBodyFromUserText(`${ASCII_NOTE} pls add that to his notes in crm`),
+    ASCII_NOTE
+  );
+  assert.equal(extractNoteBodyFromUserText("yes"), "");
+});
+
+test("preview+Yes writes the exact Tomas/5970 note once on the pinned id", async () => {
+  const calls = [];
+  const fetchImpl = tomasFixture(calls);
+  const context = {
+    environment,
+    senderProfile: { role: "yahoska", firstName: "Yahoska" },
+    fetchImpl,
+    userText: `${ASCII_NOTE} pls add that to his notes in crm`
+  };
+  let scratch = { contactId: "tomas-id", storedName: "Tomas D.", spokenName: "Tomas", phoneLast4: "5970" };
+  const previewArgs = { contactId: "tomas-id", contactQuery: "Tomas D", phone: "5970", body: ASCII_NOTE };
+  const preview = await executeTool("ghl_add_contact_note", previewArgs, { ...context, activeCrmTask: scratch });
+  assert.equal(preview.needsConfirmation, true);
+  assert.equal(preview.proposed.body, ASCII_NOTE);
+  assert.equal(preview.proposed.contactId, "tomas-id");
+  assert.equal(preview.proposed.phoneLast4, "5970");
+  scratch = applyCrmToolResult(scratch, "ghl_add_contact_note", previewArgs, preview);
+  assert.equal(scratch.pending.args.body, ASCII_NOTE);
+  assert.match(formatActiveCrmTask(scratch), /exact body/);
+  assert.match(formatActiveCrmTask(scratch), /Do not invent a formatting or empty-note error/);
+  assert.match(formatActiveCrmTask(scratch), /fresh name\/last-4 lookup/);
+  const beforeYes = calls.length;
+  const saved = await maybeContinueCrmTask({
+    text: "Yes",
+    scratch,
+    speaker: { role: "yahoska" },
+    executeTool: (name, args) => executeTool(name, args, { ...context, activeCrmTask: scratch, userText: "Yes" })
+  });
+  assert.match(saved.reply, /Saved the note/);
+  assert.doesNotMatch(saved.reply, /empty|formatting|look(?:\s+it)?\s+up|phone/i);
+  const afterYes = calls.slice(beforeYes);
+  assert.equal(afterYes.some(({ target }) => /search|\?/.test(target)), false);
+  const writes = afterYes.filter(({ target, method }) => method === "POST" && target.endsWith("/contacts/tomas-id/notes"));
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].body.body, ASCII_NOTE);
+  assert.equal(saved.scratch.pending, null);
+  const confirmed = bindStickyContactArgs(scratch, "ghl_add_contact_note", { confirmed: true });
+  assert.equal(confirmed.body, ASCII_NOTE);
+  assert.equal(confirmed.contactId, "tomas-id");
+  assert.equal(Object.hasOwn(confirmed, "contactQuery"), false);
+});
+
+test("valid note bodies do not invent formatting or empty API errors", async () => {
+  const preview = await executeTool("ghl_add_contact_note", {
+    contactQuery: "Tomas D",
+    phone: "5970",
+    body: ASCII_NOTE
+  }, { environment, senderProfile: speaker, fetchImpl: tomasFixture() });
+  assert.equal(preview.error, undefined);
+  assert.doesNotMatch(JSON.stringify(preview), /formatting|cannot be empty/i);
+
+  const calls = [];
+  const written = await executeTool("ghl_add_contact_note", {
+    contactId: "tomas-id",
+    body: ASCII_NOTE,
+    confirmed: true
+  }, { environment, senderProfile: speaker, fetchImpl: tomasFixture(calls) });
+  assert.equal(written.created, true);
+  assert.equal(written.body, ASCII_NOTE);
+  assert.equal(written.error, undefined);
+  assert.doesNotMatch(JSON.stringify(written), /formatting|cannot be empty/i);
+  assert.equal(calls.find((call) => call.target.endsWith("/notes")).body.body, ASCII_NOTE);
+});
+
+test("real GHL note API errors are still surfaced", async () => {
+  await assert.rejects(
+    () => executeTool("ghl_add_contact_note", {
+      contactId: "tomas-id",
+      body: ASCII_NOTE,
+      confirmed: true
+    }, {
+      environment,
+      senderProfile: speaker,
+      fetchImpl: async (url) => {
+        if (String(url).endsWith("/contacts/tomas-id")) {
+          return json({ contact: { id: "tomas-id", firstName: "Tomas", lastName: "Diaz", phone: "+13055555970" } });
+        }
+        return json({ message: "GHL notes storage is unavailable" }, 503);
+      }
+    }),
+    (error) => {
+      assert.match(String(error?.message ?? error), /GHL notes storage is unavailable/);
+      assert.doesNotMatch(String(error?.message ?? error), /cannot be empty|formatting/i);
+      return true;
+    }
+  );
+});
+
+test("note tool schema tells the model to keep quotes and skip invented empty errors", () => {
+  const noteTool = grokTools(environment).find((tool) => tool.function.name === "ghl_add_contact_note");
+  assert.match(noteTool.function.description, /ASCII quotes, curly quotes/);
+  assert.match(noteTool.function.description, /do not rewrite, strip quotes, or invent a formatting\/empty GHL error/i);
+  assert.match(noteTool.function.description, /fresh name\/last-4 lookup on confirmation/i);
+  assert.match(noteTool.function.parameters.properties.body.description, /Keep ASCII\/curly quotes/);
 });

@@ -424,7 +424,7 @@ export function formatActiveCrmTask(scratch) {
   if (scratch.pending?.tool === "ghl_add_contact_note") {
     lines.push(`- Pending note (${scratch.pending.approved ? "already approved — save it" : "draft, waiting for yes"}):`);
     lines.push(String(scratch.pending.args?.body ?? "").slice(0, 1_500));
-    lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft and contact id. Do not drop the draft. Do not re-preview unless the write failed.");
+    lines.push("If they say yes/sí/ok/do it, CALL ghl_add_contact_note with confirmed=true on this same draft, exact body, and contact id. Do not drop the draft. Do not rewrite the body. Do not invent a formatting or empty-note error. Do not re-preview, ask for the phone, or start a fresh name/last-4 lookup unless the write tool result failed.");
   }
   if (scratch.pending?.tool === "ghl_manage_contact_tags") {
     const args = scratch.pending.args || {};
@@ -622,6 +622,10 @@ export function bindStickyContactArgs(scratch, toolName, args = {}, userText = "
     next.contactQuery ||= sticky.spokenName || sticky.storedName;
     next.phone ||= extractLast4FromText(userText) || sticky.phoneLast4;
     return next;
+  }
+  if (toolName === "ghl_add_contact_note" && next.confirmed === true && !String(next.body ?? "").trim() && scratch?.pending?.tool === "ghl_add_contact_note") {
+    next.body = scratch.pending.args?.body;
+    if (!next.title && scratch.pending.args?.title) next.title = scratch.pending.args.title;
   }
   delete next.contactQuery;
   delete next.query;

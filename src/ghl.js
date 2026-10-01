@@ -1145,7 +1145,7 @@ export async function ghlPrepareCreateContact({
   const cleanEmail = String(email ?? "").trim();
   if (cleanEmail && !cleanEmail.includes("@")) return { error: "That email does not look valid." };
   const cleanPhone = String(phone ?? "").trim();
-  const cleanNote = String(noteBody ?? "").trim();
+  const cleanNote = normalizeContactNoteBody(noteBody);
   if (cleanNote.length > 5_000) return { error: "The note is too long. Keep it under 5,000 characters." };
   const cleanNoteTitle = String(noteTitle ?? "").trim().slice(0, 160);
   const ids = ownerIds ?? ghlOwnerIds();
@@ -1346,18 +1346,62 @@ export async function ghlApplyTagChange(options) {
   };
 }
 
+const NOTE_UNSAFE_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+const NOTE_ADD_TAIL_RE = /\s+(?:please|pls)\s+add(?:\s+that)?\s+to\s+(?:his|her|their|[A-Za-z][\s\S]*?)['’]?s?\s+notes?\b[\s\S]*$/i;
+const NOTE_ADD_THAT_RE = /\s+add(?:\s+that)?\s+to\s+(?:his|her|their)\s+notes?\b[\s\S]*$/i;
+const NOTE_ADD_PREFIX_RE = /^(?:please|pls)?\s*(?:add|save|put|write)\s+(?:this|that|the following)?\s*(?:to\s+)?(?:his|her|their|[A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)['’]?s?\s+notes?\s*[:\-]\s*/i;
+
+export function normalizeContactNoteBody(body) {
+  return String(body ?? "").replace(NOTE_UNSAFE_CONTROL_RE, "").replace(/^\s+|\s+$/g, "");
+}
+
+export function isBlankContactNote(body) {
+  return !normalizeContactNoteBody(body);
+}
+
+export function extractNoteBodyFromUserText(text) {
+  const raw = String(text ?? "").replace(/^\s+|\s+$/g, "");
+  if (!raw) return "";
+  const fromPlease = raw.replace(NOTE_ADD_TAIL_RE, "");
+  if (fromPlease !== raw && fromPlease.trim()) return normalizeContactNoteBody(fromPlease);
+  const fromAddThat = raw.replace(NOTE_ADD_THAT_RE, "");
+  if (fromAddThat !== raw && fromAddThat.trim().length > 8) return normalizeContactNoteBody(fromAddThat);
+  if (NOTE_ADD_PREFIX_RE.test(raw)) {
+    const fromPrefix = raw.replace(NOTE_ADD_PREFIX_RE, "");
+    if (fromPrefix.trim()) return normalizeContactNoteBody(fromPrefix);
+  }
+  return "";
+}
+
+export function resolveContactNoteBody({ body, userText, pendingBody, confirmed = false } = {}) {
+  const direct = normalizeContactNoteBody(body);
+  if (direct) return direct;
+  if (confirmed) {
+    const pending = normalizeContactNoteBody(pendingBody);
+    if (pending) return pending;
+    return "";
+  }
+  return extractNoteBodyFromUserText(userText);
+}
+
+function contactNoteFromBody(body) {
+  const noteBody = normalizeContactNoteBody(body);
+  if (!noteBody) return { error: "The note cannot be empty." };
+  if (noteBody.length > 5_000) return { error: "The note is too long. Keep it under 5,000 characters." };
+  return { body: noteBody };
+}
+
 export async function ghlPrepareContactNote({ token, locationId, contactId, contactQuery, phone, body, title, pinned = false, expectedContactId, expectedContactName, expectedPhoneLast4, recoverStaleId = false, fetchImpl = fetch }) {
   const contact = await ghlResolveWriteContact({ token, locationId, contactId, contactQuery, phone, recoverStaleId: recoverStaleId && !expectedContactId, fetchImpl });
   if (contact.error) return contact;
   const mismatch = assertPreviewContact(contact, { expectedContactId, expectedContactName, expectedPhoneLast4 });
   if (mismatch) return mismatch;
-  const noteBody = String(body ?? "").trim();
-  if (!noteBody) return { error: "The note cannot be empty." };
-  if (noteBody.length > 5_000) return { error: "The note is too long. Keep it under 5,000 characters." };
+  const prepared = contactNoteFromBody(body);
+  if (prepared.error) return prepared;
   return {
     contact,
     note: {
-      body: noteBody,
+      body: prepared.body,
       ...(String(title ?? "").trim() ? { title: String(title).trim().slice(0, 160) } : {}),
       pinned: pinned === true
     }
@@ -1384,6 +1428,7 @@ export async function ghlCreateContactNote(options) {
     contact: plan.contact.name,
     phoneLast4: plan.contact.phoneLast4,
     noteId: result.note?.id ?? null,
+    body: plan.note.body,
     title: plan.note.title ?? null,
     pinned: plan.note.pinned
   };
