@@ -110,7 +110,7 @@ test("check-ins omit instructions, addresses, and questions stored as lead subje
   assert.equal(selected.total, 2);
 });
 
-test("next-morning still-quiet section only names leads that stayed untouched", () => {
+test("still-quiet selection remains available for afternoon, but not the morning day view", () => {
   const selected = selectUntouchedLeads([
     lead({ subject: "Ayda" }),
     lead({ subject: "Tomás", updatedAt: now.toISOString() })
@@ -120,13 +120,7 @@ test("next-morning still-quiet section only names leads that stayed untouched", 
     lead({ subject: "Ayda" }),
     lead({ subject: "Tomás", updatedAt: now.toISOString(), followUpAt: "2026-09-14T18:00:00.000Z" })
   ], now, { stillQuiet: selected });
-  assert.match(text, /🔁 Still quiet since yesterday/);
-  assert.match(text, /any update on/);
-  assert.match(text, /Ayda — follow up/);
-  assert.match(text, /I still don’t see notes or an Igor update for Ayda/);
-  const chase = text.slice(text.indexOf("Still quiet since yesterday"));
-  assert.match(chase, /Ayda/);
-  assert.doesNotMatch(chase, /Tomás/);
+  assert.doesNotMatch(text, /Still quiet|Ayda|Tomás/);
   assert.match(stillQuietBriefSection({ leads: [], total: 0 }), /^$/);
 });
 
@@ -215,7 +209,7 @@ test("afternoon check-in chases stale open leads and is not blocked by a morning
       sendTelegram: async ({ text }) => { morningSent.push(text); return { messageId: 1 }; }
     }
   );
-  assert.match(morningSent[0], /Morning lead brief/i);
+  assert.match(morningSent[0], /Good morning — here’s your day/i);
 
   const afternoonSent = [];
   const events = [];
@@ -243,7 +237,7 @@ test("afternoon check-in chases stale open leads and is not blocked by a morning
   await store.close();
 });
 
-test("next morning brief includes yesterday's still-quiet chase only for leads that stayed untouched", async () => {
+test("next morning day view omits yesterday's personal ledger chase", async () => {
   const store = await fixture();
   await saveLeadSnapshot({
     store,
@@ -274,8 +268,8 @@ test("next morning brief includes yesterday's still-quiet chase only for leads t
       sendTelegram: async ({ text }) => { sent.push(text); return { messageId: 3 }; }
     }
   );
-  assert.match(sent[0], /🔁 Still quiet since yesterday/);
-  assert.match(sent[0], /Ayda — call back/);
+  assert.match(sent[0], /Good morning — here’s your day/);
+  assert.doesNotMatch(sent[0], /Still quiet|Ayda/);
   await store.close();
 });
 
