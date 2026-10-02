@@ -11,6 +11,8 @@ import {
   isSmokeOrMetaGhlTask,
   isSmokeOrMetaLeadSubject,
   resolveTaskCalendarRoute,
+  impliesOpportunityWon,
+  isGhlOpportunityManagementRequest,
   taskCalendarRoutingPrompt,
   toolChoiceForUserRequest,
   toolsForUserRequest
@@ -165,6 +167,29 @@ test("wrote-back note forces ghl_add_contact_note", () => {
     type: "function",
     function: { name: "ghl_add_contact_note" }
   });
+});
+
+test("enrolled opportunity requests confirm which contact before pipelines", () => {
+  const text = "igor, i enrolled maria smith. pls create opportunity";
+  assert.equal(isGhlOpportunityManagementRequest(text), true);
+  assert.equal(impliesOpportunityWon(text), true);
+  const prompt = taskCalendarRoutingPrompt(text);
+  assert.match(prompt, /which contact/i);
+  assert.match(prompt, /ghl_search_contacts|ghl_manage_opportunity/);
+  assert.match(prompt, /status is Won/i);
+  assert.match(prompt, /Do not call ghl_list_pipelines/i);
+  assert.match(prompt, /Ask in this order only/i);
+  assert.match(prompt, /close date/i);
+  assert.doesNotMatch(prompt, /Call ghl_list_pipelines first/i);
+});
+
+test("enrolled, sold, closed, and won imply opportunity Won except negations", () => {
+  for (const text of ["i enrolled maria smith", "sold the deal", "closed it", "mark it won"]) {
+    assert.equal(impliesOpportunityWon(text), true, text);
+  }
+  assert.equal(impliesOpportunityWon("hasn't enrolled"), false);
+  assert.equal(impliesOpportunityWon("enrolled in medicare but hasn't selected a plan"), false);
+  assert.equal(impliesOpportunityWon("create an opportunity for Maria"), false);
 });
 
 test("smoke-test and create-task meta subjects are not chase items", () => {

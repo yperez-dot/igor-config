@@ -98,6 +98,10 @@ test("identity pack is Igor at THEI, not a blank-slate chatbot", () => {
   assert.match(SYSTEM_PROMPT, /pipeline name and stage name/i);
   assert.match(SYSTEM_PROMPT, /Never ask the user to paste pipeline or stage IDs/i);
   assert.match(SYSTEM_PROMPT, /list the pipeline and stage names from ghl_list_pipelines/i);
+  assert.match(SYSTEM_PROMPT, /which contact/i);
+  assert.match(SYSTEM_PROMPT, /last-4/i);
+  assert.match(SYSTEM_PROMPT, /enrolled, sold, closed, or won mean status=Won/i);
+  assert.match(SYSTEM_PROMPT, /Do not list pipelines/i);
   assert.doesNotMatch(SYSTEM_PROMPT, /ask its question exactly/);
   assert.match(SYSTEM_PROMPT, /nameMismatch/);
   assert.match(SYSTEM_PROMPT, /No phantom pictures/);

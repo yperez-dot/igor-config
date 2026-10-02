@@ -1,4 +1,5 @@
 import { last4, maskName, emailDomain } from "./redact.js";
+import { impliesOpportunityWon } from "./task-calendar-route.js";
 
 const GHL_API = "https://services.leadconnectorhq.com";
 const GHL_VERSION = "2021-07-28";
@@ -472,9 +473,13 @@ function opportunityDetailsQuestion(missingFields, { contactQuery } = {}) {
   const needsStage = set.has("stage");
   const needsStatus = set.has("status");
   const needsCloseDate = missingFields.some((field) => /close date/i.test(field));
+  const closeDateAsk = "what close date (YYYY-MM-DD)? I can use today unless you say otherwise";
 
   if (!needsClient && needsPipeline && needsStage && needsStatus) {
     return `Which GHL pipeline and stage should I use${forWhom}, and should the status be open, won, lost, or abandoned?`;
+  }
+  if (!needsClient && needsPipeline && needsStage && needsCloseDate && !needsStatus) {
+    return `Which GHL pipeline and stage should I use${forWhom}, and ${closeDateAsk}?`;
   }
   if (!needsClient && needsPipeline && needsStage && !needsStatus && !needsCloseDate) {
     return `Which GHL pipeline and stage should I use${forWhom}?`;
@@ -483,10 +488,10 @@ function opportunityDetailsQuestion(missingFields, { contactQuery } = {}) {
     return `Which GHL pipeline or existing opportunity should I use${forWhom}?`;
   }
   if (needsClient && !needsPipeline && !needsStage && !needsStatus && !needsCloseDate) {
-    return "Which client should I use for this GHL opportunity?";
+    return "Which client should I use for this GHL opportunity? Reply with a last-4 or phone if more than one person matches.";
   }
   if (needsCloseDate && missingFields.length === 1) {
-    return `What close date should I use${forWhom} (YYYY-MM-DD)?`;
+    return `What close date should I use${forWhom} (YYYY-MM-DD)? I can use today unless you say otherwise.`;
   }
   if (needsStatus && !needsClient && !needsPipeline && !needsStage) {
     return needsCloseDate
@@ -520,6 +525,92 @@ async function opportunityNeedsDetails(action, missingFields, extras = {}) {
   if (listed.pipelines) payload.pipelines = listed.pipelines;
   if (listed.error) payload.error = listed.error;
   return payload;
+}
+
+function compactOpportunityMatches(contacts = []) {
+  return (Array.isArray(contacts) ? contacts : []).slice(0, 5).map((contact) => ({
+    id: contact.id ?? null,
+    name: contact.name ?? maskName(contactDisplayName(contact)),
+    phoneLast4: contact.phoneLast4 ?? last4(contact.phone),
+    emailDomain: contact.emailDomain ?? emailDomain(contact.email)
+  }));
+}
+
+function isNameOnlyOpportunityContact({ contactId, contactQuery, phone } = {}) {
+  if (hasTrimmed(contactId)) return false;
+  if (hasTrimmed(phone) || phoneDigitsFromQuery(contactQuery)) return false;
+  return hasTrimmed(contactQuery);
+}
+
+function opportunityContactQuestion(matches, contactQuery) {
+  const name = String(contactQuery ?? "").trim();
+  const who = name || "that client";
+  if (matches.length > 1) {
+    return `I found more than one ${who} in GHL. Which contact should I use? Reply with the last-4 or email.`;
+  }
+  if (matches.length === 1) {
+    const match = matches[0];
+    const last4Hint = match.phoneLast4 ? ` ending ${match.phoneLast4}` : "";
+    const emailHint = match.emailDomain ? ` / ${match.emailDomain}` : "";
+    return `I found ${match.name || who}${last4Hint}${emailHint} in GHL. Is that the right contact, or should I use a last-4/phone?`;
+  }
+  return `Which ${who} should I use for this GHL opportunity? Reply with a last-4 or phone so I can tell them apart.`;
+}
+
+function opportunityNeedsContact(action, { contactQuery, matches = [], error } = {}) {
+  const payload = {
+    needsDetails: true,
+    action,
+    missingFields: ["client"],
+    question: opportunityContactQuestion(matches, contactQuery),
+    matches,
+    hint: "Show the masked matches (name + phone last-4 / email). Ask which contact or for a last-4/phone. Do not list pipelines, ask status, or assume a close date until contactId is unambiguous."
+  };
+  if (error) payload.error = error;
+  return payload;
+}
+
+async function resolveOpportunityContactOrAsk({
+  action,
+  token,
+  locationId,
+  contactId,
+  contactQuery,
+  phone,
+  fetchImpl = fetch
+} = {}) {
+  if (hasTrimmed(contactId)) return { contactId: String(contactId).trim() };
+  if (isNameOnlyOpportunityContact({ contactId, contactQuery, phone })) {
+    try {
+      const found = await ghlSearchContacts({
+        token, locationId, query: contactQuery, limit: 10, fetchImpl
+      });
+      return opportunityNeedsContact(action, {
+        contactQuery,
+        matches: compactOpportunityMatches(found)
+      });
+    } catch {
+      return opportunityNeedsContact(action, {
+        contactQuery,
+        matches: [],
+        error: "I could not search GHL contacts right now."
+      });
+    }
+  }
+  if (hasTrimmed(phone) || phoneDigitsFromQuery(contactQuery)) {
+    const resolved = await ghlResolveContact({
+      token, locationId, query: contactQuery, phone, fetchImpl
+    });
+    if (resolved.error) {
+      return opportunityNeedsContact(action, {
+        contactQuery,
+        matches: compactOpportunityMatches(resolved.candidates),
+        error: resolved.error
+      });
+    }
+    return { contactId: resolved.id, contact: resolved };
+  }
+  return null;
 }
 
 function existingOpportunityCloseDate(existing) {
@@ -614,31 +705,48 @@ export async function ghlPrepareOpportunityManagement({
   assignedTo,
   owner,
   monetaryValue,
+  userText,
   environment = process.env,
   fetchImpl = fetch
 }) {
   const operation = String(action ?? (opportunityId ? "update" : "create")).trim().toLowerCase();
   if (!new Set(["create", "update"]).has(operation)) return { error: "Opportunity action must be create or update." };
 
+  const inferredWon = !hasTrimmed(status) && impliesOpportunityWon(userText);
+  const effectiveStatus = hasTrimmed(status) ? String(status).trim() : (inferredWon ? "won" : "");
+  let resolvedContactId = hasTrimmed(contactId) ? String(contactId).trim() : "";
+  const hasContactSelector = Boolean(resolvedContactId || String(contactQuery ?? "").trim() || String(phone ?? "").trim());
+
+  if (!opportunityId && !hasContactSelector) {
+    return opportunityNeedsDetails(operation, ["client"], {
+      token, locationId, fetchImpl, contactId, contactQuery
+    });
+  }
+  if (!opportunityId) {
+    const contactAsk = await resolveOpportunityContactOrAsk({
+      action: operation, token, locationId, contactId: resolvedContactId, contactQuery, phone, fetchImpl
+    });
+    if (contactAsk?.needsDetails) return contactAsk;
+    if (contactAsk?.contactId) resolvedContactId = contactAsk.contactId;
+  }
+
   const missingFields = [];
-  const hasContactSelector = Boolean(contactId || String(contactQuery ?? "").trim() || String(phone ?? "").trim());
   const hasPipelineId = hasTrimmed(pipelineId);
   const hasStageId = hasTrimmed(stageId);
   const hasPipelineName = hasTrimmed(pipelineName);
   const hasStageName = hasTrimmed(stageName);
-  if (!opportunityId && !hasContactSelector) missingFields.push("client");
   if (operation === "create" && !hasPipelineId) missingFields.push("pipeline");
   if (operation === "create" && !hasStageId) missingFields.push("stage");
-  if (operation === "create" && !String(status ?? "").trim()) missingFields.push("status");
+  if (operation === "create" && !effectiveStatus) missingFields.push("status");
   if (operation === "update" && !opportunityId && !hasPipelineId) missingFields.push("pipeline or opportunity");
   if (operation === "update" && opportunityId && hasPipelineName && !hasPipelineId) missingFields.push("pipeline");
   if (operation === "update" && hasStageName && !hasStageId) missingFields.push("stage");
-  if (operation === "create" && String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
+  if (operation === "create" && effectiveStatus.toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
     missingFields.push("close date (YYYY-MM-DD)");
   }
   if (missingFields.length) {
     return opportunityNeedsDetails(operation, missingFields, {
-      token, locationId, fetchImpl, contactId, contactQuery
+      token, locationId, fetchImpl, contactId: resolvedContactId || contactId, contactQuery
     });
   }
 
@@ -647,11 +755,26 @@ export async function ghlPrepareOpportunityManagement({
     existing = await ghlGetOpportunity({ token, opportunityId, fetchImpl });
     if (existing?.error) return existing;
   }
-  const resolvedContactId = contactId ?? existing?.contactId ?? existing?.contact?.id;
+  resolvedContactId = resolvedContactId || existing?.contactId || existing?.contact?.id;
   const contact = await ghlResolveContact({
     token, locationId, contactId: resolvedContactId, query: contactQuery, phone, fetchImpl
   });
-  if (contact.error) return contact;
+  if (contact.error) {
+    if (contact.candidates) {
+      return opportunityNeedsContact(operation, {
+        contactQuery,
+        matches: compactOpportunityMatches(contact.candidates),
+        error: contact.error
+      });
+    }
+    return contact;
+  }
+  if (!resolvedContactId && (contact.resolvedVia === "query" || contact.resolvedVia === "firstName")) {
+    return opportunityNeedsContact(operation, {
+      contactQuery,
+      matches: compactOpportunityMatches([contact])
+    });
+  }
 
   const pipelines = await ghlListPipelines({ token, locationId, fetchImpl });
   if (operation === "update" && !existing) {
@@ -681,7 +804,7 @@ export async function ghlPrepareOpportunityManagement({
   });
   if (destination.error) return destination;
 
-  const normalizedStatus = normalizeOpportunityStatus(status, existing?.status ?? "open");
+  const normalizedStatus = normalizeOpportunityStatus(effectiveStatus, existing?.status ?? "open");
   if (!normalizedStatus) return { error: "Opportunity status must be open, won, lost, or abandoned." };
   const existingCloseDate = existingOpportunityCloseDate(existing);
   const normalizedCloseDate = normalizeOpportunityCloseDate(closeDate ?? existingCloseDate);
@@ -691,7 +814,7 @@ export async function ghlPrepareOpportunityManagement({
       token,
       locationId,
       fetchImpl,
-      contactId,
+      contactId: resolvedContactId || contactId,
       contactQuery,
       contactLabel: contact.firstName || contact.rawName || ""
     });
