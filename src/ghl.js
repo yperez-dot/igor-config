@@ -404,6 +404,28 @@ function opportunityRecord(payload) {
   return payload?.opportunity ?? payload?.data ?? payload ?? null;
 }
 
+function opportunityNeedsDetails(action, missingFields) {
+  const joined = missingFields.length === 1
+    ? missingFields[0]
+    : `${missingFields.slice(0, -1).join(", ")}, and ${missingFields.at(-1)}`;
+  return {
+    needsDetails: true,
+    action,
+    missingFields,
+    question: `Before I prepare the GHL opportunity, I still need the ${joined}.`
+  };
+}
+
+function existingOpportunityCloseDate(existing) {
+  return existing?.forecastExpectedCloseDate
+    ? String(existing.forecastExpectedCloseDate).slice(0, 10)
+    : null;
+}
+
+function hasTrimmed(value) {
+  return Boolean(String(value ?? "").trim());
+}
+
 export async function ghlGetOpportunity({ token, opportunityId, fetchImpl = fetch }) {
   if (!String(opportunityId ?? "").trim()) return { error: "A GHL opportunity id is required." };
   const payload = await ghlJson(`${GHL_API}/opportunities/${encodeURIComponent(opportunityId)}`, {
@@ -492,6 +514,24 @@ export async function ghlPrepareOpportunityManagement({
   const operation = String(action ?? (opportunityId ? "update" : "create")).trim().toLowerCase();
   if (!new Set(["create", "update"]).has(operation)) return { error: "Opportunity action must be create or update." };
 
+  const missingFields = [];
+  const hasContactSelector = Boolean(contactId || String(contactQuery ?? "").trim() || String(phone ?? "").trim());
+  const hasPipelineId = hasTrimmed(pipelineId);
+  const hasStageId = hasTrimmed(stageId);
+  const hasPipelineName = hasTrimmed(pipelineName);
+  const hasStageName = hasTrimmed(stageName);
+  if (!opportunityId && !hasContactSelector) missingFields.push("client");
+  if (operation === "create" && !hasPipelineId) missingFields.push("pipeline ID");
+  if (operation === "create" && !hasStageId) missingFields.push("stage ID");
+  if (operation === "create" && !String(status ?? "").trim()) missingFields.push("status");
+  if (operation === "update" && !opportunityId && !hasPipelineId) missingFields.push("pipeline or opportunity ID");
+  if (operation === "update" && opportunityId && hasPipelineName && !hasPipelineId) missingFields.push("pipeline ID");
+  if (operation === "update" && hasStageName && !hasStageId) missingFields.push("stage ID");
+  if (operation === "create" && String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
+    missingFields.push("close date (YYYY-MM-DD)");
+  }
+  if (missingFields.length) return opportunityNeedsDetails(operation, missingFields);
+
   let existing = null;
   if (opportunityId) {
     existing = await ghlGetOpportunity({ token, opportunityId, fetchImpl });
@@ -504,26 +544,20 @@ export async function ghlPrepareOpportunityManagement({
   if (contact.error) return contact;
 
   const pipelines = await ghlListPipelines({ token, locationId, fetchImpl });
-  const destination = resolvePipelineStage(pipelines, {
-    pipelineId: pipelineId ?? existing?.pipelineId,
-    pipelineName,
-    stageId: stageId ?? existing?.pipelineStageId,
-    stageName
-  });
-  if (destination.error) return destination;
-
   if (operation === "update" && !existing) {
+    const pipeline = pipelines.find((entry) => String(entry.id) === String(pipelineId));
+    if (!pipeline) return { error: "I could not find that GHL pipeline." };
     const searched = await ghlSearchOpportunities({
       token,
       locationId,
       contactId: contact.id,
-      pipelineId: destination.pipeline.id,
+      pipelineId: pipeline.id,
       limit: 100,
       fetchImpl
     });
     const candidates = searched.opportunities.filter((entry) => (
       String(entry.contactId ?? entry.contact?.id ?? "") === String(contact.id)
-      && String(entry.pipelineId ?? "") === String(destination.pipeline.id)
+      && String(entry.pipelineId ?? "") === String(pipeline.id)
     ));
     if (candidates.length > 1) return { error: "I found more than one opportunity for that contact in this pipeline. Choose the exact opportunity first." };
     existing = candidates[0] ?? null;
@@ -531,14 +565,20 @@ export async function ghlPrepareOpportunityManagement({
     opportunityId = existing.id;
   }
 
+  const destination = resolvePipelineStage(pipelines, {
+    pipelineId: hasPipelineId ? pipelineId : existing?.pipelineId,
+    stageId: hasStageId ? stageId : existing?.pipelineStageId
+  });
+  if (destination.error) return destination;
+
   const normalizedStatus = normalizeOpportunityStatus(status, existing?.status ?? "open");
   if (!normalizedStatus) return { error: "Opportunity status must be open, won, lost, or abandoned." };
-  const existingCloseDate = existing?.forecastExpectedCloseDate
-    ? String(existing.forecastExpectedCloseDate).slice(0, 10)
-    : null;
+  const existingCloseDate = existingOpportunityCloseDate(existing);
   const normalizedCloseDate = normalizeOpportunityCloseDate(closeDate ?? existingCloseDate);
   if (normalizedCloseDate === undefined) return { error: "Close date must be a real date in YYYY-MM-DD format." };
-  if (normalizedStatus === "won" && !normalizedCloseDate) return { error: "A close date is required when marking an opportunity Won." };
+  if (normalizedStatus === "won" && !normalizedCloseDate) {
+    return opportunityNeedsDetails(operation, ["close date (YYYY-MM-DD)"]);
+  }
 
   const requestedOwner = assignedTo ?? owner ?? existing?.assignedTo ?? contact.assignedTo;
   const ownerResult = requestedOwner || operation === "create"
@@ -596,6 +636,7 @@ export async function ghlPrepareOpportunityManagement({
 export async function ghlManageOpportunity(options) {
   const plan = await ghlPrepareOpportunityManagement(options);
   if (plan.error) return plan;
+  if (plan.needsDetails) return plan;
   const body = {
     pipelineId: plan.pipeline.id,
     name: plan.name,

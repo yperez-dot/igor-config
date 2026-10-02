@@ -9,7 +9,7 @@ function json(payload, status = 200) {
   return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
 }
 
-function opportunityFixture(calls, { existing = false, mismatch = false } = {}) {
+function opportunityFixture(calls, { existing = false, mismatch = false, existingCloseDate = null, extraPipelines = [] } = {}) {
   let opportunityReads = 0;
   return async (url, init = {}) => {
     const target = String(url);
@@ -20,7 +20,10 @@ function opportunityFixture(calls, { existing = false, mismatch = false } = {}) 
       return json({ contact: { id: "contact-1", firstName: "Maria", lastName: "Rivera", phone: "+13055552363", assignedTo: DEFAULT_GHL_OWNER_IDS.katy } });
     }
     if (target.includes("/opportunities/pipelines?")) {
-      return json({ pipelines: [{ id: "pipeline-1", name: "Medicare", stages: [{ id: "stage-enrolled", name: "Enrolled" }] }] });
+      return json({ pipelines: [
+        { id: "pipeline-1", name: "Medicare", stages: [{ id: "stage-enrolled", name: "Enrolled" }] },
+        ...extraPipelines
+      ] });
     }
     if (target.endsWith("/opportunities/") && method === "POST") {
       return json({ opportunity: { id: "opp-new" } }, 201);
@@ -38,7 +41,7 @@ function opportunityFixture(calls, { existing = false, mismatch = false } = {}) 
       return json({ opportunity: {
         id: "opp-1", name: "Maria Rivera", contactId: "contact-1", pipelineId: "pipeline-1",
         pipelineStageId: "stage-enrolled", status: won ? "won" : "open",
-        forecastExpectedCloseDate: won ? "2026-10-02" : null,
+        forecastExpectedCloseDate: won ? "2026-10-02" : existingCloseDate,
         assignedTo: DEFAULT_GHL_OWNER_IDS.katy
       } });
     }
@@ -54,6 +57,12 @@ test("opportunity tool is exposed with Won, close-date, approval, and verificati
   assert.match(tool.function.description, /Won/i);
   assert.match(tool.function.description, /close date/i);
   assert.match(tool.function.description, /verified=true/i);
+  assert.match(tool.function.description, /needsDetails=true/);
+  assert.match(tool.function.description, /missingFields/);
+  assert.match(tool.function.description, /never invent/i);
+  assert.match(tool.function.description, /pipelineId/);
+  assert.match(tool.function.description, /ghl_list_pipelines/);
+  assert.deepEqual(tool.function.parameters.required, ["action"]);
 });
 
 test("create and Won requests route directly to opportunity management", () => {
@@ -62,23 +71,150 @@ test("create and Won requests route directly to opportunity management", () => {
     assert.equal(isGhlOpportunityManagementRequest(text), true);
     assert.equal(toolChoiceForUserRequest(text, tools).function.name, "ghl_manage_opportunity");
     assert.match(taskCalendarRoutingPrompt(text), /verified=true/);
+    assert.match(taskCalendarRoutingPrompt(text), /ghl_list_pipelines/);
+    assert.match(taskCalendarRoutingPrompt(text), /Never guess pipelineName/);
   }
 });
 
-test("Won requires an explicit close date before preview", async () => {
+test("incomplete create asks for every missing detail without calling GHL", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactQuery: "Maria",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["pipeline ID", "stage ID", "status"]);
+  assert.match(result.question, /pipeline ID, stage ID, and status/i);
+  assert.equal(calls.length, 0);
+});
+
+test("Won asks for an explicit close date before preview or any GHL call", async () => {
+  const calls = [];
   const result = await ghlPrepareOpportunityManagement({
     token: "token", locationId: "loc", action: "create", contactId: "contact-1",
-    pipelineName: "Medicare", stageName: "Enrolled", status: "won", owner: "Katy",
-    fetchImpl: opportunityFixture([])
+    pipelineId: "pipeline-1", stageId: "stage-enrolled", status: "won", owner: "Katy",
+    fetchImpl: opportunityFixture(calls)
   });
-  assert.match(result.error, /close date is required/i);
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
+  assert.match(result.question, /close date/i);
+  assert.equal(calls.length, 0);
+});
+
+test("create with names but no ids asks instead of resolving a guessed destination", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactId: "contact-1",
+    pipelineName: "Medicare", stageName: "Enrolled", status: "open",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["pipeline ID", "stage ID"]);
+  assert.equal(calls.length, 0);
+});
+
+test("update with opportunityId and names but no ids asks instead of guessing the destination", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
+    pipelineName: "Medicare", stageName: "Enrolled", status: "won",
+    fetchImpl: opportunityFixture(calls, { existingCloseDate: "2026-10-02" })
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["pipeline ID", "stage ID"]);
+  assert.equal(calls.length, 0);
+});
+
+test("ambiguous pipeline/stage names never pick a destination silently", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactId: "contact-1",
+    pipelineName: "Medicare", stageName: "Enrolled", status: "won", closeDate: "2026-10-02",
+    fetchImpl: opportunityFixture(calls, {
+      extraPipelines: [{ id: "pipeline-2", name: "Medicare Advantage", stages: [{ id: "stage-enrolled-2", name: "Enrolled" }] }]
+    })
+  });
+  assert.equal(result.needsDetails, true);
+  assert.ok(result.missingFields.includes("pipeline ID"));
+  assert.ok(result.missingFields.includes("stage ID"));
+  assert.equal(calls.length, 0);
+  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
+});
+
+test("create without a client asks for the client without calling GHL", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create",
+    pipelineId: "pipeline-1", stageId: "stage-enrolled", status: "open",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.ok(result.missingFields.includes("client"));
+  assert.match(result.question, /client/i);
+  assert.equal(calls.length, 0);
+});
+
+test("update without opportunityId or pipeline asks before any GHL call", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", contactQuery: "Maria", status: "won",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["pipeline or opportunity ID"]);
+  assert.match(result.question, /pipeline or opportunity ID/i);
+  assert.equal(calls.length, 0);
+});
+
+test("update Won reuses existing close date when opportunityId is known", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
+    status: "won", owner: "Katy",
+    fetchImpl: opportunityFixture(calls, { existingCloseDate: "2026-10-02" })
+  });
+  assert.equal(result.needsDetails ?? false, false);
+  assert.equal(result.closeDate, "2026-10-02");
+  assert.equal(result.preview.closeDate, "2026-10-02");
+  assert.equal(result.preview.status, "won");
+  assert.ok(calls.some((call) => call.method === "GET" && call.target.endsWith("/opportunities/opp-1")));
+  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
+});
+
+test("update with opportunityId omits pipeline and stage and keeps the existing destination", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
+    status: "open", owner: "Katy",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails ?? false, false);
+  assert.equal(result.preview.pipelineId, "pipeline-1");
+  assert.equal(result.preview.stageId, "stage-enrolled");
+  assert.equal(result.preview.pipeline, "Medicare");
+  assert.equal(result.preview.stage, "Enrolled");
+  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
+});
+
+test("update Won asks for close date after loading opportunity with none stored", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
+    status: "won", owner: "Katy",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
+  assert.match(result.question, /close date/i);
+  assert.ok(calls.some((call) => call.method === "GET" && call.target.endsWith("/opportunities/opp-1")));
+  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
 });
 
 test("create preview resolves exact client, pipeline, stage, status, owner, and date without writing", async () => {
   const calls = [];
   const result = await ghlPrepareOpportunityManagement({
     token: "token", locationId: "loc", action: "create", contactId: "contact-1",
-    opportunityName: "Maria Rivera Medicare", pipelineName: "Medicare", stageName: "Enrolled",
+    opportunityName: "Maria Rivera Medicare", pipelineId: "pipeline-1", stageId: "stage-enrolled",
     status: "won", closeDate: "2026-10-02", owner: "Katy", fetchImpl: opportunityFixture(calls)
   });
   assert.deepEqual(result.preview, {
@@ -95,7 +231,7 @@ test("confirmed create uses v3, writes Won and close date, then verifies the ret
   const calls = [];
   const result = await ghlManageOpportunity({
     token: "token", locationId: "loc", action: "create", contactId: "contact-1",
-    opportunityName: "Maria Rivera Medicare", pipelineName: "Medicare", stageName: "Enrolled",
+    opportunityName: "Maria Rivera Medicare", pipelineId: "pipeline-1", stageId: "stage-enrolled",
     status: "won", closeDate: "2026-10-02", owner: "Katy", fetchImpl: opportunityFixture(calls)
   });
   assert.equal(result.created, true);
@@ -115,7 +251,7 @@ test("confirmed update writes Won and close date, verifies, and returns all iden
   const calls = [];
   const result = await ghlManageOpportunity({
     token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
-    pipelineName: "Medicare", stageName: "Enrolled", status: "won", closeDate: "2026-10-02",
+    status: "won", closeDate: "2026-10-02",
     owner: "Katy", fetchImpl: opportunityFixture(calls, { existing: true })
   });
   assert.equal(result.updated, true);
@@ -131,12 +267,14 @@ test("confirmed update writes Won and close date, verifies, and returns all iden
   assert.equal(write.version, "v3");
   assert.equal(write.body.status, "won");
   assert.equal(write.body.forecastExpectedCloseDate, "2026-10-02");
+  assert.equal(write.body.pipelineId, "pipeline-1");
+  assert.equal(write.body.pipelineStageId, "stage-enrolled");
 });
 
 test("mismatched read-back never reports verified success", async () => {
   const result = await ghlManageOpportunity({
     token: "token", locationId: "loc", action: "create", contactId: "contact-1",
-    pipelineName: "Medicare", stageName: "Enrolled", status: "won", closeDate: "2026-10-02",
+    pipelineId: "pipeline-1", stageId: "stage-enrolled", status: "won", closeDate: "2026-10-02",
     owner: "Katy", fetchImpl: opportunityFixture([], { mismatch: true })
   });
   assert.equal(result.created, true);
@@ -150,7 +288,7 @@ test("executeTool previews first and a later yes reuses the exact saved draft on
   const fetchImpl = opportunityFixture(calls);
   const args = {
     action: "create", contactId: "contact-1", opportunityName: "Maria Rivera Medicare",
-    pipelineName: "Medicare", stageName: "Enrolled", status: "won", closeDate: "2026-10-02", owner: "Katy"
+    pipelineId: "pipeline-1", stageId: "stage-enrolled", status: "won", closeDate: "2026-10-02", owner: "Katy"
   };
   const preview = await executeTool("ghl_manage_opportunity", args, {
     environment, senderProfile: { firstName: "Yahoska" }, fetchImpl
