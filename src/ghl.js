@@ -492,6 +492,26 @@ export async function ghlPrepareOpportunityManagement({
   const operation = String(action ?? (opportunityId ? "update" : "create")).trim().toLowerCase();
   if (!new Set(["create", "update"]).has(operation)) return { error: "Opportunity action must be create or update." };
 
+  const missingFields = [];
+  const hasContactSelector = Boolean(contactId || String(contactQuery ?? "").trim() || String(phone ?? "").trim());
+  if (!opportunityId && !hasContactSelector) missingFields.push("client");
+  if (operation === "create" && !(pipelineId || String(pipelineName ?? "").trim())) missingFields.push("pipeline");
+  if (operation === "create" && !(stageId || String(stageName ?? "").trim())) missingFields.push("stage");
+  if (operation === "create" && !String(status ?? "").trim()) missingFields.push("status");
+  if (operation === "update" && !opportunityId && !(pipelineId || String(pipelineName ?? "").trim())) missingFields.push("pipeline or opportunity ID");
+  if (String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) missingFields.push("close date (YYYY-MM-DD)");
+  if (missingFields.length) {
+    const joined = missingFields.length === 1
+      ? missingFields[0]
+      : `${missingFields.slice(0, -1).join(", ")}, and ${missingFields.at(-1)}`;
+    return {
+      needsDetails: true,
+      action: operation,
+      missingFields,
+      question: `Before I prepare the GHL opportunity, I still need the ${joined}.`
+    };
+  }
+
   let existing = null;
   if (opportunityId) {
     existing = await ghlGetOpportunity({ token, opportunityId, fetchImpl });
@@ -596,6 +616,7 @@ export async function ghlPrepareOpportunityManagement({
 export async function ghlManageOpportunity(options) {
   const plan = await ghlPrepareOpportunityManagement(options);
   if (plan.error) return plan;
+  if (plan.needsDetails) return plan;
   const body = {
     pipelineId: plan.pipeline.id,
     name: plan.name,

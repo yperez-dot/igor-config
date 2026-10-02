@@ -306,7 +306,7 @@ export function grokTools(environment = process.env) {
           monetaryValue: { type: "number" },
           confirmed: { type: "boolean" }
         },
-        required: ["action", "stageName", "status"],
+        required: ["action"],
         additionalProperties: false
       }),
       functionTool("ghl_move_opportunity_stage", "Preview and then move one GHL opportunity to a pipeline stage. First call without confirmed to resolve and preview the masked contact, pipeline, and stage. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí.", {
@@ -1375,6 +1375,7 @@ export async function executeTool(name, rawArgs, {
         if (blocked) {
           const plan = await ghlPrepareOpportunityManagement(request);
           if (plan.error) return plan;
+          if (plan.needsDetails) return plan;
           return {
             ...blocked,
             proposed: plan.preview,
