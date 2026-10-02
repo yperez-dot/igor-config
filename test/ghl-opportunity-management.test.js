@@ -54,6 +54,7 @@ test("opportunity tool is exposed with Won, close-date, approval, and verificati
   assert.match(tool.function.description, /Won/i);
   assert.match(tool.function.description, /close date/i);
   assert.match(tool.function.description, /verified=true/i);
+  assert.deepEqual(tool.function.parameters.required, ["action"]);
 });
 
 test("create and Won requests route directly to opportunity management", () => {
@@ -65,13 +66,29 @@ test("create and Won requests route directly to opportunity management", () => {
   }
 });
 
-test("Won requires an explicit close date before preview", async () => {
+test("incomplete create asks for every missing detail without calling GHL", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactQuery: "Maria",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["pipeline", "stage", "status"]);
+  assert.match(result.question, /pipeline, stage, and status/i);
+  assert.equal(calls.length, 0);
+});
+
+test("Won asks for an explicit close date before preview or any GHL call", async () => {
+  const calls = [];
   const result = await ghlPrepareOpportunityManagement({
     token: "token", locationId: "loc", action: "create", contactId: "contact-1",
     pipelineName: "Medicare", stageName: "Enrolled", status: "won", owner: "Katy",
-    fetchImpl: opportunityFixture([])
+    fetchImpl: opportunityFixture(calls)
   });
-  assert.match(result.error, /close date is required/i);
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
+  assert.match(result.question, /close date/i);
+  assert.equal(calls.length, 0);
 });
 
 test("create preview resolves exact client, pipeline, stage, status, owner, and date without writing", async () => {
