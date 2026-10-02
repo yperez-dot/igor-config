@@ -148,7 +148,7 @@ export function taskCalendarRoutingPrompt(text) {
       "## Hard routing for this turn",
       "This is a GHL opportunity create/update/close request.",
       "Call ghl_manage_opportunity without confirmed and preview the masked contact, action, opportunity, pipeline, stage, status, owner, and close date.",
-      "If the tool returns needsDetails=true, ask its question exactly and stop. Never guess a missing client, pipeline, stage, status, owner, or close date.",
+      "If the tool returns needsDetails=true, ask its question exactly and stop. Never guess a missing client, pipeline, stage, status, or close date. Do not invent an owner; omitted owner on create already defaults to Yahoska.",
       "Do not write until the user explicitly says yes/sí; a later confirmation must reuse the saved exact ids and fields.",
       "After writing, claim success only when the tool returns verified=true with the opportunity id and matching pipeline, stage, status, owner, and close date."
     ].join("\n");

@@ -9,7 +9,7 @@ function json(payload, status = 200) {
   return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
 }
 
-function opportunityFixture(calls, { existing = false, mismatch = false } = {}) {
+function opportunityFixture(calls, { existing = false, mismatch = false, existingCloseDate = null } = {}) {
   let opportunityReads = 0;
   return async (url, init = {}) => {
     const target = String(url);
@@ -38,7 +38,7 @@ function opportunityFixture(calls, { existing = false, mismatch = false } = {}) 
       return json({ opportunity: {
         id: "opp-1", name: "Maria Rivera", contactId: "contact-1", pipelineId: "pipeline-1",
         pipelineStageId: "stage-enrolled", status: won ? "won" : "open",
-        forecastExpectedCloseDate: won ? "2026-10-02" : null,
+        forecastExpectedCloseDate: won ? "2026-10-02" : existingCloseDate,
         assignedTo: DEFAULT_GHL_OWNER_IDS.katy
       } });
     }
@@ -54,6 +54,9 @@ test("opportunity tool is exposed with Won, close-date, approval, and verificati
   assert.match(tool.function.description, /Won/i);
   assert.match(tool.function.description, /close date/i);
   assert.match(tool.function.description, /verified=true/i);
+  assert.match(tool.function.description, /needsDetails=true/);
+  assert.match(tool.function.description, /missingFields/);
+  assert.match(tool.function.description, /do not invent fields/i);
   assert.deepEqual(tool.function.parameters.required, ["action"]);
 });
 
@@ -89,6 +92,60 @@ test("Won asks for an explicit close date before preview or any GHL call", async
   assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
   assert.match(result.question, /close date/i);
   assert.equal(calls.length, 0);
+});
+
+test("create without a client asks for the client without calling GHL", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create",
+    pipelineName: "Medicare", stageName: "Enrolled", status: "open",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.ok(result.missingFields.includes("client"));
+  assert.match(result.question, /client/i);
+  assert.equal(calls.length, 0);
+});
+
+test("update without opportunityId or pipeline asks before any GHL call", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", contactQuery: "Maria", status: "won",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["pipeline or opportunity ID"]);
+  assert.match(result.question, /pipeline or opportunity ID/i);
+  assert.equal(calls.length, 0);
+});
+
+test("update Won reuses existing close date when opportunityId is known", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
+    pipelineName: "Medicare", stageName: "Enrolled", status: "won", owner: "Katy",
+    fetchImpl: opportunityFixture(calls, { existingCloseDate: "2026-10-02" })
+  });
+  assert.equal(result.needsDetails ?? false, false);
+  assert.equal(result.closeDate, "2026-10-02");
+  assert.equal(result.preview.closeDate, "2026-10-02");
+  assert.equal(result.preview.status, "won");
+  assert.ok(calls.some((call) => call.method === "GET" && call.target.endsWith("/opportunities/opp-1")));
+  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
+});
+
+test("update Won asks for close date after loading opportunity with none stored", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "update", opportunityId: "opp-1",
+    pipelineName: "Medicare", stageName: "Enrolled", status: "won", owner: "Katy",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
+  assert.match(result.question, /close date/i);
+  assert.ok(calls.some((call) => call.method === "GET" && call.target.endsWith("/opportunities/opp-1")));
+  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
 });
 
 test("create preview resolves exact client, pipeline, stage, status, owner, and date without writing", async () => {

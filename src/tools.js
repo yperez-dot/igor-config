@@ -286,7 +286,7 @@ export function grokTools(environment = process.env) {
         properties: {},
         additionalProperties: false
       }),
-      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
+      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If required details are missing, returns needsDetails=true with missingFields and question — ask that question and do not invent fields. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
         type: "object",
         properties: {
           action: { type: "string", enum: ["create", "update"], description: "Create a new opportunity or update an existing one." },
@@ -300,7 +300,7 @@ export function grokTools(environment = process.env) {
           stageId: { type: "string" },
           stageName: { type: "string", description: "Exact GHL pipeline stage." },
           status: { type: "string", enum: ["open", "won", "lost", "abandoned"] },
-          closeDate: { type: "string", description: "Expected close date in YYYY-MM-DD. Required for status=won." },
+          closeDate: { type: "string", description: "Expected close date in YYYY-MM-DD. Required for status=won unless an existing opportunity already has forecastExpectedCloseDate." },
           assignedTo: { type: "string", description: "GHL owner id, email, or team name such as Yahoska, Katy, or Carolina." },
           owner: { type: "string", description: "Alias for assignedTo." },
           monetaryValue: { type: "number" },

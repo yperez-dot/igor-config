@@ -404,6 +404,24 @@ function opportunityRecord(payload) {
   return payload?.opportunity ?? payload?.data ?? payload ?? null;
 }
 
+function opportunityNeedsDetails(action, missingFields) {
+  const joined = missingFields.length === 1
+    ? missingFields[0]
+    : `${missingFields.slice(0, -1).join(", ")}, and ${missingFields.at(-1)}`;
+  return {
+    needsDetails: true,
+    action,
+    missingFields,
+    question: `Before I prepare the GHL opportunity, I still need the ${joined}.`
+  };
+}
+
+function existingOpportunityCloseDate(existing) {
+  return existing?.forecastExpectedCloseDate
+    ? String(existing.forecastExpectedCloseDate).slice(0, 10)
+    : null;
+}
+
 export async function ghlGetOpportunity({ token, opportunityId, fetchImpl = fetch }) {
   if (!String(opportunityId ?? "").trim()) return { error: "A GHL opportunity id is required." };
   const payload = await ghlJson(`${GHL_API}/opportunities/${encodeURIComponent(opportunityId)}`, {
@@ -499,18 +517,10 @@ export async function ghlPrepareOpportunityManagement({
   if (operation === "create" && !(stageId || String(stageName ?? "").trim())) missingFields.push("stage");
   if (operation === "create" && !String(status ?? "").trim()) missingFields.push("status");
   if (operation === "update" && !opportunityId && !(pipelineId || String(pipelineName ?? "").trim())) missingFields.push("pipeline or opportunity ID");
-  if (String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) missingFields.push("close date (YYYY-MM-DD)");
-  if (missingFields.length) {
-    const joined = missingFields.length === 1
-      ? missingFields[0]
-      : `${missingFields.slice(0, -1).join(", ")}, and ${missingFields.at(-1)}`;
-    return {
-      needsDetails: true,
-      action: operation,
-      missingFields,
-      question: `Before I prepare the GHL opportunity, I still need the ${joined}.`
-    };
+  if (operation === "create" && String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
+    missingFields.push("close date (YYYY-MM-DD)");
   }
+  if (missingFields.length) return opportunityNeedsDetails(operation, missingFields);
 
   let existing = null;
   if (opportunityId) {
@@ -553,12 +563,12 @@ export async function ghlPrepareOpportunityManagement({
 
   const normalizedStatus = normalizeOpportunityStatus(status, existing?.status ?? "open");
   if (!normalizedStatus) return { error: "Opportunity status must be open, won, lost, or abandoned." };
-  const existingCloseDate = existing?.forecastExpectedCloseDate
-    ? String(existing.forecastExpectedCloseDate).slice(0, 10)
-    : null;
+  const existingCloseDate = existingOpportunityCloseDate(existing);
   const normalizedCloseDate = normalizeOpportunityCloseDate(closeDate ?? existingCloseDate);
   if (normalizedCloseDate === undefined) return { error: "Close date must be a real date in YYYY-MM-DD format." };
-  if (normalizedStatus === "won" && !normalizedCloseDate) return { error: "A close date is required when marking an opportunity Won." };
+  if (normalizedStatus === "won" && !normalizedCloseDate) {
+    return opportunityNeedsDetails(operation, ["close date (YYYY-MM-DD)"]);
+  }
 
   const requestedOwner = assignedTo ?? owner ?? existing?.assignedTo ?? contact.assignedTo;
   const ownerResult = requestedOwner || operation === "create"
