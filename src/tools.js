@@ -34,6 +34,7 @@ import {
   ghlListContractTemplates,
   ghlListSoaSnippets,
   ghlListPipelines,
+  ghlManageOpportunity,
   ghlMoveOpportunityStage,
   ghlSendClientMessage,
   ghlPrepareClinicalUpdate,
@@ -42,6 +43,7 @@ import {
   ghlPrepareContactNote,
   ghlPrepareContactTask,
   ghlPrepareAppointment,
+  ghlPrepareOpportunityManagement,
   ghlPrepareOpportunityStageMove,
   ghlPrepareClientMessage,
   ghlPrepareSoaMessage,
@@ -117,6 +119,7 @@ const WRITE_TOOLS = new Set([
   "ghl_update_contact",
   "ghl_create_contact",
   "ghl_create_contact_task",
+  "ghl_manage_opportunity",
   "ghl_move_opportunity_stage",
   "ghl_create_appointment",
   "ghl_create_contract",
@@ -281,6 +284,29 @@ export function grokTools(environment = process.env) {
       functionTool("ghl_list_pipelines", "List GHL pipelines and stage names for the THEI location.", {
         type: "object",
         properties: {},
+        additionalProperties: false
+      }),
+      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["create", "update"], description: "Create a new opportunity or update an existing one." },
+          contactId: { type: "string", description: "Exact GHL contact id when known." },
+          contactQuery: { type: "string", description: "Contact name, email fragment, phone, or last-4." },
+          phone: { type: "string" },
+          opportunityId: { type: "string", description: "Required when multiple existing opportunities could match; strongly preferred for update." },
+          opportunityName: { type: "string", description: "Opportunity name. Defaults to the existing name on update or the contact's full name on create." },
+          pipelineId: { type: "string" },
+          pipelineName: { type: "string" },
+          stageId: { type: "string" },
+          stageName: { type: "string", description: "Exact GHL pipeline stage." },
+          status: { type: "string", enum: ["open", "won", "lost", "abandoned"] },
+          closeDate: { type: "string", description: "Expected close date in YYYY-MM-DD. Required for status=won." },
+          assignedTo: { type: "string", description: "GHL owner id, email, or team name such as Yahoska, Katy, or Carolina." },
+          owner: { type: "string", description: "Alias for assignedTo." },
+          monetaryValue: { type: "number" },
+          confirmed: { type: "boolean" }
+        },
+        required: ["action", "stageName", "status"],
         additionalProperties: false
       }),
       functionTool("ghl_move_opportunity_stage", "Preview and then move one GHL opportunity to a pipeline stage. First call without confirmed to resolve and preview the masked contact, pipeline, and stage. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí.", {
@@ -986,7 +1012,7 @@ export async function executeTool(name, rawArgs, {
     return calendarWriteBlockedResult(name);
   }
   const blocked = needsConfirmation(name, args, environment);
-  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_update_contact", "ghl_create_contact", "ghl_create_contact_task", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message", "ghl_send_message"].includes(name)) return blocked;
+  if (blocked && !String(name).startsWith("calendar_") && name !== "olicomm_upload" && !["ghl_update_clinical_profile", "ghl_manage_contact_tags", "ghl_add_contact_note", "ghl_update_contact", "ghl_create_contact", "ghl_create_contact_task", "ghl_manage_opportunity", "ghl_create_appointment", "ghl_create_contract", "ghl_send_soa_message", "ghl_send_message"].includes(name)) return blocked;
 
   try {
     if (name === "list_connected_systems") {
@@ -1027,10 +1053,11 @@ export async function executeTool(name, rawArgs, {
                 contactCreate: "approval-gated",
                 contactUpdate: "approval-gated name correction",
                 contactTasks: "approval-gated",
+                opportunityManagement: "approval-gated create/update; Won status and close date; verified read-back",
                 appointments: "approval-gated; GHL notifications enabled",
                 contracts: "approval-gated",
                 contractMode: "existing GHL template; draft by default",
-                requiredScopes: ["contacts.write", "documents_contracts_templates/list.readonly", "documents_contracts_templates/sendlink.write"]
+                requiredScopes: ["contacts.write", "opportunities.readonly", "opportunities.write", "documents_contracts_templates/list.readonly", "documents_contracts_templates/sendlink.write"]
               }
             : { available: false, missingEnv: ["GHL_API_TOKEN"] }
         }
@@ -1318,6 +1345,46 @@ export async function executeTool(name, rawArgs, {
           stages: (pipeline.stages ?? []).map((stage) => ({ id: stage.id, name: stage.name }))
         }))
       };
+    }
+
+    if (name === "ghl_manage_opportunity") {
+      const denied = clinicalAccess(environment, senderId, senderProfile);
+      if (denied) return denied;
+      const config = ghlConfig(environment);
+      const request = {
+        ...config,
+        action: args.action,
+        contactId: args.contactId,
+        contactQuery: args.contactQuery,
+        phone: args.phone,
+        opportunityId: args.opportunityId,
+        opportunityName: args.opportunityName,
+        pipelineId: args.pipelineId,
+        pipelineName: args.pipelineName,
+        stageId: args.stageId,
+        stageName: args.stageName,
+        status: args.status,
+        closeDate: args.closeDate,
+        assignedTo: args.assignedTo,
+        owner: args.owner,
+        monetaryValue: args.monetaryValue,
+        environment,
+        fetchImpl
+      };
+      try {
+        if (blocked) {
+          const plan = await ghlPrepareOpportunityManagement(request);
+          if (plan.error) return plan;
+          return {
+            ...blocked,
+            proposed: plan.preview,
+            hint: "Show every proposed opportunity field exactly. Create or update only after the user says yes/sí."
+          };
+        }
+        return await ghlManageOpportunity(request);
+      } catch {
+        return { error: "I couldn’t save and verify that GHL opportunity right now. Please try again; I will not claim it succeeded without verified=true." };
+      }
     }
 
     if (name === "ghl_move_opportunity_stage") {

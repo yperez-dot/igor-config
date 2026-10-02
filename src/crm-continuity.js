@@ -10,6 +10,7 @@ const CRM_TOOLS = new Set([
   "ghl_create_contact",
   "ghl_manage_contact_tags",
   "ghl_create_contact_task",
+  "ghl_manage_opportunity",
   "ghl_move_opportunity_stage",
   "ghl_create_appointment",
   "ghl_create_contract",
@@ -27,6 +28,7 @@ export const STICKY_CONTACT_TOOLS = new Set([
   "ghl_update_contact",
   "ghl_manage_contact_tags",
   "ghl_create_contact_task",
+  "ghl_manage_opportunity",
   "ghl_move_opportunity_stage",
   "ghl_create_appointment",
   "ghl_create_contract",
@@ -204,6 +206,7 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
   if (name === "ghl_update_contact") next.goal = next.goal || "rename";
   if (name === "ghl_create_contact") next.goal = next.goal || "create_contact";
   if (name === "ghl_create_contact_task") next.goal = "create_task";
+  if (name === "ghl_manage_opportunity") next.goal = "manage_opportunity";
   if (name === "ghl_move_opportunity_stage") next.goal = "move_pipeline_stage";
   if (name === "ghl_send_message") next.goal = "send_client_message";
   if (name === "ghl_send_soa_message") next.goal = "send_soa";
@@ -314,6 +317,31 @@ export function applyCrmToolResult(scratch, name, args = {}, result = {}) {
         }
       };
     } else if (result.updated) {
+      next.pending = null;
+    }
+  }
+
+  if (name === "ghl_manage_opportunity") {
+    if (result.needsConfirmation && result.proposed?.contactId) {
+      next.pending = {
+        tool: "ghl_manage_opportunity",
+        approved: Boolean(next.pending?.approved),
+        args: {
+          action: result.proposed.action,
+          contactId: result.proposed.contactId,
+          ...(result.proposed.opportunityId ? { opportunityId: result.proposed.opportunityId } : {}),
+          opportunityName: result.proposed.opportunityName,
+          pipelineId: result.proposed.pipelineId,
+          pipelineName: result.proposed.pipeline,
+          stageId: result.proposed.stageId,
+          stageName: result.proposed.stage,
+          status: result.proposed.status,
+          ...(result.proposed.closeDate ? { closeDate: result.proposed.closeDate } : {}),
+          assignedTo: result.proposed.assignedTo,
+          ...(result.proposed.monetaryValue != null ? { monetaryValue: result.proposed.monetaryValue } : {})
+        }
+      };
+    } else if ((result.created || result.updated) && result.verified) {
       next.pending = null;
     }
   }
@@ -449,6 +477,12 @@ export function formatActiveCrmTask(scratch) {
     lines.push(`- Pending pipeline move (${scratch.pending.approved ? "already approved — apply it" : "previewed, waiting for yes"}):`);
     lines.push(`  ${args.pipelineName || "pipeline"} → ${args.stageName || "target stage"}`);
     lines.push("If they say yes/sí, CALL ghl_move_opportunity_stage once with confirmed=true using these exact saved ids. If they decline, do not write.");
+  }
+  if (scratch.pending?.tool === "ghl_manage_opportunity") {
+    const args = scratch.pending.args || {};
+    lines.push(`- Pending opportunity ${args.action || "update"} (${scratch.pending.approved ? "already approved — save and verify it" : "previewed, waiting for yes"}):`);
+    lines.push(`  ${args.opportunityName || "opportunity"}: ${args.pipelineName || "pipeline"} → ${args.stageName || "stage"}; status ${args.status || "open"}; owner ${args.assignedTo || "needed"}; close date ${args.closeDate || "none"}`);
+    lines.push("If they say yes/sí, CALL ghl_manage_opportunity once with confirmed=true using these exact saved ids and fields. Report success only when verified=true.");
   }
   if (scratch.pending?.tool === "ghl_send_message") {
     const args = scratch.pending.args || {};
@@ -821,6 +855,12 @@ function stageMoveWriteArgs(scratch) {
   return { ...pending.args, confirmed: true };
 }
 
+function opportunityWriteArgs(scratch) {
+  const pending = scratch?.pending;
+  if (pending?.tool !== "ghl_manage_opportunity") return null;
+  return { ...pending.args, confirmed: true };
+}
+
 function clientMessageWriteArgs(scratch) {
   const pending = scratch?.pending;
   if (pending?.tool !== "ghl_send_message") return null;
@@ -926,6 +966,19 @@ async function savePendingStageMove(scratch, executeTool) {
   const next = applyCrmToolResult(
     { ...scratch, pending: { ...scratch.pending, approved: true } },
     "ghl_move_opportunity_stage",
+    args,
+    result
+  );
+  return { scratch: next, result };
+}
+
+async function savePendingOpportunity(scratch, executeTool) {
+  const args = opportunityWriteArgs(scratch);
+  if (!args?.contactId || !args?.pipelineId || !args?.stageId || !args?.status) return { scratch, result: null };
+  const result = await executeTool("ghl_manage_opportunity", args);
+  const next = applyCrmToolResult(
+    { ...scratch, pending: { ...scratch.pending, approved: true } },
+    "ghl_manage_opportunity",
     args,
     result
   );
@@ -1173,12 +1226,13 @@ export async function maybeContinueCrmTask({
     };
   }
 
-  if (DECLINE_RE.test(String(text ?? "").trim()) && merged.pending?.tool === "ghl_move_opportunity_stage") {
+  if (DECLINE_RE.test(String(text ?? "").trim()) && ["ghl_manage_opportunity", "ghl_move_opportunity_stage"].includes(merged.pending?.tool)) {
+    const stageOnly = merged.pending?.tool === "ghl_move_opportunity_stage";
     return {
       scratch: { ...merged, pending: null },
       reply: /\b(?:no lo hagas|cancela)\b/i.test(String(text))
-        ? "Entendido — no moví la oportunidad en GHL."
-        : "Okay — I didn’t move the GHL opportunity."
+        ? stageOnly ? "Entendido — no moví la oportunidad en GHL." : "Entendido — no cambié la oportunidad en GHL."
+        : stageOnly ? "Okay — I didn’t move the GHL opportunity." : "Okay — I didn’t change the GHL opportunity."
     };
   }
 
@@ -1237,6 +1291,22 @@ export async function maybeContinueCrmTask({
     return {
       scratch: saved.scratch,
       reply: "I couldn’t move that GHL opportunity right now. Nothing else was changed, and I kept the approved preview so we can retry safely."
+    };
+  }
+
+  if (isAffirmative(text) && merged.pending?.tool === "ghl_manage_opportunity") {
+    const nextApproved = { ...merged, pending: { ...merged.pending, approved: true } };
+    const saved = await savePendingOpportunity(nextApproved, executeTool);
+    if ((saved.result?.created || saved.result?.updated) && saved.result?.verified === true) {
+      const verb = saved.result.created ? "Created" : "Updated";
+      return {
+        scratch: saved.scratch,
+        reply: `${verb} and verified GHL opportunity ${saved.result.opportunityId}: ${saved.result.pipeline} → ${saved.result.stage}; status ${saved.result.status}; close date ${saved.result.closeDate || "none"}.`
+      };
+    }
+    return {
+      scratch: saved.scratch,
+      reply: "GHL did not return a fully verified opportunity record, so I’m not claiming it succeeded. I kept the approved preview for a safe retry."
     };
   }
 

@@ -10,6 +10,7 @@ const LEADING_NAME_REMIND_RE = /^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+\
 const SMOKE_LEAD_RE = /\b(?:smoke\s*test|test\s+contact|qa\s+test|dummy\s+(?:contact|lead)|fake\s+contact)\b/i;
 const FOLLOWUP_TIMING_RE = /\b(?:today|tomorrow|tonight|next\s+week|sunday|monday|tuesday|wednesday|thursday|friday|saturday|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 const GHL_PIPELINE_MOVE_RE = /\b(?:move|advance|update)\b.{0,80}\b(?:pipeline|stage|to)\b|\b(?:mueve|mover|actualiza|cambia)\b.{0,80}\b(?:pipeline|etapa|a)\b|\b(?:enrolled|enrolled|no answer)\b.{0,40}\b(?:pipeline|stage|update)\b/i;
+const GHL_OPPORTUNITY_MANAGE_RE = /\b(?:create|add|new|open)\b.{0,60}\bopportunit(?:y|ies)\b|\bopportunit(?:y|ies)\b.{0,80}\b(?:create|won|close(?:d)?|close date|status)\b|\b(?:mark|set|change|update|close)\b.{0,80}\b(?:opportunit(?:y|ies)|deal)\b.{0,40}\b(?:won|closed|status|date)\b|\b(?:crear|crea|ganada|ganado|cerrar|cerrada|fecha de cierre)\b.{0,80}\b(?:oportunidad|oportunidades)\b/i;
 
 // The lead-check-in template includes “remind me Friday 10” as an example
 // response. When someone quotes that template to ask for status, it is not a
@@ -68,6 +69,10 @@ export function isGhlPipelineMoveRequest(text) {
   return GHL_PIPELINE_MOVE_RE.test(String(text ?? ""));
 }
 
+export function isGhlOpportunityManagementRequest(text) {
+  return GHL_OPPORTUNITY_MANAGE_RE.test(String(text ?? ""));
+}
+
 export function isAmbiguousLeadFollowUpRequest(text) {
   const raw = String(text ?? "").trim();
   if (!raw || !NAMED_LEAD_FOLLOWUP_RE.test(raw) || !FOLLOWUP_TIMING_RE.test(raw)) return false;
@@ -112,6 +117,9 @@ export function toolChoiceForUserRequest(text, tools = []) {
   if (/\bwrote back saying\b|\badd(?:\s+that)?\s+to\s+(?:his|her|their).{0,24}notes\b/i.test(String(text ?? "")) && names.includes("ghl_add_contact_note")) {
     return { type: "function", function: { name: "ghl_add_contact_note" } };
   }
+  if (isGhlOpportunityManagementRequest(text) && names.includes("ghl_manage_opportunity")) {
+    return { type: "function", function: { name: "ghl_manage_opportunity" } };
+  }
   if (isGhlPipelineMoveRequest(text) && names.includes("ghl_move_opportunity_stage")) {
     return { type: "function", function: { name: "ghl_move_opportunity_stage" } };
   }
@@ -133,6 +141,15 @@ export function taskCalendarRoutingPrompt(text) {
       "The quoted 'remind me Friday 10' is an example reply, not a calendar request.",
       "Check available lead records read-only. Distinguish the reminder ledger from GHL and do not invent new activity.",
       "Do not create a calendar event, personal reminder, GHL task, or new lead."
+    ].join("\n");
+  }
+  if (isGhlOpportunityManagementRequest(text)) {
+    return [
+      "## Hard routing for this turn",
+      "This is a GHL opportunity create/update/close request.",
+      "Call ghl_manage_opportunity without confirmed and preview the masked contact, action, opportunity, pipeline, stage, status, owner, and close date.",
+      "Do not write until the user explicitly says yes/sí; a later confirmation must reuse the saved exact ids and fields.",
+      "After writing, claim success only when the tool returns verified=true with the opportunity id and matching pipeline, stage, status, owner, and close date."
     ].join("\n");
   }
   if (isGhlPipelineMoveRequest(text)) {

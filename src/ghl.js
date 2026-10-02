@@ -385,6 +385,271 @@ export async function ghlMoveOpportunityStage(options) {
   };
 }
 
+const OPPORTUNITY_STATUSES = new Set(["open", "won", "lost", "abandoned"]);
+
+function normalizeOpportunityStatus(value, fallback = "open") {
+  const status = String(value ?? fallback).trim().toLowerCase();
+  return OPPORTUNITY_STATUSES.has(status) ? status : null;
+}
+
+function normalizeOpportunityCloseDate(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return undefined;
+  const parsed = new Date(`${text}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === text ? text : undefined;
+}
+
+function opportunityRecord(payload) {
+  return payload?.opportunity ?? payload?.data ?? payload ?? null;
+}
+
+export async function ghlGetOpportunity({ token, opportunityId, fetchImpl = fetch }) {
+  if (!String(opportunityId ?? "").trim()) return { error: "A GHL opportunity id is required." };
+  const payload = await ghlJson(`${GHL_API}/opportunities/${encodeURIComponent(opportunityId)}`, {
+    token,
+    fetchImpl,
+    version: GHL_V3
+  });
+  return opportunityRecord(payload);
+}
+
+function resolvePipelineStage(pipelines, { pipelineId, pipelineName, stageId, stageName } = {}) {
+  let pipeline = pipelineId
+    ? pipelines.find((entry) => String(entry.id) === String(pipelineId))
+    : pipelineName
+      ? pipelines.find((entry) => exactName(entry.name) === exactName(pipelineName))
+      : null;
+  let stage = null;
+  if (stageId) {
+    const matches = (pipeline ? [pipeline] : pipelines).flatMap((entry) => (entry.stages ?? [])
+      .filter((candidate) => String(candidate.id) === String(stageId))
+      .map((candidate) => ({ pipeline: entry, stage: candidate })));
+    if (matches.length === 1) ({ pipeline, stage } = matches[0]);
+  } else if (stageName) {
+    const matches = (pipeline ? [pipeline] : pipelines).flatMap((entry) => (entry.stages ?? [])
+      .filter((candidate) => exactName(candidate.name) === exactName(stageName))
+      .map((candidate) => ({ pipeline: entry, stage: candidate })));
+    if (matches.length > 1) return { error: "More than one GHL pipeline has that stage. Tell me which pipeline to use." };
+    if (matches.length === 1) ({ pipeline, stage } = matches[0]);
+  }
+  if (!pipeline) return { error: "I could not find that GHL pipeline." };
+  if (!stage) return { error: "I could not find that stage in the selected GHL pipeline." };
+  return { pipeline, stage };
+}
+
+function verifiedOpportunityResult(opportunity, plan) {
+  const actual = {
+    opportunityId: opportunity?.id ?? null,
+    pipelineId: opportunity?.pipelineId ?? null,
+    stageId: opportunity?.pipelineStageId ?? null,
+    status: String(opportunity?.status ?? "").toLowerCase() || null,
+    closeDate: opportunity?.forecastExpectedCloseDate
+      ? String(opportunity.forecastExpectedCloseDate).slice(0, 10)
+      : null,
+    assignedTo: opportunity?.assignedTo ?? null
+  };
+  const expected = {
+    opportunityId: plan.opportunityId,
+    pipelineId: plan.pipeline.id,
+    stageId: plan.stage.id,
+    status: plan.status,
+    closeDate: plan.closeDate,
+    assignedTo: plan.assignedTo
+  };
+  const checks = [
+    actual.opportunityId === expected.opportunityId,
+    actual.pipelineId === expected.pipelineId,
+    actual.stageId === expected.stageId,
+    actual.status === expected.status,
+    actual.closeDate === expected.closeDate,
+    actual.assignedTo === expected.assignedTo
+  ];
+  return { verified: checks.every(Boolean), expected, actual };
+}
+
+export async function ghlPrepareOpportunityManagement({
+  token,
+  locationId,
+  action,
+  contactId,
+  contactQuery,
+  phone,
+  opportunityId,
+  opportunityName,
+  pipelineId,
+  pipelineName,
+  stageId,
+  stageName,
+  status,
+  closeDate,
+  assignedTo,
+  owner,
+  monetaryValue,
+  environment = process.env,
+  fetchImpl = fetch
+}) {
+  const operation = String(action ?? (opportunityId ? "update" : "create")).trim().toLowerCase();
+  if (!new Set(["create", "update"]).has(operation)) return { error: "Opportunity action must be create or update." };
+
+  let existing = null;
+  if (opportunityId) {
+    existing = await ghlGetOpportunity({ token, opportunityId, fetchImpl });
+    if (existing?.error) return existing;
+  }
+  const resolvedContactId = contactId ?? existing?.contactId ?? existing?.contact?.id;
+  const contact = await ghlResolveContact({
+    token, locationId, contactId: resolvedContactId, query: contactQuery, phone, fetchImpl
+  });
+  if (contact.error) return contact;
+
+  const pipelines = await ghlListPipelines({ token, locationId, fetchImpl });
+  const destination = resolvePipelineStage(pipelines, {
+    pipelineId: pipelineId ?? existing?.pipelineId,
+    pipelineName,
+    stageId: stageId ?? existing?.pipelineStageId,
+    stageName
+  });
+  if (destination.error) return destination;
+
+  if (operation === "update" && !existing) {
+    const searched = await ghlSearchOpportunities({
+      token,
+      locationId,
+      contactId: contact.id,
+      pipelineId: destination.pipeline.id,
+      limit: 100,
+      fetchImpl
+    });
+    const candidates = searched.opportunities.filter((entry) => (
+      String(entry.contactId ?? entry.contact?.id ?? "") === String(contact.id)
+      && String(entry.pipelineId ?? "") === String(destination.pipeline.id)
+    ));
+    if (candidates.length > 1) return { error: "I found more than one opportunity for that contact in this pipeline. Choose the exact opportunity first." };
+    existing = candidates[0] ?? null;
+    if (!existing) return { error: "I could not find an existing opportunity for that contact in the selected pipeline." };
+    opportunityId = existing.id;
+  }
+
+  const normalizedStatus = normalizeOpportunityStatus(status, existing?.status ?? "open");
+  if (!normalizedStatus) return { error: "Opportunity status must be open, won, lost, or abandoned." };
+  const existingCloseDate = existing?.forecastExpectedCloseDate
+    ? String(existing.forecastExpectedCloseDate).slice(0, 10)
+    : null;
+  const normalizedCloseDate = normalizeOpportunityCloseDate(closeDate ?? existingCloseDate);
+  if (normalizedCloseDate === undefined) return { error: "Close date must be a real date in YYYY-MM-DD format." };
+  if (normalizedStatus === "won" && !normalizedCloseDate) return { error: "A close date is required when marking an opportunity Won." };
+
+  const requestedOwner = assignedTo ?? owner ?? existing?.assignedTo ?? contact.assignedTo;
+  const ownerResult = requestedOwner || operation === "create"
+    ? await resolveGhlAssignedTo({
+        assignedTo: requestedOwner,
+        token,
+        locationId,
+        environment,
+        fetchImpl,
+        defaultOwner: operation === "create"
+      })
+    : { assignedTo: null, ownerName: "Unassigned" };
+  if (requestedOwner && !ownerResult.assignedTo) return { error: ownerResult.warning || "I could not resolve the GHL opportunity owner." };
+
+  const numericValue = monetaryValue == null ? existing?.monetaryValue : Number(monetaryValue);
+  if (numericValue != null && !Number.isFinite(numericValue)) return { error: "Opportunity monetary value must be a number." };
+  const name = String(opportunityName ?? existing?.name ?? contact.rawName ?? "").trim();
+  if (!name) return { error: "An opportunity name is required." };
+
+  const plan = {
+    operation,
+    contact,
+    opportunityId: operation === "update" ? String(opportunityId ?? existing?.id ?? "") : null,
+    name,
+    pipeline: { id: destination.pipeline.id, name: destination.pipeline.name },
+    stage: { id: destination.stage.id, name: destination.stage.name },
+    status: normalizedStatus,
+    closeDate: normalizedCloseDate,
+    assignedTo: ownerResult.assignedTo,
+    ownerName: ownerResult.ownerName ?? ownerResult.assignedTo ?? "Unassigned",
+    monetaryValue: numericValue ?? null
+  };
+  return {
+    ...plan,
+    preview: {
+      action: operation,
+      contact: contact.name,
+      phoneLast4: contact.phoneLast4,
+      contactId: contact.id,
+      opportunityId: plan.opportunityId,
+      opportunityName: name,
+      pipeline: plan.pipeline.name,
+      pipelineId: plan.pipeline.id,
+      stage: plan.stage.name,
+      stageId: plan.stage.id,
+      status: plan.status,
+      closeDate: plan.closeDate,
+      owner: plan.ownerName,
+      assignedTo: plan.assignedTo,
+      monetaryValue: plan.monetaryValue
+    }
+  };
+}
+
+export async function ghlManageOpportunity(options) {
+  const plan = await ghlPrepareOpportunityManagement(options);
+  if (plan.error) return plan;
+  const body = {
+    pipelineId: plan.pipeline.id,
+    name: plan.name,
+    pipelineStageId: plan.stage.id,
+    status: plan.status,
+    ...(plan.monetaryValue != null ? { monetaryValue: plan.monetaryValue } : {}),
+    ...(plan.closeDate ? { forecastExpectedCloseDate: plan.closeDate } : {}),
+    ...(plan.assignedTo ? { assignedTo: plan.assignedTo } : {})
+  };
+  let opportunityId = plan.opportunityId;
+  if (plan.operation === "create") {
+    const payload = await ghlJson(`${GHL_API}/opportunities/`, {
+      token: options.token,
+      fetchImpl: options.fetchImpl,
+      version: GHL_V3,
+      method: "POST",
+      body: { ...body, locationId: options.locationId, contactId: plan.contact.id }
+    });
+    opportunityId = String(opportunityRecord(payload)?.id ?? "");
+    if (!opportunityId) return { created: true, verified: false, verificationError: "GHL created the opportunity but did not return its id." };
+  } else {
+    await ghlJson(`${GHL_API}/opportunities/${encodeURIComponent(opportunityId)}`, {
+      token: options.token,
+      fetchImpl: options.fetchImpl,
+      version: GHL_V3,
+      method: "PUT",
+      body
+    });
+  }
+
+  const verificationPlan = { ...plan, opportunityId };
+  const verifiedRecord = await ghlGetOpportunity({ token: options.token, opportunityId, fetchImpl: options.fetchImpl });
+  const verification = verifiedOpportunityResult(verifiedRecord, verificationPlan);
+  return {
+    created: plan.operation === "create",
+    updated: plan.operation === "update",
+    verified: verification.verified,
+    opportunityId,
+    contact: plan.contact.name,
+    contactId: plan.contact.id,
+    opportunityName: plan.name,
+    pipeline: plan.pipeline.name,
+    pipelineId: plan.pipeline.id,
+    stage: plan.stage.name,
+    stageId: plan.stage.id,
+    status: plan.status,
+    closeDate: plan.closeDate,
+    owner: plan.ownerName,
+    assignedTo: plan.assignedTo,
+    ...(verification.verified ? {} : { verificationError: "GHL returned a record that did not match every approved field." }),
+    verification
+  };
+}
+
 function maskSearchedContact(contact) {
   return {
     id: contact.id,
