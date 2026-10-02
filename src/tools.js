@@ -286,7 +286,7 @@ export function grokTools(environment = process.env) {
         properties: {},
         additionalProperties: false
       }),
-      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If required details are missing or unsure, returns needsDetails=true with missingFields and a plain-language question. Call ghl_list_pipelines, list pipeline and stage names for the user, ask them to pick by name plus status (open/won/lost/abandoned) and close date if Won, then retry with the matching pipelineId and stageId. Never ask the user to paste IDs. Never invent client, pipeline, stage, status, opportunity, or close date. Create, and any pipeline/stage change, must pass pipelineId and stageId from ghl_list_pipelines or this chat after the user chose names; pipelineName/stageName are not enough and must not be guessed. Update may omit pipeline/stage when opportunityId is known so the existing destination is kept. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
+      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If required details are missing or unsure, returns needsDetails=true with missingFields, a plain-language question, and when pipeline or stage is missing a compact pipelines array of {id, name, stages:[{id,name}]}. List pipeline and stage names from that array for the user, ask them to pick by name plus status (open/won/lost/abandoned) and close date if Won, then retry with the matching pipelineId and stageId. If pipelines is missing, call ghl_list_pipelines. Never ask the user to paste IDs. Never invent client, pipeline, stage, status, opportunity, or close date. Create, and any pipeline/stage change, must pass pipelineId and stageId from that list or this chat after the user chose names; pipelineName/stageName are not enough and must not be guessed. Update may omit pipeline/stage when opportunityId is known so the existing destination is kept. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
         type: "object",
         properties: {
           action: { type: "string", enum: ["create", "update"], description: "Create a new opportunity or update an existing one." },
@@ -1374,8 +1374,8 @@ export async function executeTool(name, rawArgs, {
       try {
         if (blocked) {
           const plan = await ghlPrepareOpportunityManagement(request);
-          if (plan.error) return plan;
           if (plan.needsDetails) return plan;
+          if (plan.error) return plan;
           return {
             ...blocked,
             proposed: plan.preview,

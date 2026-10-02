@@ -406,8 +406,61 @@ function opportunityRecord(payload) {
 
 function contactPhraseForQuestion(contactQuery) {
   const text = String(contactQuery ?? "").trim();
-  if (!text || (/^[a-z0-9-]{16,}$/i.test(text) && !/\s/.test(text))) return "";
+  if (!text || looksLikeGhlContactId(text) || (/^[a-z0-9-]{16,}$/i.test(text) && !/\s/.test(text))) return "";
   return ` for ${text}`;
+}
+
+function missingPipelineOrStage(missingFields) {
+  return missingFields.some((field) => (
+    field === "pipeline" || field === "stage" || field === "pipeline or opportunity"
+  ));
+}
+
+function compactPipelineList(pipelines) {
+  if (!Array.isArray(pipelines)) return null;
+  return pipelines.map((pipeline) => ({
+    id: pipeline?.id ?? null,
+    name: pipeline?.name ?? null,
+    stages: Array.isArray(pipeline?.stages)
+      ? pipeline.stages.map((stage) => ({ id: stage?.id ?? null, name: stage?.name ?? null }))
+      : []
+  }));
+}
+
+function humanContactLabel(contact) {
+  const first = String(contact?.firstName ?? "").trim();
+  if (first) return first;
+  const display = contactDisplayName(contact);
+  if (!display || display === "Unknown contact") return "";
+  return display.split(/\s+/)[0];
+}
+
+async function cheapContactLabel({ token, contactId, contactQuery, fetchImpl = fetch } = {}) {
+  const query = String(contactQuery ?? "").trim();
+  if (contactPhraseForQuestion(query)) return query;
+  const id = String(contactId ?? "").trim();
+  if (!id || !token) return "";
+  try {
+    const lookup = await ghlLookupContactById({ token, contactId: id, fetchImpl });
+    return humanContactLabel(lookup.contact);
+  } catch {
+    return "";
+  }
+}
+
+async function listPipelinesForAsk({ token, locationId, fetchImpl = fetch, pipelines } = {}) {
+  if (pipelines !== undefined) {
+    const compact = compactPipelineList(pipelines);
+    return compact ? { pipelines: compact } : { error: "I could not load GHL pipelines right now." };
+  }
+  try {
+    const listed = await ghlListPipelines({ token, locationId, fetchImpl });
+    const compact = compactPipelineList(listed);
+    if (!compact) return { error: "I could not load GHL pipelines right now." };
+    return { pipelines: compact };
+  } catch {
+    return { error: "I could not load GHL pipelines right now." };
+  }
 }
 
 function opportunityDetailsQuestion(missingFields, { contactQuery } = {}) {
@@ -433,7 +486,7 @@ function opportunityDetailsQuestion(missingFields, { contactQuery } = {}) {
     return "Which client should I use for this GHL opportunity?";
   }
   if (needsCloseDate && missingFields.length === 1) {
-    return "What close date should I use (YYYY-MM-DD)?";
+    return `What close date should I use${forWhom} (YYYY-MM-DD)?`;
   }
   if (needsStatus && !needsClient && !needsPipeline && !needsStage) {
     return needsCloseDate
@@ -447,14 +500,26 @@ function opportunityDetailsQuestion(missingFields, { contactQuery } = {}) {
   return `Before I prepare the GHL opportunity, I still need the ${joined}.`;
 }
 
-function opportunityNeedsDetails(action, missingFields, extras = {}) {
-  return {
+async function opportunityNeedsDetails(action, missingFields, extras = {}) {
+  const needsList = missingPipelineOrStage(missingFields);
+  const [contactLabel, listed] = await Promise.all([
+    extras.contactLabel != null
+      ? Promise.resolve(String(extras.contactLabel).trim())
+      : cheapContactLabel(extras),
+    needsList ? listPipelinesForAsk(extras) : Promise.resolve({})
+  ]);
+  const payload = {
     needsDetails: true,
     action,
     missingFields,
-    question: opportunityDetailsQuestion(missingFields, extras),
-    hint: "Call ghl_list_pipelines if this chat does not already have the list, show pipeline and stage names, and ask the user to pick by name plus status (open/won/lost/abandoned) and close date if Won. Never ask them to paste pipeline or stage IDs. After they pick, look up the matching pipelineId and stageId and retry."
+    question: opportunityDetailsQuestion(missingFields, {
+      contactQuery: contactLabel || extras.contactQuery
+    }),
+    hint: "Use the pipelines array in this result when it is present: list those pipeline and stage names so the user can pick. If it is missing, call ghl_list_pipelines. Ask them to pick by name plus status (open/won/lost/abandoned) and close date if Won. Never ask them to paste pipeline or stage IDs. After they pick, look up the matching pipelineId and stageId and retry."
   };
+  if (listed.pipelines) payload.pipelines = listed.pipelines;
+  if (listed.error) payload.error = listed.error;
+  return payload;
 }
 
 function existingOpportunityCloseDate(existing) {
@@ -571,7 +636,11 @@ export async function ghlPrepareOpportunityManagement({
   if (operation === "create" && String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
     missingFields.push("close date (YYYY-MM-DD)");
   }
-  if (missingFields.length) return opportunityNeedsDetails(operation, missingFields, { contactQuery });
+  if (missingFields.length) {
+    return opportunityNeedsDetails(operation, missingFields, {
+      token, locationId, fetchImpl, contactId, contactQuery
+    });
+  }
 
   let existing = null;
   if (opportunityId) {
@@ -618,7 +687,14 @@ export async function ghlPrepareOpportunityManagement({
   const normalizedCloseDate = normalizeOpportunityCloseDate(closeDate ?? existingCloseDate);
   if (normalizedCloseDate === undefined) return { error: "Close date must be a real date in YYYY-MM-DD format." };
   if (normalizedStatus === "won" && !normalizedCloseDate) {
-    return opportunityNeedsDetails(operation, ["close date (YYYY-MM-DD)"], { contactQuery });
+    return opportunityNeedsDetails(operation, ["close date (YYYY-MM-DD)"], {
+      token,
+      locationId,
+      fetchImpl,
+      contactId,
+      contactQuery,
+      contactLabel: contact.firstName || contact.rawName || ""
+    });
   }
 
   const requestedOwner = assignedTo ?? owner ?? existing?.assignedTo ?? contact.assignedTo;
