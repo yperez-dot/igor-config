@@ -148,8 +148,8 @@ export function taskCalendarRoutingPrompt(text) {
       "## Hard routing for this turn",
       "This is a GHL opportunity create/update/close request.",
       "Call ghl_list_pipelines first unless this chat already has the exact pipelineId and stageId, then call ghl_manage_opportunity without confirmed and preview the masked contact, action, opportunity, pipeline, stage, status, owner, and close date.",
-      "Pass pipelineId and stageId from that list or from this chat. Never guess pipelineName or stageName. If you do not know the client, pipeline, stage, status, close date, or opportunity, ask — never invent optional names to help.",
-      "If the tool returns needsDetails=true, ask its question exactly and stop. Never guess a missing client, pipeline, stage, status, opportunity, or close date. Do not invent an owner; omitted owner on create already defaults to Yahoska.",
+      "Pass pipelineId and stageId from that list after the user picks pipeline and stage by name. Never guess pipelineName or stageName. Never ask the user to paste IDs. If you do not know the client, pipeline, stage, status, close date, or opportunity, ask — never invent optional names to help.",
+      "If the tool returns needsDetails=true, list the pipeline and stage names from ghl_list_pipelines, ask them to pick by name plus status (open/won/lost/abandoned) and close date if Won, then retry with the matching ids. Never ask the user to paste pipeline or stage IDs. Never guess a missing client, pipeline, stage, status, opportunity, or close date. Do not invent an owner; omitted owner on create already defaults to Yahoska.",
       "Do not write until the user explicitly says yes/sí; a later confirmation must reuse the saved exact ids and fields.",
       "After writing, claim success only when the tool returns verified=true with the opportunity id and matching pipeline, stage, status, owner, and close date."
     ].join("\n");

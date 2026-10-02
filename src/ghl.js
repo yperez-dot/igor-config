@@ -404,15 +404,56 @@ function opportunityRecord(payload) {
   return payload?.opportunity ?? payload?.data ?? payload ?? null;
 }
 
-function opportunityNeedsDetails(action, missingFields) {
+function contactPhraseForQuestion(contactQuery) {
+  const text = String(contactQuery ?? "").trim();
+  if (!text || (/^[a-z0-9-]{16,}$/i.test(text) && !/\s/.test(text))) return "";
+  return ` for ${text}`;
+}
+
+function opportunityDetailsQuestion(missingFields, { contactQuery } = {}) {
+  const set = new Set(missingFields);
+  const forWhom = contactPhraseForQuestion(contactQuery);
+  const needsClient = set.has("client");
+  const needsPipeline = set.has("pipeline") || set.has("pipeline or opportunity");
+  const needsOpportunity = set.has("pipeline or opportunity");
+  const needsStage = set.has("stage");
+  const needsStatus = set.has("status");
+  const needsCloseDate = missingFields.some((field) => /close date/i.test(field));
+
+  if (!needsClient && needsPipeline && needsStage && needsStatus) {
+    return `Which GHL pipeline and stage should I use${forWhom}, and should the status be open, won, lost, or abandoned?`;
+  }
+  if (!needsClient && needsPipeline && needsStage && !needsStatus && !needsCloseDate) {
+    return `Which GHL pipeline and stage should I use${forWhom}?`;
+  }
+  if (!needsClient && needsOpportunity && !needsStage && !needsStatus && !needsCloseDate) {
+    return `Which GHL pipeline or existing opportunity should I use${forWhom}?`;
+  }
+  if (needsClient && !needsPipeline && !needsStage && !needsStatus && !needsCloseDate) {
+    return "Which client should I use for this GHL opportunity?";
+  }
+  if (needsCloseDate && missingFields.length === 1) {
+    return "What close date should I use (YYYY-MM-DD)?";
+  }
+  if (needsStatus && !needsClient && !needsPipeline && !needsStage) {
+    return needsCloseDate
+      ? "Should the status be open, won, lost, or abandoned, and what close date if Won?"
+      : "Should the status be open, won, lost, or abandoned?";
+  }
+
   const joined = missingFields.length === 1
     ? missingFields[0]
     : `${missingFields.slice(0, -1).join(", ")}, and ${missingFields.at(-1)}`;
+  return `Before I prepare the GHL opportunity, I still need the ${joined}.`;
+}
+
+function opportunityNeedsDetails(action, missingFields, extras = {}) {
   return {
     needsDetails: true,
     action,
     missingFields,
-    question: `Before I prepare the GHL opportunity, I still need the ${joined}.`
+    question: opportunityDetailsQuestion(missingFields, extras),
+    hint: "Call ghl_list_pipelines if this chat does not already have the list, show pipeline and stage names, and ask the user to pick by name plus status (open/won/lost/abandoned) and close date if Won. Never ask them to paste pipeline or stage IDs. After they pick, look up the matching pipelineId and stageId and retry."
   };
 }
 
@@ -521,16 +562,16 @@ export async function ghlPrepareOpportunityManagement({
   const hasPipelineName = hasTrimmed(pipelineName);
   const hasStageName = hasTrimmed(stageName);
   if (!opportunityId && !hasContactSelector) missingFields.push("client");
-  if (operation === "create" && !hasPipelineId) missingFields.push("pipeline ID");
-  if (operation === "create" && !hasStageId) missingFields.push("stage ID");
+  if (operation === "create" && !hasPipelineId) missingFields.push("pipeline");
+  if (operation === "create" && !hasStageId) missingFields.push("stage");
   if (operation === "create" && !String(status ?? "").trim()) missingFields.push("status");
-  if (operation === "update" && !opportunityId && !hasPipelineId) missingFields.push("pipeline or opportunity ID");
-  if (operation === "update" && opportunityId && hasPipelineName && !hasPipelineId) missingFields.push("pipeline ID");
-  if (operation === "update" && hasStageName && !hasStageId) missingFields.push("stage ID");
+  if (operation === "update" && !opportunityId && !hasPipelineId) missingFields.push("pipeline or opportunity");
+  if (operation === "update" && opportunityId && hasPipelineName && !hasPipelineId) missingFields.push("pipeline");
+  if (operation === "update" && hasStageName && !hasStageId) missingFields.push("stage");
   if (operation === "create" && String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
     missingFields.push("close date (YYYY-MM-DD)");
   }
-  if (missingFields.length) return opportunityNeedsDetails(operation, missingFields);
+  if (missingFields.length) return opportunityNeedsDetails(operation, missingFields, { contactQuery });
 
   let existing = null;
   if (opportunityId) {
@@ -577,7 +618,7 @@ export async function ghlPrepareOpportunityManagement({
   const normalizedCloseDate = normalizeOpportunityCloseDate(closeDate ?? existingCloseDate);
   if (normalizedCloseDate === undefined) return { error: "Close date must be a real date in YYYY-MM-DD format." };
   if (normalizedStatus === "won" && !normalizedCloseDate) {
-    return opportunityNeedsDetails(operation, ["close date (YYYY-MM-DD)"]);
+    return opportunityNeedsDetails(operation, ["close date (YYYY-MM-DD)"], { contactQuery });
   }
 
   const requestedOwner = assignedTo ?? owner ?? existing?.assignedTo ?? contact.assignedTo;

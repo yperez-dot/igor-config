@@ -91,4 +91,6 @@ test("release gate: ambiguous stages and contacts must not be invented", () => {
   assert.match(SYSTEM_PROMPT, /Never guess a template or contact when there are multiple matches/i);
   assert.match(SYSTEM_PROMPT, /preview the masked contact, pipeline, and target stage first/i);
   assert.match(SYSTEM_PROMPT, /ask one short clarifying question/i);
+  assert.match(SYSTEM_PROMPT, /list the pipeline and stage names from ghl_list_pipelines/i);
+  assert.match(SYSTEM_PROMPT, /Never ask the user to paste pipeline or stage IDs/i);
 });

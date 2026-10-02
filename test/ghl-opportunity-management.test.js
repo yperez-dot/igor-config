@@ -51,6 +51,14 @@ function opportunityFixture(calls, { existing = false, mismatch = false, existin
   };
 }
 
+function assertNoUserFacingIds(result) {
+  assert.equal(result.needsDetails, true);
+  for (const field of result.missingFields) {
+    assert.doesNotMatch(field, /pipeline ID|stage ID/i, field);
+  }
+  assert.doesNotMatch(result.question, /pipeline ID|stage ID/i, result.question);
+}
+
 test("opportunity tool is exposed with Won, close-date, approval, and verification contract", () => {
   const tool = grokTools({ GHL_API_TOKEN: "token" }).find((entry) => entry.function.name === "ghl_manage_opportunity");
   assert.ok(tool);
@@ -62,7 +70,14 @@ test("opportunity tool is exposed with Won, close-date, approval, and verificati
   assert.match(tool.function.description, /never invent/i);
   assert.match(tool.function.description, /pipelineId/);
   assert.match(tool.function.description, /ghl_list_pipelines/);
+  assert.match(tool.function.description, /list pipeline and stage names/i);
+  assert.match(tool.function.description, /pick by name/i);
+  assert.match(tool.function.description, /Never ask the user to paste IDs/i);
+  assert.doesNotMatch(tool.function.description, /ask that question and stop/i);
   assert.deepEqual(tool.function.parameters.required, ["action"]);
+  const listTool = grokTools({ GHL_API_TOKEN: "token" }).find((entry) => entry.function.name === "ghl_list_pipelines");
+  assert.match(listTool.function.description, /Show the user pipeline and stage names/i);
+  assert.match(listTool.function.description, /Never ask the user to paste IDs/i);
 });
 
 test("create and Won requests route directly to opportunity management", () => {
@@ -73,6 +88,10 @@ test("create and Won requests route directly to opportunity management", () => {
     assert.match(taskCalendarRoutingPrompt(text), /verified=true/);
     assert.match(taskCalendarRoutingPrompt(text), /ghl_list_pipelines/);
     assert.match(taskCalendarRoutingPrompt(text), /Never guess pipelineName/);
+    assert.match(taskCalendarRoutingPrompt(text), /list the pipeline and stage names/i);
+    assert.match(taskCalendarRoutingPrompt(text), /pick by name/i);
+    assert.match(taskCalendarRoutingPrompt(text), /Never ask the user to paste pipeline or stage IDs/i);
+    assert.doesNotMatch(taskCalendarRoutingPrompt(text), /ask its question exactly/i);
   }
 });
 
@@ -82,9 +101,12 @@ test("incomplete create asks for every missing detail without calling GHL", asyn
     token: "token", locationId: "loc", action: "create", contactQuery: "Maria",
     fetchImpl: opportunityFixture(calls)
   });
-  assert.equal(result.needsDetails, true);
-  assert.deepEqual(result.missingFields, ["pipeline ID", "stage ID", "status"]);
-  assert.match(result.question, /pipeline ID, stage ID, and status/i);
+  assertNoUserFacingIds(result);
+  assert.deepEqual(result.missingFields, ["pipeline", "stage", "status"]);
+  assert.match(result.question, /Which GHL pipeline and stage should I use for Maria/i);
+  assert.match(result.question, /open, won, lost, or abandoned/i);
+  assert.match(result.hint, /ghl_list_pipelines/);
+  assert.match(result.hint, /pick by name/i);
   assert.equal(calls.length, 0);
 });
 
@@ -98,6 +120,7 @@ test("Won asks for an explicit close date before preview or any GHL call", async
   assert.equal(result.needsDetails, true);
   assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
   assert.match(result.question, /close date/i);
+  assertNoUserFacingIds(result);
   assert.equal(calls.length, 0);
 });
 
@@ -108,8 +131,9 @@ test("create with names but no ids asks instead of resolving a guessed destinati
     pipelineName: "Medicare", stageName: "Enrolled", status: "open",
     fetchImpl: opportunityFixture(calls)
   });
-  assert.equal(result.needsDetails, true);
-  assert.deepEqual(result.missingFields, ["pipeline ID", "stage ID"]);
+  assertNoUserFacingIds(result);
+  assert.deepEqual(result.missingFields, ["pipeline", "stage"]);
+  assert.match(result.question, /Which GHL pipeline and stage should I use/i);
   assert.equal(calls.length, 0);
 });
 
@@ -120,8 +144,8 @@ test("update with opportunityId and names but no ids asks instead of guessing th
     pipelineName: "Medicare", stageName: "Enrolled", status: "won",
     fetchImpl: opportunityFixture(calls, { existingCloseDate: "2026-10-02" })
   });
-  assert.equal(result.needsDetails, true);
-  assert.deepEqual(result.missingFields, ["pipeline ID", "stage ID"]);
+  assertNoUserFacingIds(result);
+  assert.deepEqual(result.missingFields, ["pipeline", "stage"]);
   assert.equal(calls.length, 0);
 });
 
@@ -134,9 +158,9 @@ test("ambiguous pipeline/stage names never pick a destination silently", async (
       extraPipelines: [{ id: "pipeline-2", name: "Medicare Advantage", stages: [{ id: "stage-enrolled-2", name: "Enrolled" }] }]
     })
   });
-  assert.equal(result.needsDetails, true);
-  assert.ok(result.missingFields.includes("pipeline ID"));
-  assert.ok(result.missingFields.includes("stage ID"));
+  assertNoUserFacingIds(result);
+  assert.ok(result.missingFields.includes("pipeline"));
+  assert.ok(result.missingFields.includes("stage"));
   assert.equal(calls.length, 0);
   assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT"), false);
 });
@@ -148,7 +172,7 @@ test("create without a client asks for the client without calling GHL", async ()
     pipelineId: "pipeline-1", stageId: "stage-enrolled", status: "open",
     fetchImpl: opportunityFixture(calls)
   });
-  assert.equal(result.needsDetails, true);
+  assertNoUserFacingIds(result);
   assert.ok(result.missingFields.includes("client"));
   assert.match(result.question, /client/i);
   assert.equal(calls.length, 0);
@@ -160,9 +184,10 @@ test("update without opportunityId or pipeline asks before any GHL call", async 
     token: "token", locationId: "loc", action: "update", contactQuery: "Maria", status: "won",
     fetchImpl: opportunityFixture(calls)
   });
-  assert.equal(result.needsDetails, true);
-  assert.deepEqual(result.missingFields, ["pipeline or opportunity ID"]);
-  assert.match(result.question, /pipeline or opportunity ID/i);
+  assertNoUserFacingIds(result);
+  assert.deepEqual(result.missingFields, ["pipeline or opportunity"]);
+  assert.match(result.question, /pipeline or existing opportunity/i);
+  assert.doesNotMatch(result.question, /pipeline ID|opportunity ID/i);
   assert.equal(calls.length, 0);
 });
 
@@ -203,7 +228,7 @@ test("update Won asks for close date after loading opportunity with none stored"
     status: "won", owner: "Katy",
     fetchImpl: opportunityFixture(calls)
   });
-  assert.equal(result.needsDetails, true);
+  assertNoUserFacingIds(result);
   assert.deepEqual(result.missingFields, ["close date (YYYY-MM-DD)"]);
   assert.match(result.question, /close date/i);
   assert.ok(calls.some((call) => call.method === "GET" && call.target.endsWith("/opportunities/opp-1")));
