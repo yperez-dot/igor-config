@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { leadBriefText, processTask } from "../src/worker-core.js";
 
-test("lead brief stays compact with legacy malformed long subjects", () => {
+test("morning view skips legacy malformed lead subjects", () => {
   const longSubject = `This lady too ${"very long note ".repeat(40)} User sent a photo. The image is attached for THIS turn only.`;
   const text = leadBriefText("morning", Array.from({ length: 20 }, (_, index) => ({
     subject: `${index + 1} ${longSubject}`,
@@ -11,7 +11,7 @@ test("lead brief stays compact with legacy malformed long subjects", () => {
     state: "open"
   })), new Date("2026-09-10T13:00:00Z"));
   assert.ok(text.length < 4096);
-  assert.match(text, /\+8 more open lead/);
+  assert.doesNotMatch(text, /very long note|\+8 more open lead/);
 });
 
 test("lead checkin continues to other recipients when one Telegram send fails", async () => {
