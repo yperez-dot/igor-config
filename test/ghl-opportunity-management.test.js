@@ -9,15 +9,27 @@ function json(payload, status = 200) {
   return { ok: status >= 200 && status < 300, status, async json() { return payload; } };
 }
 
-function opportunityFixture(calls, { existing = false, mismatch = false, existingCloseDate = null, extraPipelines = [], pipelinesError = false } = {}) {
+const MARIA_SMITHS = [
+  { id: "contact-maria-1", firstName: "Maria", lastName: "Smith", phone: "+13055551212", email: "maria1@example.com" },
+  { id: "contact-maria-2", firstName: "Maria", lastName: "Smith", phone: "+17865559876", email: "maria2@example.net" }
+];
+
+function opportunityFixture(calls, { existing = false, mismatch = false, existingCloseDate = null, extraPipelines = [], pipelinesError = false, contacts = null, contactsError = false } = {}) {
   let opportunityReads = 0;
   return async (url, init = {}) => {
     const target = String(url);
     const method = init.method ?? "GET";
     const body = init.body ? JSON.parse(init.body) : null;
     calls.push({ target, method, body, version: init.headers?.Version });
+    if (target.includes("/contacts/?") || (target.includes("/contacts/search") && method === "POST")) {
+      if (contactsError) return json({ message: "contacts unavailable" }, 500);
+      return json({ contacts: contacts ?? MARIA_SMITHS });
+    }
     if (target.endsWith("/contacts/contact-1")) {
       return json({ contact: { id: "contact-1", firstName: "Maria", lastName: "Rivera", phone: "+13055552363", assignedTo: DEFAULT_GHL_OWNER_IDS.katy } });
+    }
+    if (target.endsWith("/contacts/contact-maria-1")) {
+      return json({ contact: MARIA_SMITHS[0] });
     }
     if (target.includes("/opportunities/pipelines?")) {
       if (pipelinesError) return json({ message: "pipelines unavailable" }, 500);
@@ -57,7 +69,10 @@ const MEDICARE_PIPELINES = [
 ];
 
 function assertNoWrites(calls) {
-  assert.equal(calls.some((call) => call.method === "POST" || call.method === "PUT" || call.method === "PATCH" || call.method === "DELETE"), false);
+  assert.equal(calls.some((call) => {
+    if (call.method === "POST" && String(call.target).includes("/contacts/search")) return false;
+    return call.method === "POST" || call.method === "PUT" || call.method === "PATCH" || call.method === "DELETE";
+  }), false);
 }
 
 function assertListedPipelines(result, expected = MEDICARE_PIPELINES) {
@@ -87,6 +102,8 @@ test("opportunity tool is exposed with Won, close-date, approval, and verificati
   assert.match(tool.function.description, /pick by name/i);
   assert.match(tool.function.description, /Never ask the user to paste IDs/i);
   assert.match(tool.function.description, /compact pipelines array/i);
+  assert.match(tool.function.description, /name-only|masked matches/i);
+  assert.match(tool.function.description, /until contactId is unambiguous/i);
   assert.doesNotMatch(tool.function.description, /ask that question and stop/i);
   assert.deepEqual(tool.function.parameters.required, ["action"]);
   const listTool = grokTools({ GHL_API_TOKEN: "token" }).find((entry) => entry.function.name === "ghl_list_pipelines");
@@ -96,23 +113,24 @@ test("opportunity tool is exposed with Won, close-date, approval, and verificati
 
 test("create and Won requests route directly to opportunity management", () => {
   const tools = grokTools({ GHL_API_TOKEN: "token" });
-  for (const text of ["Create an opportunity for Maria", "Mark Maria's opportunity Won with close date 2026-10-02"]) {
+  for (const text of ["Create an opportunity for Maria", "Mark Maria's opportunity Won with close date 2026-10-02", "igor, i enrolled maria smith. pls create opportunity"]) {
     assert.equal(isGhlOpportunityManagementRequest(text), true);
     assert.equal(toolChoiceForUserRequest(text, tools).function.name, "ghl_manage_opportunity");
     assert.match(taskCalendarRoutingPrompt(text), /verified=true/);
     assert.match(taskCalendarRoutingPrompt(text), /ghl_list_pipelines/);
     assert.match(taskCalendarRoutingPrompt(text), /Never guess pipelineName/);
-    assert.match(taskCalendarRoutingPrompt(text), /list the pipeline and stage names/i);
+    assert.match(taskCalendarRoutingPrompt(text), /which contact/i);
     assert.match(taskCalendarRoutingPrompt(text), /pick by name/i);
     assert.match(taskCalendarRoutingPrompt(text), /Never ask the user to paste pipeline or stage IDs/i);
     assert.doesNotMatch(taskCalendarRoutingPrompt(text), /ask its question exactly/i);
+    assert.doesNotMatch(taskCalendarRoutingPrompt(text), /Call ghl_list_pipelines first/i);
   }
 });
 
 test("incomplete create lists pipelines and asks in plain language without writing", async () => {
   const calls = [];
   const result = await ghlPrepareOpportunityManagement({
-    token: "token", locationId: "loc", action: "create", contactQuery: "Maria",
+    token: "token", locationId: "loc", action: "create", contactId: "contact-1",
     fetchImpl: opportunityFixture(calls)
   });
   assertNoUserFacingIds(result);
@@ -123,7 +141,7 @@ test("incomplete create lists pipelines and asks in plain language without writi
   assert.match(result.hint, /pick by name/i);
   assertListedPipelines(result);
   assert.ok(calls.some((call) => call.method === "GET" && call.target.includes("/opportunities/pipelines?")));
-  assert.equal(calls.some((call) => call.target.includes("/contacts/")), false);
+  assert.ok(calls.some((call) => call.target.endsWith("/contacts/contact-1")));
   assertNoWrites(calls);
 });
 
@@ -144,7 +162,7 @@ test("contactId without a spoken name still asks using the resolved first name",
 test("pipeline list failure still asks in plain language and does not invent pipelines", async () => {
   const calls = [];
   const result = await ghlPrepareOpportunityManagement({
-    token: "token", locationId: "loc", action: "create", contactQuery: "Maria",
+    token: "token", locationId: "loc", action: "create", contactId: "contact-1",
     fetchImpl: opportunityFixture(calls, { pipelinesError: true })
   });
   assertNoUserFacingIds(result);
@@ -237,7 +255,7 @@ test("create without a client asks for the client without calling GHL", async ()
 test("update without opportunityId or pipeline lists pipelines and asks before any write", async () => {
   const calls = [];
   const result = await ghlPrepareOpportunityManagement({
-    token: "token", locationId: "loc", action: "update", contactQuery: "Maria", status: "won",
+    token: "token", locationId: "loc", action: "update", contactId: "contact-1", status: "won",
     fetchImpl: opportunityFixture(calls)
   });
   assertNoUserFacingIds(result);
@@ -396,7 +414,7 @@ test("executeTool previews first and a later yes reuses the exact saved draft on
 test("executeTool returns listed pipelines on needsDetails without writing", async () => {
   const calls = [];
   const result = await executeTool("ghl_manage_opportunity", {
-    action: "create", contactQuery: "Maria Smith"
+    action: "create", contactId: "contact-1"
   }, {
     environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc" },
     senderProfile: { firstName: "Yahoska" },
@@ -404,14 +422,14 @@ test("executeTool returns listed pipelines on needsDetails without writing", asy
   });
   assertNoUserFacingIds(result);
   assertListedPipelines(result);
-  assert.match(result.question, /Which GHL pipeline and stage should I use for Maria Smith/i);
+  assert.match(result.question, /Which GHL pipeline and stage should I use for Maria/i);
   assertNoWrites(calls);
 });
 
 test("executeTool keeps needsDetails when pipeline list fails", async () => {
   const calls = [];
   const result = await executeTool("ghl_manage_opportunity", {
-    action: "create", contactQuery: "Maria"
+    action: "create", contactId: "contact-1"
   }, {
     environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc" },
     senderProfile: { firstName: "Yahoska" },
@@ -422,5 +440,111 @@ test("executeTool keeps needsDetails when pipeline list fails", async () => {
   assert.match(result.hint, /pick by name/i);
   assert.match(result.error, /could not load GHL pipelines/i);
   assert.equal(result.pipelines, undefined);
+  assertNoWrites(calls);
+});
+
+function assertMaskedMariaSmiths(result) {
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["client"]);
+  assert.equal(result.pipelines, undefined);
+  assert.equal(result.matches.length, 2);
+  assert.deepEqual(result.matches.map((match) => ({
+    name: match.name, phoneLast4: match.phoneLast4, emailDomain: match.emailDomain
+  })), [
+    { name: "Maria S.", phoneLast4: "1212", emailDomain: "example.com" },
+    { name: "Maria S.", phoneLast4: "9876", emailDomain: "example.net" }
+  ]);
+  assert.match(result.question, /more than one Maria Smith/i);
+  assert.match(result.question, /last-4/i);
+  assert.match(result.hint, /masked matches/i);
+  assert.match(result.hint, /Do not list pipelines/i);
+}
+
+test("name-only Maria Smith with multiple GHL matches asks which contact before pipelines", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactQuery: "Maria Smith",
+    pipelineId: "pipeline-1", stageId: "stage-enrolled", status: "won", closeDate: "2026-10-02",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assertMaskedMariaSmiths(result);
+  assert.ok(calls.some((call) => call.target.includes("/contacts/?")));
+  assert.equal(calls.some((call) => call.target.includes("/opportunities/pipelines?")), false);
+  assertNoWrites(calls);
+});
+
+test("name-only unique Maria still cannot skip contact disambiguation", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactQuery: "Maria Smith",
+    fetchImpl: opportunityFixture(calls, { contacts: [MARIA_SMITHS[0]] })
+  });
+  assert.equal(result.needsDetails, true);
+  assert.deepEqual(result.missingFields, ["client"]);
+  assert.equal(result.pipelines, undefined);
+  assert.equal(result.matches.length, 1);
+  assert.equal(result.matches[0].phoneLast4, "1212");
+  assert.match(result.question, /Is that the right contact/i);
+  assert.equal(calls.some((call) => call.target.includes("/opportunities/pipelines?")), false);
+  assertNoWrites(calls);
+});
+
+test("enrolled create infers Won after contact is confirmed and asks close date, not status", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactId: "contact-1",
+    userText: "igor, i enrolled maria smith. pls create opportunity",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assertNoUserFacingIds(result);
+  assert.deepEqual(result.missingFields, ["pipeline", "stage", "close date (YYYY-MM-DD)"]);
+  assert.equal(result.missingFields.includes("status"), false);
+  assert.match(result.question, /Which GHL pipeline and stage should I use for Maria/i);
+  assert.match(result.question, /close date/i);
+  assert.match(result.question, /today unless you say otherwise/i);
+  assert.doesNotMatch(result.question, /open, won, lost, or abandoned/i);
+  assertListedPipelines(result);
+  assertNoWrites(calls);
+});
+
+test("name-only enrolled create still asks which Maria before Won or close date", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactQuery: "Maria Smith",
+    userText: "igor, i enrolled maria smith. pls create opportunity",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assertMaskedMariaSmiths(result);
+  assert.doesNotMatch(result.question, /pipeline|close date|today/i);
+  assertNoWrites(calls);
+});
+
+test("unique last-4 can proceed past contact ask to pipeline details", async () => {
+  const calls = [];
+  const result = await ghlPrepareOpportunityManagement({
+    token: "token", locationId: "loc", action: "create", contactQuery: "Maria", phone: "2363",
+    fetchImpl: opportunityFixture(calls, {
+      contacts: [{ id: "contact-1", firstName: "Maria", lastName: "Rivera", phone: "+13055552363", assignedTo: DEFAULT_GHL_OWNER_IDS.katy }]
+    })
+  });
+  assertNoUserFacingIds(result);
+  assert.deepEqual(result.missingFields, ["pipeline", "stage", "status"]);
+  assert.match(result.question, /Which GHL pipeline and stage should I use for Maria/i);
+  assertListedPipelines(result);
+  assertNoWrites(calls);
+});
+
+test("executeTool name-only Maria Smith asks which contact and does not list pipelines", async () => {
+  const calls = [];
+  const result = await executeTool("ghl_manage_opportunity", {
+    action: "create", contactQuery: "Maria Smith"
+  }, {
+    environment: { GHL_API_TOKEN: "token", GHL_LOCATION_ID: "loc" },
+    senderProfile: { firstName: "Yahoska" },
+    userText: "igor, i enrolled maria smith. pls create opportunity",
+    fetchImpl: opportunityFixture(calls)
+  });
+  assertMaskedMariaSmiths(result);
+  assert.equal(calls.some((call) => call.target.includes("/opportunities/pipelines?")), false);
   assertNoWrites(calls);
 });

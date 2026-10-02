@@ -109,7 +109,7 @@ import {
   openGithubPullRequest,
   putGithubFile
 } from "./github-workflow.js";
-import { blocksCalendarWrite, calendarWriteBlockedResult, CALENDAR_WRITE_TOOLS } from "./task-calendar-route.js";
+import { blocksCalendarWrite, calendarWriteBlockedResult, CALENDAR_WRITE_TOOLS, impliesOpportunityWon } from "./task-calendar-route.js";
 import { bindStickyContactArgs } from "./crm-continuity.js";
 
 const WRITE_TOOLS = new Set([
@@ -227,7 +227,7 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. After ghl_create_contact or any successful resolve, Active CRM / this-chat contact ids win over name search — pass contactId and do not re-search lookalikes by name. Never ask the user to paste a GHL id Igor just created in this thread. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
+      functionTool("ghl_search_contacts", "Search GHL contacts by name, phone, last-4, email, or a known contact id. When a phone or last-4 is given, match by those digits FIRST — do not require the first name to match. If one clear phone match exists, return that contact even if the stored name differs. Name-only searches can return multiple people (for example Maria Smith) — show the masked matches and ask which contact; never pick one for an opportunity create/update. After ghl_create_contact or any successful resolve, Active CRM / this-chat contact ids win over name search — pass contactId and do not re-search lookalikes by name. Never ask the user to paste a GHL id Igor just created in this thread. If query looks like a GHL contact id, lookup by id first. Returns masked names and last-4 phone only.", {
         type: "object",
         properties: {
           query: { type: "string", description: "Name, phone, last-4, email fragment, or GHL contact id from this chat. Phone/last-4 is matched first and does not need the first name to match." },
@@ -281,12 +281,12 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_list_pipelines", "List GHL pipelines and stages for the THEI location, including names plus pipelineId and stageId. Call this before ghl_manage_opportunity unless this chat already has those IDs. Show the user pipeline and stage names so they can pick; then pass the matching pipelineId and stageId. Never ask the user to paste IDs, and never guess pipeline or stage names.", {
+      functionTool("ghl_list_pipelines", "List GHL pipelines and stages for the THEI location, including names plus pipelineId and stageId. Call this only after the contact is unambiguous and this chat does not already have those IDs. Show the user pipeline and stage names so they can pick; then pass the matching pipelineId and stageId. Never ask the user to paste IDs, and never guess pipeline or stage names.", {
         type: "object",
         properties: {},
         additionalProperties: false
       }),
-      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If required details are missing or unsure, returns needsDetails=true with missingFields, a plain-language question, and when pipeline or stage is missing a compact pipelines array of {id, name, stages:[{id,name}]}. List pipeline and stage names from that array for the user, ask them to pick by name plus status (open/won/lost/abandoned) and close date if Won, then retry with the matching pipelineId and stageId. If pipelines is missing, call ghl_list_pipelines. Never ask the user to paste IDs. Never invent client, pipeline, stage, status, opportunity, or close date. Create, and any pipeline/stage change, must pass pipelineId and stageId from that list or this chat after the user chose names; pipelineName/stageName are not enough and must not be guessed. Update may omit pipeline/stage when opportunityId is known so the existing destination is kept. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
+      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If the client is name-only or more than one GHL contact matches, returns needsDetails=true with missingFields=['client'] and a masked matches array (name + phone last-4 / email) — show those matches and ask which contact or for a last-4/phone. Do not list pipelines or assume status/close date until contactId is unambiguous. After the contact is confirmed, if pipeline or stage is missing it also returns a compact pipelines array of {id, name, stages:[{id,name}]}. List pipeline and stage names from that array for the user, ask them to pick by name plus status (open/won/lost/abandoned) unless enrolled/sold/closed/won already means Won, and close date if Won, then retry with the matching pipelineId and stageId. If pipelines is missing after the contact is confirmed, call ghl_list_pipelines. Never ask the user to paste IDs. Never invent client, pipeline, stage, status, opportunity, or close date. Create, and any pipeline/stage change, must pass pipelineId and stageId from that list or this chat after the user chose names; pipelineName/stageName are not enough and must not be guessed. Update may omit pipeline/stage when opportunityId is known so the existing destination is kept. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
         type: "object",
         properties: {
           action: { type: "string", enum: ["create", "update"], description: "Create a new opportunity or update an existing one." },
@@ -1351,6 +1351,7 @@ export async function executeTool(name, rawArgs, {
       const denied = clinicalAccess(environment, senderId, senderProfile);
       if (denied) return denied;
       const config = ghlConfig(environment);
+      const spokenText = userText ?? senderProfile?.currentText;
       const request = {
         ...config,
         action: args.action,
@@ -1363,11 +1364,12 @@ export async function executeTool(name, rawArgs, {
         pipelineName: args.pipelineName,
         stageId: args.stageId,
         stageName: args.stageName,
-        status: args.status,
+        status: args.status || (impliesOpportunityWon(spokenText) ? "won" : args.status),
         closeDate: args.closeDate,
         assignedTo: args.assignedTo,
         owner: args.owner,
         monetaryValue: args.monetaryValue,
+        userText: spokenText,
         environment,
         fetchImpl
       };

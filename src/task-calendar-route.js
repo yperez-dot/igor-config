@@ -10,7 +10,9 @@ const LEADING_NAME_REMIND_RE = /^[A-Z][A-Za-z'’-]+(?:\s+[A-Z][A-Za-z'’-]+)+\
 const SMOKE_LEAD_RE = /\b(?:smoke\s*test|test\s+contact|qa\s+test|dummy\s+(?:contact|lead)|fake\s+contact)\b/i;
 const FOLLOWUP_TIMING_RE = /\b(?:today|tomorrow|tonight|next\s+week|sunday|monday|tuesday|wednesday|thursday|friday|saturday|at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
 const GHL_PIPELINE_MOVE_RE = /\b(?:move|advance|update)\b.{0,80}\b(?:pipeline|stage|to)\b|\b(?:mueve|mover|actualiza|cambia)\b.{0,80}\b(?:pipeline|etapa|a)\b|\b(?:enrolled|enrolled|no answer)\b.{0,40}\b(?:pipeline|stage|update)\b/i;
-const GHL_OPPORTUNITY_MANAGE_RE = /\b(?:create|add|new|open)\b.{0,60}\bopportunit(?:y|ies)\b|\bopportunit(?:y|ies)\b.{0,80}\b(?:create|won|close(?:d)?|close date|status)\b|\b(?:mark|set|change|update|close)\b.{0,80}\b(?:opportunit(?:y|ies)|deal)\b.{0,40}\b(?:won|closed|status|date)\b|\b(?:crear|crea|ganada|ganado|cerrar|cerrada|fecha de cierre)\b.{0,80}\b(?:oportunidad|oportunidades)\b/i;
+const GHL_OPPORTUNITY_MANAGE_RE = /\b(?:create|add|new|open)\b.{0,60}\bopportunit(?:y|ies)\b|\bopportunit(?:y|ies)\b.{0,80}\b(?:create|won|close(?:d)?|close date|status|enrolled|sold)\b|\b(?:mark|set|change|update|close|enroll(?:ed)?|sold)\b.{0,80}\b(?:opportunit(?:y|ies)|deal)\b|\b(?:enrolled|sold|closed|won)\b.{0,80}\bopportunit(?:y|ies)\b|\b(?:crear|crea|ganada|ganado|cerrar|cerrada|inscrit[oa]|vendid[oa]|fecha de cierre)\b.{0,80}\b(?:oportunidad|oportunidades)\b/i;
+const OPPORTUNITY_WON_RE = /\b(?:enrolled|sold|closed|won|inscrit[oa]|vendid[oa]|ganad[oa]|cerrad[oa])\b/i;
+const OPPORTUNITY_WON_NEGATION_RE = /\b(?:hasn['’]?t|has not|not|no(?:t)?)\s+(?:yet\s+)?(?:enrolled|sold|closed|won|inscrit[oa]|vendid[oa]|ganad[oa]|cerrad[oa])\b|\benroll(?:ed|ing) in medicare (?:but|and)\b/i;
 
 // The lead-check-in template includes “remind me Friday 10” as an example
 // response. When someone quotes that template to ask for status, it is not a
@@ -71,6 +73,12 @@ export function isGhlPipelineMoveRequest(text) {
 
 export function isGhlOpportunityManagementRequest(text) {
   return GHL_OPPORTUNITY_MANAGE_RE.test(String(text ?? ""));
+}
+
+export function impliesOpportunityWon(text) {
+  const raw = String(text ?? "");
+  if (!raw.trim() || OPPORTUNITY_WON_NEGATION_RE.test(raw)) return false;
+  return OPPORTUNITY_WON_RE.test(raw);
 }
 
 export function isAmbiguousLeadFollowUpRequest(text) {
@@ -144,12 +152,18 @@ export function taskCalendarRoutingPrompt(text) {
     ].join("\n");
   }
   if (isGhlOpportunityManagementRequest(text)) {
+    const wonLine = impliesOpportunityWon(text)
+      ? "This turn says enrolled/sold/closed/won, so status is Won. Do not ask status again. After the contact is confirmed, still ask for the close date if it is missing, or say you will use today unless they say otherwise. Never silently assume today’s close date before the contact is confirmed."
+      : "Ask status (open/won/lost/abandoned) only if it is not clear. Phrases like enrolled, sold, closed, or won mean status=Won.";
     return [
       "## Hard routing for this turn",
       "This is a GHL opportunity create/update/close request.",
-      "Call ghl_list_pipelines first unless this chat already has the exact pipelineId and stageId, then call ghl_manage_opportunity without confirmed and preview the masked contact, action, opportunity, pipeline, stage, status, owner, and close date.",
+      "Ask in this order only: (1) which contact, (2) pipeline/stage if needed, (3) status if not clear, (4) close date if Won.",
+      "If the client is name-only or more than one GHL contact matches (for example Maria Smith), call ghl_search_contacts or ghl_manage_opportunity first. Show masked matches (name + phone last-4 / email) and ask which contact — or ask for last-4/phone. Do not call ghl_list_pipelines, ask stage, or assume Won/today’s close date until contactId is unambiguous.",
+      "After the contact is confirmed, call ghl_list_pipelines unless this chat already has the exact pipelineId and stageId, then call ghl_manage_opportunity without confirmed and preview the masked contact, action, opportunity, pipeline, stage, status, owner, and close date.",
       "Pass pipelineId and stageId from that list after the user picks pipeline and stage by name. Never guess pipelineName or stageName. Never ask the user to paste IDs. If you do not know the client, pipeline, stage, status, close date, or opportunity, ask — never invent optional names to help.",
-      "If the tool returns needsDetails=true, list the pipeline and stage names from ghl_list_pipelines, ask them to pick by name plus status (open/won/lost/abandoned) and close date if Won, then retry with the matching ids. Never ask the user to paste pipeline or stage IDs. Never guess a missing client, pipeline, stage, status, opportunity, or close date. Do not invent an owner; omitted owner on create already defaults to Yahoska.",
+      wonLine,
+      "If the tool returns needsDetails=true with matches, stop and ask which contact. If it returns needsDetails with a pipelines array, list those pipeline and stage names, ask them to pick by name plus status (open/won/lost/abandoned) unless already Won, and close date if Won, then retry with the matching ids. Never ask the user to paste pipeline or stage IDs. Never guess a missing client, pipeline, stage, status, opportunity, or close date. Do not invent an owner; omitted owner on create already defaults to Yahoska.",
       "Do not write until the user explicitly says yes/sí; a later confirmation must reuse the saved exact ids and fields.",
       "After writing, claim success only when the tool returns verified=true with the opportunity id and matching pipeline, stage, status, owner, and close date."
     ].join("\n");
