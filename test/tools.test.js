@@ -541,3 +541,37 @@ test("run_lookout uses the Facebook probe", async () => {
   });
   assert.equal(result.fingerprint, "facebook:token_dead");
 });
+
+
+test("exact GHL diagnostic is exposed only with GHL and uses the configured credentials", async () => {
+  const environment = { GHL_API_TOKEN: "diagnostic-secret", GHL_LOCATION_ID: "diagnostic-location" };
+  const contactId = "abcdefghijklmnopqrst";
+  const names = env => grokTools(env).map(tool => tool.function.name);
+  assert.equal(names({}).includes("ghl_diagnose_contact"), false);
+  assert.equal(names(environment).includes("ghl_diagnose_contact"), true);
+  const calls = [];
+  const result = await executeTool("ghl_diagnose_contact", { contactId, noteBody: "Test note" }, {
+    environment,
+    fetchImpl: async (url, init) => {
+      calls.push(url);
+      assert.equal(init.method, "GET");
+      assert.equal(init.headers.Authorization, "Bearer diagnostic-secret");
+      return { ok: true, status: 200, json: async () => url.endsWith("/notes")
+        ? { notes: [{ body: "Test note" }] }
+        : { contact: { id: contactId, locationId: environment.GHL_LOCATION_ID, firstName: "Test", lastName: "Person" } } };
+    }
+  });
+  assert.equal(result.status, "found");
+  assert.equal(result.noteVerified, true);
+  assert.equal(calls.length, 2);
+  assert(calls.every(url => url.includes(`/contacts/${contactId}`)));
+});
+
+test("contact search tool reports forbidden instead of an empty contacts result", async () => {
+  const result = await executeTool("ghl_search_contacts", { contactId: "abcdefghijklmnopqrst" }, {
+    environment: { GHL_API_TOKEN: "test" },
+    fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({ message: "Forbidden" }) })
+  });
+  assert.match(result.error, /permission denied.*403/);
+  assert.equal(result.contacts, undefined);
+});

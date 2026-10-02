@@ -1244,25 +1244,74 @@ function pickUniqueContact(contacts, { query, phone } = {}) {
   };
 }
 
+function contactLookupError(status, code) {
+  const messages = {
+    unauthorized: "GHL contact lookup authentication failed (HTTP 401).",
+    forbidden: "GHL contact lookup permission denied (HTTP 403).",
+    timeout: "GHL contact lookup timed out; the contact was not verified.",
+    invalid_response: "GHL contact lookup returned an unusable response; the contact was not verified.",
+    request_failed: `GHL contact lookup failed${status ? ` (HTTP ${status})` : ""}; the contact was not verified.`
+  };
+  const error = new Error(messages[code] ?? messages.request_failed);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
 async function ghlLookupContactById({ token, contactId, fetchImpl = fetch }) {
   const id = String(contactId ?? "").trim();
   if (!id) return { contact: null, status: 0 };
+  let body;
   try {
-    const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(id)}`, {
-      token,
-      fetchImpl,
-      version: GHL_V3
+    body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(id)}`, {
+      token, fetchImpl, version: GHL_V3
     });
-    const contact = body.contact ?? body;
-    if (!isUsableGhlContact(contact)) return { contact: null, status: 200 };
-    return { contact, status: 200 };
   } catch (error) {
-    return {
-      contact: null,
-      status: error.status ?? 0,
-      notFound: error.status === 404
-    };
+    const status = error.status ?? 0;
+    if (status === 404) return { contact: null, status, notFound: true };
+    const code = status === 401 ? "unauthorized" : status === 403 ? "forbidden"
+      : /TimeoutError|AbortError/.test(error.name) ? "timeout" : "request_failed";
+    throw contactLookupError(status, code);
   }
+  const contact = body.contact ?? body;
+  if (!isUsableGhlContact(contact) || String(contact.id ?? contact.contactId ?? "") !== id) {
+    throw contactLookupError(200, "invalid_response");
+  }
+  return { contact, status: 200 };
+}
+
+// Read-only proof of the exact ID lookup. Never search another contact or write.
+export async function ghlDiagnoseContact({ token, locationId, contactId, noteBody, fetchImpl = fetch }) {
+  const id = String(contactId ?? "").trim();
+  const base = { contactId: id, checked: "exact_contact_id", readOnly: true, noteVerified: false };
+  if (!id) return { ...base, status: "missing_contact_id", error: "Provide the exact contact id from the CRM link or this chat." };
+  if (!token) return { ...base, status: "missing_token", error: "GHL_API_TOKEN is not configured." };
+  let lookup;
+  try {
+    lookup = await ghlLookupContactById({ token, contactId: id, fetchImpl });
+  } catch (error) {
+    return { ...base, status: error.code ?? "request_failed", httpStatus: error.status ?? 0, error: error.message };
+  }
+  if (!lookup.contact) return { ...base, status: "not_found", httpStatus: 404 };
+  const contact = lookup.contact;
+  if (String(contact.locationId ?? "") !== String(locationId ?? "")) {
+    return { ...base, status: contact.locationId ? "location_mismatch" : "location_unverified", httpStatus: 200,
+      error: "The exact contact's location does not match or could not be verified. No notes were read." };
+  }
+  const result = { ...base, status: "found", httpStatus: 200, locationVerified: true,
+    contact: maskSearchedContact(contact) };
+  if (!String(noteBody ?? "").trim()) return result;
+  try {
+    const body = await ghlJson(`${GHL_API}/contacts/${encodeURIComponent(id)}/notes`, { token, fetchImpl });
+    if (!Array.isArray(body.notes)) throw contactLookupError(200, "invalid_response");
+    result.noteVerified = body.notes.some((note) => String(note.body ?? "").trim() === String(noteBody).trim());
+    result.notesStatus = result.noteVerified ? "matching_note_found" : "matching_note_not_found";
+  } catch (error) {
+    result.notesStatus = "unavailable";
+    result.notesHttpStatus = error.status ?? 0;
+    result.notesError = "Could not verify the saved note from GHL. Do not claim it is saved.";
+  }
+  return result;
 }
 
 async function ghlFetchRawContactById({ token, contactId, fetchImpl = fetch }) {
@@ -2759,3 +2808,4 @@ export async function ghlStaleLeads({
     csv: staleLeadsCsv(stale)
   };
 }
+

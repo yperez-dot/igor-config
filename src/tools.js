@@ -25,6 +25,7 @@ import {
   ghlGetClinicalProfile,
   ghlApplyTagChange,
   ghlConfig,
+  ghlDiagnoseContact,
   ghlCreateContract,
   ghlCreateContact,
   ghlCreateContactNote,
@@ -215,6 +216,15 @@ export function grokTools(environment = process.env) {
 
   if (connected.has("ghl")) {
     tools.push(
+      functionTool("ghl_diagnose_contact", "Read-only test of Igor's authenticated GHL connection against one exact contact ID. Use when asked to test the connection during a CRM lookup issue. Extract contactId from /contacts/detail/ in the supplied CRM link, or reuse this-chat ID. Websites/ads, run_lookout, and configured secrets do not test GHL. Reports found, not_found, unauthorized, forbidden, timeout, or other failure. Optionally verify the exact saved note body. Never claim a note is saved unless noteVerified=true or a successful note-write tool result exists. Never infer token/location problems without diagnostic evidence.", {
+        type: "object",
+        properties: {
+          contactId: { type: "string" },
+          noteBody: { type: "string", description: "Exact note text to verify, if known. Returns a boolean, not note bodies." }
+        },
+        required: ["contactId"],
+        additionalProperties: false
+      }),
       functionTool("ghl_stale_leads", "Pull a PHI-light stale opportunities report from GoHighLevel. Automatically sends a CSV to this Telegram chat and emails the person in this chat (Katy → krobles@healthexps.com, otherwise yperez@healthexps.com) when SMTP for info@ is configured.", {
         type: "object",
         properties: {
@@ -1244,6 +1254,10 @@ export async function executeTool(name, rawArgs, {
       };
     }
 
+    if (name === "ghl_diagnose_contact") {
+      return ghlDiagnoseContact({ ...ghlConfig(environment), contactId: args.contactId, noteBody: args.noteBody, fetchImpl });
+    }
+
     if (name === "ghl_search_contacts") {
       const config = ghlConfig(environment);
       return {
@@ -2204,3 +2218,4 @@ export async function executeTool(name, rawArgs, {
 export function stringifyToolResult(result) {
   return summarizeJson(result);
 }
+
