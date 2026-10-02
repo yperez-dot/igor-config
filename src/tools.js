@@ -2218,4 +2218,3 @@ export async function executeTool(name, rawArgs, {
 export function stringifyToolResult(result) {
   return summarizeJson(result);
 }
-

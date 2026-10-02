@@ -1013,6 +1013,7 @@ export async function ghlSearchContacts({ token, locationId, query, contactId, p
       fetchImpl
     });
     const hydratedPhone = await hydrateContactsWithPhone({ token, contacts: phoneContacts, fetchImpl });
+    let hydrationFailed = hasUnverifiedPhoneHydration(hydratedPhone);
     const phoneHits = hydratedPhone.filter((contact) => contactMatchesPhone(contact, phoneHint));
     if (phoneHits.length) {
       return phoneHits.slice(0, limit).map((contact) => withSearchNameMeta(maskSearchedContact(contact), queryText));
@@ -1020,11 +1021,13 @@ export async function ghlSearchContacts({ token, locationId, query, contactId, p
     if (nameHint) {
       const named = await ghlRawContacts({ token, locationId, query: nameHint, limit, fetchImpl });
       const hydratedNamed = await hydrateContactsWithPhone({ token, contacts: named, fetchImpl });
+      hydrationFailed ||= hasUnverifiedPhoneHydration(hydratedNamed);
       const namedHits = hydratedNamed.filter((contact) => contactMatchesPhone(contact, phoneHint));
       if (namedHits.length) {
         return namedHits.slice(0, limit).map((contact) => withSearchNameMeta(maskSearchedContact(contact), queryText));
       }
     }
+    if (hydrationFailed) throw phoneHydrationError();
     // Last-4/phone was provided and missed. Do not return a name-only miss —
     // that is how Miriam+2363 looked like a missing contact.
     return [];
@@ -1224,6 +1227,9 @@ async function ghlSearchContactsByPhone({
 function pickUniqueContact(contacts, { query, phone } = {}) {
   if (!contacts.length) return { error: "No GHL contact matched that client." };
   const phoneHint = phoneDigitsFromQuery(phone) || phoneDigitsFromQuery(query);
+  if (phoneHint && hasUnverifiedPhoneHydration(contacts)) {
+    return { error: phoneHydrationError().message, lookupFailed: true };
+  }
   const phoneHits = phoneHint
     ? contacts.filter((contact) => contactMatchesPhone(contact, phoneHint))
     : [];
@@ -1319,12 +1325,31 @@ async function ghlFetchRawContactById({ token, contactId, fetchImpl = fetch }) {
   return lookup.contact;
 }
 
+function hasUnverifiedPhoneHydration(contacts) {
+  return (contacts.phoneLookupFailures ?? []).some((contact) => !contactHasUsablePhone(contact));
+}
+
+function phoneHydrationError() {
+  const error = new Error("GHL phone lookup failed for a search candidate; I could not verify the phone match. Retry the lookup.");
+  error.code = "phone_lookup_failed";
+  return error;
+}
+
 export async function hydrateContactsWithPhone({ token, contacts, fetchImpl = fetch }) {
-  return Promise.all((Array.isArray(contacts) ? contacts : []).map(async (contact) => {
+  const failures = [];
+  const hydrated = await Promise.all((Array.isArray(contacts) ? contacts : []).map(async (contact) => {
     if (contactHasUsablePhone(contact)) return contact;
     const id = String(contact?.id ?? contact?.contactId ?? "").trim();
     if (!id) return contact;
-    const full = await ghlFetchRawContactById({ token, contactId: id, fetchImpl });
+    let full;
+    try {
+      full = await ghlFetchRawContactById({ token, contactId: id, fetchImpl });
+    } catch {
+      // Enrichment is best effort. Keep the original result and let matching
+      // distinguish an unknown phone from a verified non-match.
+      failures.push(contact);
+      return contact;
+    }
     if (!full) return contact;
     return {
       ...contact,
@@ -1338,6 +1363,9 @@ export async function hydrateContactsWithPhone({ token, contacts, fetchImpl = fe
       assignedTo: full.assignedTo ?? contact.assignedTo
     };
   }));
+  // Keep enrichment failures out of serialized contact results.
+  Object.defineProperty(hydrated, "phoneLookupFailures", { value: failures });
+  return hydrated;
 }
 
 async function ghlFetchContactById({ token, contactId, fetchImpl = fetch }) {
@@ -1394,7 +1422,7 @@ export async function ghlResolveContact({
     const hydratedPhone = await hydrateContactsWithPhone({ token, contacts: phoneContacts, fetchImpl });
     const picked = pickUniqueContact(hydratedPhone, { query: nameHint, phone: phoneHint });
     if (!picked.error) return toResolvedContact(picked, picked.id, "phone");
-    if (picked.candidates) return { ...picked, tried };
+    if (picked.candidates || picked.lookupFailed) return { ...picked, tried };
   }
 
   const nameQuery = nameHint
@@ -1414,6 +1442,7 @@ export async function ghlResolveContact({
     if (!picked.error && (!phoneHint || contactMatchesPhone(picked, phoneHint))) {
       return toResolvedContact(picked, picked.id, resolvedVia);
     }
+    if (picked.lookupFailed) return { ...picked, tried };
     if (picked.candidates) lastMulti = picked;
   }
 
@@ -2808,4 +2837,3 @@ export async function ghlStaleLeads({
     csv: staleLeadsCsv(stale)
   };
 }
-

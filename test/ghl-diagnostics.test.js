@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ghlDiagnoseContact, ghlSearchContacts, ghlResolveContact, ghlResolveWriteContact } from "../src/ghl.js";
+import { ghlDiagnoseContact, ghlSearchContacts, ghlResolveContact, ghlResolveWriteContact, hydrateContactsWithPhone } from "../src/ghl.js";
 
 const contactId = "abcdefghijklmnopqrst";
 const environment = { GHL_API_TOKEN: "test-secret", GHL_LOCATION_ID: "test-location" };
@@ -85,4 +85,54 @@ test("approved ID miss cannot switch a write to another person", async () => {
   } });
   assert.ok(result.error);
   assert.equal(calls.length, 1);
+});
+
+function hydrationFixture(candidates, { failedStatus = 429, calls = [] } = {}) {
+  return async (url, init) => {
+    calls.push({ url, method: init.method });
+    if (url.endsWith("/contacts/search") || url.includes("/contacts/?")) return json({ contacts: candidates });
+    if (url.endsWith("/contacts/failed-candidate")) return json({ message: "rate limited" }, failedStatus);
+    if (url.endsWith(`/contacts/${contactId}`)) return json({ contact });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+}
+
+for (const failedStatus of [429, 503]) {
+  test(`best-effort hydration preserves the failed candidate and enriches the other on HTTP ${failedStatus}`, async () => {
+    const original = { id: "failed-candidate", firstName: "Other" };
+    const candidates = [original, { id: contactId, firstName: "Test" }];
+    const hydrated = await hydrateContactsWithPhone({ token: config.token, contacts: candidates, fetchImpl: hydrationFixture(candidates, { failedStatus }) });
+    assert.equal(hydrated[0], original);
+    assert.equal(hydrated[1].phone, contact.phone);
+    assert.equal(hydrated.length, 2);
+    assert.doesNotMatch(JSON.stringify(hydrated), /rate limited|phoneLookupFailures/);
+  });
+}
+
+test("phone search still returns the verified hit after another hydration is rate limited", async () => {
+  const candidates = [{ id: "failed-candidate", firstName: "Other" }, { id: contactId, firstName: "Test" }];
+  const result = await ghlSearchContacts({ token: config.token, locationId: config.locationId, phone: "0123", fetchImpl: hydrationFixture(candidates) });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, contactId);
+  assert.equal(result[0].phoneLast4, "0123");
+});
+
+test("an unresolved candidate cannot make a phone match look unique", async () => {
+  const candidates = [{ id: "failed-candidate", firstName: "Other" }, contact];
+  const result = await ghlResolveContact({ token: config.token, locationId: config.locationId, phone: "0123", fetchImpl: hydrationFixture(candidates) });
+  assert.equal(result.lookupFailed, true);
+  assert.match(result.error, /could not verify the phone match/);
+  assert.equal(result.id, undefined);
+});
+
+test("failed phone hydration cannot become an empty search result", async () => {
+  const candidates = [{ id: "failed-candidate", firstName: "Test" }];
+  await assert.rejects(ghlSearchContacts({ token: config.token, locationId: config.locationId, query: "Test", phone: "0123", fetchImpl: hydrationFixture(candidates) }), { code: "phone_lookup_failed" });
+});
+
+test("name-only resolution can use an original candidate when phone enrichment fails", async () => {
+  const candidates = [{ id: "failed-candidate", firstName: "Test", lastName: "Person" }];
+  const result = await ghlResolveContact({ token: config.token, locationId: config.locationId, query: "Test Person", fetchImpl: hydrationFixture(candidates) });
+  assert.equal(result.id, "failed-candidate");
+  assert.equal(result.error, undefined);
 });
