@@ -527,6 +527,11 @@ test("GHL task and calendar tool descriptions encode the hard routing rule", () 
   assert.match(task.function.description, /that contact/);
   assert.match(task.function.description, /contactId only/);
   assert.match(calendar.function.description, /Never use this for a GHL\/CRM contact task/);
+  assert.match(calendar.function.description, /skipDates or exDates/);
+  assert.match(calendar.function.description, /Do not invent a tool-rejected error/);
+  assert.equal(Boolean(calendar.function.parameters.properties.skipDates), true);
+  assert.equal(Boolean(calendar.function.parameters.properties.exDates), true);
+  assert.equal(Boolean(calendar.function.parameters.properties.skipRanges), true);
 });
 
 test("run_lookout uses the Facebook probe", async () => {

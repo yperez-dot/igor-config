@@ -173,9 +173,168 @@ function eventEndMs(event) {
 }
 
 const WEEKDAY_CODE = { Sun: "SU", Mon: "MO", Tue: "TU", Wed: "WE", Thu: "TH", Fri: "FR", Sat: "SA" };
+const WEEKDAY_CODES = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+const SKIP_RANGE_RE = /^(\d{4}-\d{2}-\d{2})\s*(?:\/|to|through|thru|–|—)\s*(\d{4}-\d{2}-\d{2})$/i;
 
 function pad2(value) {
   return String(value).padStart(2, "0");
+}
+
+export function normalizeByDay(byDay) {
+  return (Array.isArray(byDay) ? byDay : String(byDay ?? "").split(","))
+    .map((day) => String(day).trim().toUpperCase())
+    .filter((day) => WEEKDAY_CODES.includes(day));
+}
+
+function byDayFromRrule(rrule) {
+  const match = String(rrule ?? "").toUpperCase().match(/BYDAY=([A-Z,]+)/);
+  return match ? normalizeByDay(match[1]) : [];
+}
+
+function dateKey({ year, month, day }) {
+  return year * 10_000 + month * 100 + day;
+}
+
+function weekdayOn(date, timeZone) {
+  const ms = zonedUtcMs(date.year, date.month, date.day, 12, 0, timeZone);
+  return WEEKDAY_CODE[formatParts(new Date(ms), timeZone).weekday] ?? null;
+}
+
+function flattenSkipItems(value, { allowPairRange = true } = {}) {
+  if (value == null || value === false) return [];
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) return [];
+    if (SKIP_RANGE_RE.test(raw) || parseDateOnly(raw)) return [raw];
+    return raw.split(/\s*,\s*/).filter(Boolean);
+  }
+  if (Array.isArray(value)) {
+    if (allowPairRange && value.length === 2 && value.every((item) => typeof item === "string" && parseDateOnly(item))) {
+      return [value];
+    }
+    return value.flatMap((item) => flattenSkipItems(item, { allowPairRange: true }));
+  }
+  if (typeof value === "object") return [value];
+  return [];
+}
+
+export function parseSkipWindow(value) {
+  if (value == null || value === false) return null;
+  if (Array.isArray(value) && value.length === 2 && !value.some((item) => typeof item === "object")) {
+    const start = parseDateOnly(value[0]);
+    const end = parseDateOnly(value[1]);
+    if (start && end) return { start: formatDateOnly(start), end: formatDateOnly(end) };
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    const start = parseDateOnly(value.start ?? value.from ?? value.begin ?? value.date);
+    const end = parseDateOnly(value.end ?? value.to ?? value.until ?? value.start ?? value.from ?? value.date);
+    if (!start) return null;
+    return { start: formatDateOnly(start), end: formatDateOnly(end || start) };
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const range = raw.match(SKIP_RANGE_RE);
+  if (range) {
+    const start = parseDateOnly(range[1]);
+    const end = parseDateOnly(range[2]);
+    if (!start || !end) return null;
+    return { start: formatDateOnly(start), end: formatDateOnly(end) };
+  }
+  const single = parseDateOnly(raw);
+  if (!single) return null;
+  return { start: formatDateOnly(single), end: formatDateOnly(single) };
+}
+
+export function collectSkipWindows(args = {}) {
+  const bags = [args.exDates, args.skipDates, args.blackoutDates, args.skipRanges, args.exRanges];
+  const windows = [];
+  const seen = new Set();
+  for (const bag of bags) {
+    for (const item of flattenSkipItems(bag, { allowPairRange: false })) {
+      const window = parseSkipWindow(item);
+      if (!window) continue;
+      const key = `${window.start}/${window.end}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      windows.push(window);
+    }
+  }
+  return windows;
+}
+
+export function expandSkipWindow(window, { maxDays = 400 } = {}) {
+  const start = parseDateOnly(window?.start);
+  const end = parseDateOnly(window?.end || window?.start);
+  if (!start || !end) return [];
+  let cursor = dateKey(start) <= dateKey(end) ? start : end;
+  const last = dateKey(start) <= dateKey(end) ? end : start;
+  const dates = [];
+  for (let i = 0; i < maxDays && dateKey(cursor) <= dateKey(last); i += 1) {
+    dates.push({ ...cursor });
+    cursor = addLocalDays(cursor.year, cursor.month, cursor.day, 1);
+  }
+  return dates;
+}
+
+export function resolveOccurrenceDays(args = {}, timeZone = DEFAULT_TIMEZONE) {
+  const explicit = normalizeByDay(args.byDay ?? args.days);
+  if (explicit.length) return explicit;
+  const fromRrule = byDayFromRrule(args.rrule);
+  if (fromRrule.length) return fromRrule;
+  if (!args.start) return [];
+  const startDate = parseDateOnly(args.start)
+    || (parseWhen(args.start, timeZone) != null
+      ? dateFromMs(parseWhen(args.start, timeZone), timeZone)
+      : null);
+  if (!startDate) return [];
+  const weekday = weekdayOn(startDate, timeZone);
+  return weekday ? [weekday] : [];
+}
+
+export function skipOccurrenceDates(args = {}, { timeZone = DEFAULT_TIMEZONE, byDay } = {}) {
+  const wanted = new Set(normalizeByDay(byDay ?? resolveOccurrenceDays(args, timeZone)));
+  const dates = [];
+  const seen = new Set();
+  for (const window of collectSkipWindows(args)) {
+    for (const date of expandSkipWindow(window)) {
+      if (wanted.size && !wanted.has(weekdayOn(date, timeZone))) continue;
+      const key = formatDateOnly(date);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      dates.push(date);
+    }
+  }
+  dates.sort((a, b) => dateKey(a) - dateKey(b));
+  return dates;
+}
+
+export function localClockFromStart(start, timeZone = DEFAULT_TIMEZONE, allDay = false) {
+  if (allDay) return null;
+  const raw = String(start ?? "").trim();
+  if (!raw) return { hour: 0, minute: 0, second: 0 };
+  const naive = raw.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (naive) {
+    return { hour: Number(naive[2]), minute: Number(naive[3]), second: Number(naive[4] || 0) };
+  }
+  const ms = parseWhen(start, timeZone);
+  if (ms == null) return { hour: 0, minute: 0, second: 0 };
+  const part = formatParts(new Date(ms), timeZone);
+  return { hour: part.hour, minute: part.minute, second: part.second };
+}
+
+export function buildExdates({
+  dates = [],
+  timeZone = DEFAULT_TIMEZONE,
+  allDay = false,
+  hour = 0,
+  minute = 0,
+  second = 0
+} = {}) {
+  return dates.map((date) => {
+    const day = `${date.year}${pad2(date.month)}${pad2(date.day)}`;
+    if (allDay) return `EXDATE;VALUE=DATE:${day}`;
+    return `EXDATE;TZID=${timeZone}:${day}T${pad2(hour)}${pad2(minute)}${pad2(second)}`;
+  });
 }
 
 export function schoolYearUntilJune(now = new Date(), timeZone = DEFAULT_TIMEZONE) {
@@ -191,27 +350,43 @@ export function schoolYearUntilJune(now = new Date(), timeZone = DEFAULT_TIMEZON
 }
 
 export function buildRrule({ freq = "WEEKLY", byDay = ["MO"], until } = {}) {
-  const days = (Array.isArray(byDay) ? byDay : String(byDay ?? "").split(","))
-    .map((day) => String(day).trim().toUpperCase())
-    .filter((day) => ["SU", "MO", "TU", "WE", "TH", "FR", "SA"].includes(day));
+  const days = normalizeByDay(byDay);
   if (!days.length) return null;
   const untilDate = parseDateOnly(until);
   if (!untilDate) return null;
   return `RRULE:FREQ=${String(freq || "WEEKLY").toUpperCase()};BYDAY=${days.join(",")};UNTIL=${untilDate.year}${pad2(untilDate.month)}${pad2(untilDate.day)}T235959Z`;
 }
 
-export function resolveRecurrence(args = {}) {
+export function resolveRecurrence(args = {}, options = {}) {
+  const timeZone = trim(options.timeZone || args.timeZone) || DEFAULT_TIMEZONE;
+  const allDay = options.allDay ?? resolveAllDay(args);
+  const occurrenceDays = resolveOccurrenceDays(args, timeZone);
   const explicit = String(args.rrule ?? "").trim();
-  if (explicit.startsWith("RRULE:")) return [explicit];
   const until = trim(args.until);
-  const byDay = args.byDay ?? args.days;
-  if (!until) return null;
-  const rrule = buildRrule({
-    freq: args.freq || args.recurrence || "WEEKLY",
-    byDay: byDay || ["MO"],
-    until
+  let rules = null;
+  if (explicit.startsWith("RRULE:")) {
+    rules = [explicit];
+  } else if (until) {
+    const rrule = buildRrule({
+      freq: args.freq || args.recurrence || "WEEKLY",
+      byDay: occurrenceDays.length ? occurrenceDays : ["MO"],
+      until
+    });
+    rules = rrule ? [rrule] : null;
+  }
+  if (!rules) return null;
+
+  const skipDays = occurrenceDays.length ? occurrenceDays : ["MO"];
+  const clock = localClockFromStart(args.start, timeZone, allDay) || {};
+  const exdates = buildExdates({
+    dates: skipOccurrenceDates(args, { timeZone, byDay: skipDays }),
+    timeZone,
+    allDay,
+    hour: clock.hour ?? 0,
+    minute: clock.minute ?? 0,
+    second: clock.second ?? 0
   });
-  return rrule ? [rrule] : null;
+  return [...rules, ...exdates];
 }
 
 export function nextOccurrence(now, timeZone, { byDay = ["MO"], hour = 17, minute = 0 } = {}) {
@@ -600,11 +775,12 @@ export function proposedEvent(args, config) {
   const attendees = proposedAttendees(args);
   const transparency = resolveTransparency(args);
   const allDay = resolveAllDay(args);
-  const recurrence = resolveRecurrence(args);
+  const timeZone = trim(args.timeZone) || config.timeZone;
+  const recurrence = resolveRecurrence(args, { timeZone, allDay });
   const reminders = resolveReminders(args);
   const base = {
     summary: trim(args.summary) || "THEI appointment",
-    timeZone: trim(args.timeZone) || config.timeZone,
+    timeZone,
     location: trim(args.location) || null,
     description: trim(args.description) || null,
     attendees,
