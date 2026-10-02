@@ -281,12 +281,12 @@ export function grokTools(environment = process.env) {
         },
         additionalProperties: false
       }),
-      functionTool("ghl_list_pipelines", "List GHL pipelines and stage names for the THEI location.", {
+      functionTool("ghl_list_pipelines", "List GHL pipelines and stages for the THEI location, including pipelineId and stageId. Call this before ghl_manage_opportunity unless this chat already has those IDs, then pass the IDs — never guess pipeline or stage names.", {
         type: "object",
         properties: {},
         additionalProperties: false
       }),
-      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If required details are missing, returns needsDetails=true with missingFields and question — ask that question and do not invent fields. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
+      functionTool("ghl_manage_opportunity", "Create a GHL opportunity or update an existing one, including setting status to Won and writing the expected close date. If required details are missing or unsure, returns needsDetails=true with missingFields and question — ask that question and stop; never invent client, pipeline, stage, status, opportunity, or close date. Create, and any pipeline/stage change, must pass pipelineId and stageId from ghl_list_pipelines or this chat; pipelineName/stageName are not enough and must not be guessed. Update may omit pipeline/stage when opportunityId is known so the existing destination is kept. First call without confirmed to preview the exact masked contact, operation, opportunity, pipeline, stage, status, owner, and close date. Write only after Yahoska, Katy, or Carolina explicitly says yes/sí. The confirmed result re-reads GHL and returns verified=true only when opportunity id, pipeline, stage, status, owner, and date all match.", {
         type: "object",
         properties: {
           action: { type: "string", enum: ["create", "update"], description: "Create a new opportunity or update an existing one." },
@@ -295,10 +295,10 @@ export function grokTools(environment = process.env) {
           phone: { type: "string" },
           opportunityId: { type: "string", description: "Required when multiple existing opportunities could match; strongly preferred for update." },
           opportunityName: { type: "string", description: "Opportunity name. Defaults to the existing name on update or the contact's full name on create." },
-          pipelineId: { type: "string" },
-          pipelineName: { type: "string" },
-          stageId: { type: "string" },
-          stageName: { type: "string", description: "Exact GHL pipeline stage." },
+          pipelineId: { type: "string", description: "Required for create and for any pipeline change. Use an id from ghl_list_pipelines or this chat. Do not guess." },
+          pipelineName: { type: "string", description: "Not sufficient by itself. Do not invent a name to skip listing pipelines; pass pipelineId." },
+          stageId: { type: "string", description: "Required for create and for any stage change. Use an id from ghl_list_pipelines or this chat. Do not guess." },
+          stageName: { type: "string", description: "Not sufficient by itself. Do not invent a stage name; pass stageId." },
           status: { type: "string", enum: ["open", "won", "lost", "abandoned"] },
           closeDate: { type: "string", description: "Expected close date in YYYY-MM-DD. Required for status=won unless an existing opportunity already has forecastExpectedCloseDate." },
           assignedTo: { type: "string", description: "GHL owner id, email, or team name such as Yahoska, Katy, or Carolina." },

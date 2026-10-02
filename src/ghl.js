@@ -422,6 +422,10 @@ function existingOpportunityCloseDate(existing) {
     : null;
 }
 
+function hasTrimmed(value) {
+  return Boolean(String(value ?? "").trim());
+}
+
 export async function ghlGetOpportunity({ token, opportunityId, fetchImpl = fetch }) {
   if (!String(opportunityId ?? "").trim()) return { error: "A GHL opportunity id is required." };
   const payload = await ghlJson(`${GHL_API}/opportunities/${encodeURIComponent(opportunityId)}`, {
@@ -512,11 +516,17 @@ export async function ghlPrepareOpportunityManagement({
 
   const missingFields = [];
   const hasContactSelector = Boolean(contactId || String(contactQuery ?? "").trim() || String(phone ?? "").trim());
+  const hasPipelineId = hasTrimmed(pipelineId);
+  const hasStageId = hasTrimmed(stageId);
+  const hasPipelineName = hasTrimmed(pipelineName);
+  const hasStageName = hasTrimmed(stageName);
   if (!opportunityId && !hasContactSelector) missingFields.push("client");
-  if (operation === "create" && !(pipelineId || String(pipelineName ?? "").trim())) missingFields.push("pipeline");
-  if (operation === "create" && !(stageId || String(stageName ?? "").trim())) missingFields.push("stage");
+  if (operation === "create" && !hasPipelineId) missingFields.push("pipeline ID");
+  if (operation === "create" && !hasStageId) missingFields.push("stage ID");
   if (operation === "create" && !String(status ?? "").trim()) missingFields.push("status");
-  if (operation === "update" && !opportunityId && !(pipelineId || String(pipelineName ?? "").trim())) missingFields.push("pipeline or opportunity ID");
+  if (operation === "update" && !opportunityId && !hasPipelineId) missingFields.push("pipeline or opportunity ID");
+  if (operation === "update" && opportunityId && hasPipelineName && !hasPipelineId) missingFields.push("pipeline ID");
+  if (operation === "update" && hasStageName && !hasStageId) missingFields.push("stage ID");
   if (operation === "create" && String(status ?? "").trim().toLowerCase() === "won" && !String(closeDate ?? "").trim()) {
     missingFields.push("close date (YYYY-MM-DD)");
   }
@@ -534,32 +544,32 @@ export async function ghlPrepareOpportunityManagement({
   if (contact.error) return contact;
 
   const pipelines = await ghlListPipelines({ token, locationId, fetchImpl });
-  const destination = resolvePipelineStage(pipelines, {
-    pipelineId: pipelineId ?? existing?.pipelineId,
-    pipelineName,
-    stageId: stageId ?? existing?.pipelineStageId,
-    stageName
-  });
-  if (destination.error) return destination;
-
   if (operation === "update" && !existing) {
+    const pipeline = pipelines.find((entry) => String(entry.id) === String(pipelineId));
+    if (!pipeline) return { error: "I could not find that GHL pipeline." };
     const searched = await ghlSearchOpportunities({
       token,
       locationId,
       contactId: contact.id,
-      pipelineId: destination.pipeline.id,
+      pipelineId: pipeline.id,
       limit: 100,
       fetchImpl
     });
     const candidates = searched.opportunities.filter((entry) => (
       String(entry.contactId ?? entry.contact?.id ?? "") === String(contact.id)
-      && String(entry.pipelineId ?? "") === String(destination.pipeline.id)
+      && String(entry.pipelineId ?? "") === String(pipeline.id)
     ));
     if (candidates.length > 1) return { error: "I found more than one opportunity for that contact in this pipeline. Choose the exact opportunity first." };
     existing = candidates[0] ?? null;
     if (!existing) return { error: "I could not find an existing opportunity for that contact in the selected pipeline." };
     opportunityId = existing.id;
   }
+
+  const destination = resolvePipelineStage(pipelines, {
+    pipelineId: hasPipelineId ? pipelineId : existing?.pipelineId,
+    stageId: hasStageId ? stageId : existing?.pipelineStageId
+  });
+  if (destination.error) return destination;
 
   const normalizedStatus = normalizeOpportunityStatus(status, existing?.status ?? "open");
   if (!normalizedStatus) return { error: "Opportunity status must be open, won, lost, or abandoned." };
