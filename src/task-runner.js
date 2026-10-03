@@ -1,3 +1,4 @@
+import { LEAD_CHECKINS_PAUSED } from "./legacy-schedules.js";
 import { processTask } from "./process-task-personal.js";
 import { sendTelegramMessage, telegramConfig } from "./telegram.js";
 
@@ -72,6 +73,11 @@ export async function runClaimedTask({
   processFn = processTask,
   sendTelegram = sendTelegramMessage
 }) {
+  if (LEAD_CHECKINS_PAUSED && task.payload?.workflow === "lead_followup_checkin") {
+    const result = { status: "skipped", reason: "paused by owner" };
+    await store.completeTask(task.id, { workflow: task.payload.workflow, result: result.status, reason: result.reason });
+    return result;
+  }
   if (isStaleScheduledTask(task)) {
     const result = { status: "skipped", reason: "stale" };
     await store.completeTask(task.id, {

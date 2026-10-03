@@ -15,6 +15,9 @@ export const VA_CHECKIN_LIVE_SCHEDULE_IDS = [
   "v2-va-checkin-weekly",
   "v2-va-checkin-nudge"
 ];
+// Paused at Yahoska's request on 2026-10-03; resume only on her instruction.
+export const LEAD_CHECKINS_PAUSED = true;
+
 export const ALWAYS_LIVE_SCHEDULE_IDS = [
   ...LOOKOUT_LIVE_SCHEDULE_IDS,
   ...EMAIL_LIVE_SCHEDULE_IDS,
@@ -30,19 +33,21 @@ export const INACTIVE_SCHEDULE_IDS = [
 ];
 
 export function liveScheduleIds(environment = process.env) {
-  if (!isVaCheckinEnabled(environment)) return [...ALWAYS_LIVE_SCHEDULE_IDS];
+  const leadIds = LEAD_CHECKINS_PAUSED ? [] : LEAD_LIVE_SCHEDULE_IDS;
+  if (!isVaCheckinEnabled(environment)) return ALWAYS_LIVE_SCHEDULE_IDS.filter((id) => !LEAD_CHECKINS_PAUSED || !LEAD_LIVE_SCHEDULE_IDS.includes(id));
   return [
     ...LOOKOUT_LIVE_SCHEDULE_IDS,
     ...EMAIL_LIVE_SCHEDULE_IDS,
-    ...LEAD_LIVE_SCHEDULE_IDS,
+    ...leadIds,
     ...VA_CHECKIN_LIVE_SCHEDULE_IDS,
     "v2-sales-tracker-sync"
   ];
 }
 
 export function inactiveScheduleIds(environment = process.env) {
-  if (isVaCheckinEnabled(environment)) return [...INACTIVE_SCHEDULE_IDS];
-  return [...INACTIVE_SCHEDULE_IDS, ...VA_CHECKIN_LIVE_SCHEDULE_IDS];
+  const pausedIds = LEAD_CHECKINS_PAUSED ? LEAD_LIVE_SCHEDULE_IDS : [];
+  if (isVaCheckinEnabled(environment)) return [...INACTIVE_SCHEDULE_IDS, ...pausedIds];
+  return [...INACTIVE_SCHEDULE_IDS, ...VA_CHECKIN_LIVE_SCHEDULE_IDS, ...pausedIds];
 }
 
 export const legacySchedules = [
