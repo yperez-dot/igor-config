@@ -21,6 +21,7 @@ import {
 } from "./mail-alerts.js";
 import { blockYahoskaOnlyRefusal, bookOwnCalendarIfRequested, sanitizeOwnCalendarHistory } from "./own-calendar.js";
 import { handlePersonalReminder } from "./personal-reminder.js";
+import { handleCallReminders } from "./call-reminders.js";
 import { bookSchoolPickupIfRequested } from "./school-pickup.js";
 import { editHubTickerIfRequested } from "./hub-ticker-edit.js";
 import { downloadTelegramFile } from "./telegram.js";
@@ -267,6 +268,15 @@ export async function handleTelegramChat({
   const reminderHistory = message.replyTo?.text
     ? [...history, { role: "assistant", content: message.replyTo.text }]
     : history;
+  const callReminders = await handleCallReminders({
+    text: inbound.text, history: reminderHistory, store,
+    chatId: message.chatId, senderId: message.senderId
+  });
+  if (callReminders?.reply) {
+    await sendTelegramMessage({ botToken, chatId: message.chatId, text: callReminders.reply });
+    await storeDirectReply({ store, message, userText, userMaxChars: inbound.storeMaxChars, reply: callReminders.reply });
+    return callReminders.reply;
+  }
   let reminderSubjectText;
   const cleanReminderInput = sanitizeReminderInput(inbound.text);
   if (hasMedia && apiKey && isLeadReminderRequest(cleanReminderInput, reminderHistory)) {
